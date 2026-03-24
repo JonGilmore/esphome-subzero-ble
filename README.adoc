@@ -422,3 +422,7 @@ This project is provided as-is for personal, non-commercial use. I have no affil
 == Acknowledgments
 
 Protocol details were reverse-engineered from the Sub-Zero Group Owner Android APK and validated through live BLE traffic analysis using an ESP32 and Python https://github.com/hbldh/bleak[bleak] scripts. I reached out to Sub-Zero support to inquire about a local API, but they declined to provide any technical information and stated that they had no plans to support it.
+
+== AI Disclaimer
+
+AI was used to assist in inspecting how the Android APK handles BLE pairing and communication as well as creating documentation and troubleshooting steps. ESPHome YAML and C++ code was also generated with AI assistance.
