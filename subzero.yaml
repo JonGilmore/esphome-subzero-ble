@@ -113,6 +113,7 @@ wifi:
   fast_connect: ${hidden_ssid}
   ssid: !secret wifi_ssid
   password: !secret wifi_password
+  power_save_mode: none
   on_connect:
     - switch.turn_on: mmwave_sensor
 

@@ -1,7 +1,8 @@
 # Sub-Zero / Wolf / Cove Appliance BLE Package
 # Include with vars: prefix, appliance_name, appliance_mac, appliance_pin
-# Optional vars: freezer_sensors_internal, ice_maker_sensor_internal
-#   Set to "false" to expose freezer/ice maker sensors in HA
+# Optional vars: freezer_sensors_internal, ice_maker_sensor_internal,
+#   dishwasher_sensors_internal, range_sensors_internal
+#   Set to "false" to expose appliance-specific sensors in HA
 #
 # Example:
 #   packages:
@@ -39,6 +40,7 @@ substitutions:
   ice_maker_sensor_internal: "true"
   sabbath_sensor_internal: "true"
   dishwasher_sensors_internal: "true"
+  range_sensors_internal: "true"
   fridge_sensors_internal: "false"
 
 globals:
@@ -88,8 +90,8 @@ ble_client:
     on_connect:
       then:
         - lambda: |-
-            // Fast path: handles cached from previous successful connection
-            if (id(${prefix}_d5_handle) > 0 && id(${prefix}_poll_ok)) {
+            // Fast path: handles cached from previous connection (bonded)
+            if (id(${prefix}_d5_handle) > 0 && id(${prefix}_phase) >= 1) {
               ESP_LOGI("ble", "[${appliance_name}] Reconnected (fast path, d5=%d)", id(${prefix}_d5_handle));
               id(${prefix}_debug).publish_state("Reconnected, encrypting...");
               id(${prefix}_fast_reconnect).execute();
@@ -122,9 +124,9 @@ ble_client:
             id(${prefix}_post_bond).stop();
             id(${prefix}_subscribe).stop();
             id(${prefix}_fast_reconnect).stop();
-            if (id(${prefix}_poll_ok) && id(${prefix}_d5_handle) > 0) {
-              // Keep handles cached for fast reconnect
-              ESP_LOGI("ble", "[${appliance_name}] Disconnected (handles cached)");
+            if (id(${prefix}_d5_handle) > 0 && id(${prefix}_phase) >= 1) {
+              // Keep handles cached for fast reconnect (bonded)
+              ESP_LOGI("ble", "[${appliance_name}] Disconnected (handles cached, d5=%d)", id(${prefix}_d5_handle));
             } else {
               id(${prefix}_phase) = 0;
               id(${prefix}_d4_handle) = 0;
@@ -167,6 +169,54 @@ sensor:
     icon: "mdi:counter"
     accuracy_decimals: 0
     internal: ${dishwasher_sensors_internal}
+
+  # --- Range / Oven sensors ---
+  - platform: template
+    name: "${appliance_name} Oven Temperature"
+    id: ${prefix}_cav_temp
+    unit_of_measurement: "°F"
+    device_class: temperature
+    state_class: measurement
+    accuracy_decimals: 0
+    icon: "mdi:thermometer"
+    internal: ${range_sensors_internal}
+
+  - platform: template
+    name: "${appliance_name} Oven Set Temperature"
+    id: ${prefix}_cav_set_temp
+    unit_of_measurement: "°F"
+    device_class: temperature
+    state_class: measurement
+    accuracy_decimals: 0
+    icon: "mdi:thermometer-check"
+    internal: ${range_sensors_internal}
+
+  - platform: template
+    name: "${appliance_name} Cook Mode"
+    id: ${prefix}_cav_cook_mode
+    icon: "mdi:stove"
+    accuracy_decimals: 0
+    internal: ${range_sensors_internal}
+
+  - platform: template
+    name: "${appliance_name} Probe Temperature"
+    id: ${prefix}_probe_temp
+    unit_of_measurement: "°F"
+    device_class: temperature
+    state_class: measurement
+    accuracy_decimals: 0
+    icon: "mdi:thermometer-probe"
+    internal: ${range_sensors_internal}
+
+  - platform: template
+    name: "${appliance_name} Probe Set Temperature"
+    id: ${prefix}_probe_set_temp
+    unit_of_measurement: "°F"
+    device_class: temperature
+    state_class: measurement
+    accuracy_decimals: 0
+    icon: "mdi:thermometer-probe-off"
+    internal: ${range_sensors_internal}
 
   - platform: ble_client
     type: characteristic
@@ -276,6 +326,85 @@ binary_sensor:
     id: ${prefix}_delay_start
     icon: "mdi:timer-sand"
     internal: ${dishwasher_sensors_internal}
+
+  # --- Range / Oven binary sensors ---
+  - platform: template
+    name: "${appliance_name} Oven"
+    id: ${prefix}_cav_unit_on
+    icon: "mdi:stove"
+    internal: ${range_sensors_internal}
+
+  - platform: template
+    name: "${appliance_name} Oven At Temperature"
+    id: ${prefix}_cav_at_set_temp
+    icon: "mdi:thermometer-check"
+    internal: ${range_sensors_internal}
+
+  - platform: template
+    name: "${appliance_name} Oven Light"
+    id: ${prefix}_cav_light_on
+    icon: "mdi:lightbulb"
+    internal: ${range_sensors_internal}
+
+  - platform: template
+    name: "${appliance_name} Oven Remote Ready"
+    id: ${prefix}_cav_remote_ready
+    icon: "mdi:remote"
+    internal: ${range_sensors_internal}
+
+  - platform: template
+    name: "${appliance_name} Probe Inserted"
+    id: ${prefix}_cav_probe_on
+    icon: "mdi:thermometer-probe"
+    internal: ${range_sensors_internal}
+
+  - platform: template
+    name: "${appliance_name} Probe At Temperature"
+    id: ${prefix}_cav_probe_at_temp
+    icon: "mdi:thermometer-probe"
+    internal: ${range_sensors_internal}
+
+  - platform: template
+    name: "${appliance_name} Probe Within 10°"
+    id: ${prefix}_cav_probe_near
+    icon: "mdi:thermometer-probe"
+    internal: ${range_sensors_internal}
+
+  - platform: template
+    name: "${appliance_name} Gourmet Mode"
+    id: ${prefix}_cav_gourmet
+    icon: "mdi:chef-hat"
+    internal: ${range_sensors_internal}
+
+  - platform: template
+    name: "${appliance_name} Cook Timer Complete"
+    id: ${prefix}_cook_timer_done
+    icon: "mdi:timer-alert"
+    internal: ${range_sensors_internal}
+
+  - platform: template
+    name: "${appliance_name} Kitchen Timer Active"
+    id: ${prefix}_ktimer_active
+    icon: "mdi:timer"
+    internal: ${range_sensors_internal}
+
+  - platform: template
+    name: "${appliance_name} Kitchen Timer Complete"
+    id: ${prefix}_ktimer_done
+    icon: "mdi:timer-alert"
+    internal: ${range_sensors_internal}
+
+  - platform: template
+    name: "${appliance_name} Kitchen Timer 2 Active"
+    id: ${prefix}_ktimer2_active
+    icon: "mdi:timer"
+    internal: ${range_sensors_internal}
+
+  - platform: template
+    name: "${appliance_name} Kitchen Timer 2 Complete"
+    id: ${prefix}_ktimer2_done
+    icon: "mdi:timer-alert"
+    internal: ${range_sensors_internal}
 
 text_sensor:
   - platform: template
@@ -515,6 +644,7 @@ script:
             if (!std::isnan(temp)) id(${prefix}_set_temp).publish_state(temp);
             int door = find_bool("\"ref_door_ajar\"");
             if (door < 0) door = find_bool("\"door_ajar\"");
+            if (door < 0) door = find_bool("\"cav_door_ajar\"");
             if (door >= 0) id(${prefix}_door_ajar).publish_state(door == 1);
             float frz_temp = find_num("\"frz_set_temp\"");
             if (!std::isnan(frz_temp)) id(${prefix}_frz_temp).publish_state(frz_temp);
@@ -562,6 +692,43 @@ script:
             if (!std::isnan(ws)) id(${prefix}_wash_status).publish_state(ws);
             float wc = find_num("\"wash_cycle\"");
             if (!std::isnan(wc)) id(${prefix}_wash_cycle).publish_state(wc);
+            // Range / Oven sensors
+            int cav_on = find_bool("\"cav_unit_on\"");
+            if (cav_on >= 0) id(${prefix}_cav_unit_on).publish_state(cav_on == 1);
+            int cav_at = find_bool("\"cav_at_set_temp\"");
+            if (cav_at >= 0) id(${prefix}_cav_at_set_temp).publish_state(cav_at == 1);
+            int cav_light = find_bool("\"cav_light_on\"");
+            if (cav_light >= 0) id(${prefix}_cav_light_on).publish_state(cav_light == 1);
+            int cav_rr = find_bool("\"cav_remote_ready\"");
+            if (cav_rr >= 0) id(${prefix}_cav_remote_ready).publish_state(cav_rr == 1);
+            int cav_prb = find_bool("\"cav_probe_on\"");
+            if (cav_prb >= 0) id(${prefix}_cav_probe_on).publish_state(cav_prb == 1);
+            int cav_prb_at = find_bool("\"cav_probe_at_set_temp\"");
+            if (cav_prb_at >= 0) id(${prefix}_cav_probe_at_temp).publish_state(cav_prb_at == 1);
+            int cav_prb_nr = find_bool("\"cav_probe_within_10deg\"");
+            if (cav_prb_nr >= 0) id(${prefix}_cav_probe_near).publish_state(cav_prb_nr == 1);
+            int cav_gm = find_bool("\"cav_gourmet_mode_on\"");
+            if (cav_gm >= 0) id(${prefix}_cav_gourmet).publish_state(cav_gm == 1);
+            int ct_done = find_bool("\"cav_cook_timer_complete\"");
+            if (ct_done >= 0) id(${prefix}_cook_timer_done).publish_state(ct_done == 1);
+            int kt1 = find_bool("\"kitchen_timer_active\"");
+            if (kt1 >= 0) id(${prefix}_ktimer_active).publish_state(kt1 == 1);
+            int kt1d = find_bool("\"kitchen_timer_complete\"");
+            if (kt1d >= 0) id(${prefix}_ktimer_done).publish_state(kt1d == 1);
+            int kt2 = find_bool("\"kitchen_timer2_active\"");
+            if (kt2 >= 0) id(${prefix}_ktimer2_active).publish_state(kt2 == 1);
+            int kt2d = find_bool("\"kitchen_timer2_complete\"");
+            if (kt2d >= 0) id(${prefix}_ktimer2_done).publish_state(kt2d == 1);
+            float cvt = find_num("\"cav_temp\"");
+            if (!std::isnan(cvt)) id(${prefix}_cav_temp).publish_state(cvt);
+            float cvst = find_num("\"cav_set_temp\"");
+            if (!std::isnan(cvst)) id(${prefix}_cav_set_temp).publish_state(cvst);
+            float cvcm = find_num("\"cav_cook_mode\"");
+            if (!std::isnan(cvcm)) id(${prefix}_cav_cook_mode).publish_state(cvcm);
+            float prt = find_num("\"cav_probe_temp\"");
+            if (!std::isnan(prt)) id(${prefix}_probe_temp).publish_state(prt);
+            float prst = find_num("\"cav_probe_set_temp\"");
+            if (!std::isnan(prst)) id(${prefix}_probe_set_temp).publish_state(prst);
             char val[64];
             if (extract_str("\"appliance_model\"", val, sizeof(val)))
               id(${prefix}_model).publish_state(val);
@@ -722,7 +889,7 @@ script:
           memcpy(addr, client->get_remote_bda(), 6);
           esp_ble_set_encryption(addr, ESP_BLE_SEC_ENCRYPT_MITM);
           ESP_LOGI("ble", "[${appliance_name}] Fast reconnect: encryption requested");
-      - delay: 750ms
+      - delay: 500ms
       - lambda: |-
           id(${prefix}_subscribe).execute();
 
@@ -772,13 +939,9 @@ script:
       - delay: 500ms
       - lambda: |-
           if (!id(${prefix}_pin_confirmed)) return;
-          if (id(${prefix}_poll_ok)) {
-            ESP_LOGI("ble", "[${appliance_name}] Data cached, skipping auto-poll");
-            id(${prefix}_debug).publish_state("Connected (idle).");
-            return;
-          }
           auto *client = id(${prefix}_appliance);
           uint16_t d5 = id(${prefix}_d5_handle);
+          id(${prefix}_poll_ok) = false;
           std::string cmd = "{\"cmd\":\"get_async\"}\n";
           esp_err_t err = esp_ble_gattc_write_char(
             client->get_gattc_if(), client->get_conn_id(),

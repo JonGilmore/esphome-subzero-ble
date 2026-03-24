@@ -57,6 +57,37 @@ This project reverse-engineers that BLE protocol and reimplements the connection
 | *Raw JSON* | Full JSON response for debugging
 |===
 
+==== Range / Oven Sensors
+
+[cols="1,3"]
+|===
+| Sensor | Description
+
+| *Oven Temperature* | Current cavity temperature (°F)
+| *Oven Set Temperature* | Target cavity temperature (°F)
+| *Cook Mode* | Numeric cook mode code
+| *Probe Temperature* | Meat probe current temperature (°F)
+| *Probe Set Temperature* | Meat probe target temperature (°F)
+| *Door* | Open/closed binary sensor
+| *Oven* | Oven is on/off
+| *Oven At Temperature* | Cavity has reached set temperature
+| *Oven Light* | Oven light on/off
+| *Oven Remote Ready* | Oven is ready for remote commands
+| *Probe Inserted* | Meat probe is plugged in
+| *Probe At Temperature* | Probe has reached set temperature
+| *Probe Within 10°* | Probe is within 10° of set temperature
+| *Gourmet Mode* | Gourmet mode is active
+| *Cook Timer Complete* | Cook timer has finished
+| *Kitchen Timer Active* | Kitchen timer 1 is running
+| *Kitchen Timer Complete* | Kitchen timer 1 has finished
+| *Kitchen Timer 2 Active* | Kitchen timer 2 is running
+| *Kitchen Timer 2 Complete* | Kitchen timer 2 has finished
+| *Service Required* | Alerts when the appliance flags a service need
+| *Appliance Model* | Model number (e.g. `DF36450GSP`)
+| *Appliance Uptime* | Time since last power cycle
+| *Raw JSON* | Full JSON response for debugging
+|===
+
 === Tested Appliances
 
 [cols="1,1,1,1"]
@@ -66,6 +97,7 @@ This project reverse-engineers that BLE protocol and reimplements the connection
 | Sub-Zero | DEU2450R | Under-counter refrigerator | ✅ Fully working
 | Sub-Zero | 313 | French-door fridge/freezer with ice maker | ✅ Fully working
 | Cove | DW2450 | Dishwasher | ✅ Fully working
+| Wolf | DF36450GSP | Dual-fuel range | ✅ Fully working
 |===
 
 Other Sub-Zero, Wolf, and Cove appliances with BLE should work — they all use the same protocol.
@@ -143,7 +175,7 @@ Command Framing:: Every command written to D5 *must* end with a newline characte
 The appliance's serial parser silently discards any command without it.
 
 Response Fragmentation:: The appliance sends JSON responses as BLE indications, fragmented into chunks.
-Fridges typically fragment at ~40 bytes per indication (30–45 fragments for a 1200–1800 byte response), while dishwashers use larger ~244 byte fragments (8 fragments for a ~1736 byte response).
+Fridges typically fragment at ~40 bytes per indication (30–45 fragments for a 1200–1800 byte response), while dishwashers and ranges use larger ~244 byte fragments (7–8 fragments for a ~1600–1736 byte response).
 The receiver must buffer and reassemble these fragments by tracking JSON brace depth (`{` / `}`) to detect message completion.
 
 D5 Discovery Timing:: On refrigerators, the encrypted D5 characteristic is *not visible* in the GATT database until after bonding completes.
@@ -250,7 +282,45 @@ All commands are JSON objects written to D5, terminated with `\n`.
 ----
 ====
 
-Different appliance types include different properties. Refrigerator-only units won't have `frz_*` or `ice_maker_*` keys, and dishwashers use `door_ajar` instead of `ref_door_ajar` and have wash-specific properties. Sensor visibility is controlled per-appliance with `*_internal` substitution flags.
+.Wolf dual-fuel range (DF36450GSP) — ~1629 bytes
+[%collapsible]
+====
+[source,json]
+----
+{
+  "status": 0,
+  "resp": {
+    "appliance_model": "DF36450GSP",
+    "appliance_serial": "44444444",
+    "uptime": "02:10:58",
+    "sabbath_on": false,
+    "service_required": false,
+    "cav_door_ajar": false,
+    "cav_unit_on": false,
+    "cav_temp": 75,
+    "cav_set_temp": 0,
+    "cav_cook_mode": 0,
+    "cav_at_set_temp": false,
+    "cav_light_on": false,
+    "cav_remote_ready": false,
+    "cav_probe_on": false,
+    "cav_probe_temp": 1,
+    "cav_probe_set_temp": 0,
+    "cav_probe_at_set_temp": false,
+    "cav_probe_within_10deg": false,
+    "cav_gourmet_mode_on": false,
+    "cav_cook_timer_complete": false,
+    "kitchen_timer_active": false,
+    "kitchen_timer_complete": false,
+    "kitchen_timer2_active": false,
+    "kitchen_timer2_complete": false,
+    "notifs": []
+  }
+}
+----
+====
+
+Different appliance types include different properties. Refrigerator-only units won't have `frz_*` or `ice_maker_*` keys, dishwashers use `door_ajar` instead of `ref_door_ajar` and have wash-specific properties, and ranges use `cav_door_ajar` with oven-specific `cav_*` and `kitchen_timer*` properties. Sensor visibility is controlled per-appliance with `*_internal` substitution flags.
 
 [[getting-started]]
 == Getting Started
@@ -375,6 +445,38 @@ See `cove-minimal-dishwasher.yaml` for a complete standalone example.
 
 NOTE: Cove dishwashers actively disconnect BLE ~10 seconds after connection. The integration handles this with optimized handshake timing and a fast reconnect path that caches GATT handles between connections.
 
+==== Wolf Ranges
+
+For Wolf ranges, enable range sensors and hide fridge-only sensors:
+
+[source,yaml]
+----
+packages:
+  range: !include
+    file: subzero_appliance.yaml
+    vars:
+      prefix: "szg"
+      appliance_name: "Kitchen Range"
+      appliance_mac: !secret range_mac
+      appliance_pin: !secret range_pin
+      range_sensors_internal: "false"          # <1>
+      fridge_sensors_internal: "true"           # <2>
+      freezer_sensors_internal: "true"          # <3>
+      ice_maker_sensor_internal: "true"         # <4>
+      sabbath_sensor_internal: "true"           # <5>
+      dishwasher_sensors_internal: "true"       # <6>
+----
+<1> Exposes all range/oven sensors (cavity temp, probe, cook mode, timers, etc.)
+<2> Hides fridge-only sensors (Set Temperature)
+<3> Hides freezer sensors
+<4> Hides ice maker sensor
+<5> Hides Sabbath Mode sensor
+<6> Hides dishwasher sensors
+
+See `wolf-minimal-range.yaml` for a complete standalone example.
+
+NOTE: Wolf ranges disconnect BLE connections quickly, similar to Cove dishwashers. For best results, use `fast_connect: true` and `power_save_mode: none` in your WiFi config to minimize BLE/WiFi coexistence interference during data transfer.
+
 ==== Sensor Visibility Reference
 
 All sensor groups can be shown or hidden per-appliance using substitution variables:
@@ -388,6 +490,7 @@ All sensor groups can be shown or hidden per-appliance using substitution variab
 | `ice_maker_sensor_internal` | `"true"` | Ice Maker
 | `sabbath_sensor_internal` | `"true"` | Sabbath Mode
 | `dishwasher_sensors_internal` | `"true"` | All dishwasher sensors (wash cycle, heated dry, etc.)
+| `range_sensors_internal` | `"true"` | All range/oven sensors (cavity temp, probe, cook mode, timers, etc.)
 |===
 
 Set to `"false"` to expose sensors, `"true"` to hide them.
@@ -514,6 +617,9 @@ If you experience crashes (typically `__cxa_allocate_exception` → `operator ne
 
 | *Dishwasher disconnects after ~10 seconds*
 | This is normal for Cove dishwashers. The integration uses a fast reconnect path with cached GATT handles, and optimized handshake delays total ~3.25 seconds to complete the full poll within the connection window.
+
+| *Range disconnects before data arrives*
+| Wolf ranges have tight BLE connection windows. Add `fast_connect: true` and `power_save_mode: none` to your WiFi config to reduce BLE/WiFi coexistence interference. See the <<Wolf Ranges>> section.
 |===
 
 == Project Structure
@@ -525,6 +631,7 @@ If you experience crashes (typically `__cxa_allocate_exception` → `operator ne
 ├── subzero_appliance.yaml         # Reusable package for any SZG appliance
 ├── subzero.yaml                   # Main config — two fridges (edit this)
 ├── cove-minimal-dishwasher.yaml   # Standalone dishwasher config example
+├── wolf-minimal-range.yaml        # Standalone range config example
 └── secrets.yaml                   # Your WiFi/MAC/PIN secrets (git-ignored)
 ----
 

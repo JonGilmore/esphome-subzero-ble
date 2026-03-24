@@ -1,24 +1,25 @@
-# Minimal ESPHome config for a single Sub-Zero/Cove appliance over BLE.
-# This example connects to a Cove DW2450 dishwasher.
+# Minimal ESPHome config for a single Wolf appliance over BLE.
+# This example connects to a Wolf DF36450GSP kitchen range.
 # Edit the substitutions and secrets to match your setup.
 
 substitutions:
-  name: "cove-dishwasher"
-  friendly_name: "Cove Dishwasher"
+  name: "wolf-range"
+  friendly_name: "Wolf Range"
 
 packages:
-  right_dishwasher: !include
+  kitchen_range: !include
     file: subzero_appliance.yaml
     vars:
       prefix: "szg"
-      appliance_name: "Right Dishwasher"
-      appliance_mac: !secret right_dishwasher_mac
-      appliance_pin: !secret right_dishwasher_pin
-      dishwasher_sensors_internal: "false"
+      appliance_name: "Kitchen Range"
+      appliance_mac: !secret kitchen_range_mac
+      appliance_pin: !secret kitchen_range_pin
       fridge_sensors_internal: "true"
       freezer_sensors_internal: "true"
       ice_maker_sensor_internal: "true"
       sabbath_sensor_internal: "true"
+      dishwasher_sensors_internal: "true"
+      range_sensors_internal: "false"
 
 esphome:
   name: ${name}
