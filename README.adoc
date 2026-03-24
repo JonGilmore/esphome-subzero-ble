@@ -15,6 +15,8 @@ This project reverse-engineers that BLE protocol and reimplements the connection
 
 === What You Get
 
+==== Refrigerator/Freezer Sensors
+
 [cols="1,3"]
 |===
 | Sensor | Description
@@ -24,21 +26,46 @@ This project reverse-engineers that BLE protocol and reimplements the connection
 | *Refrigerator Door* | Open/closed binary sensor
 | *Freezer Door* | Open/closed binary sensor _(optional)_
 | *Ice Maker* | On/off binary sensor _(optional)_
-| *Sabbath Mode* | On/off binary sensor
+| *Sabbath Mode* | On/off binary sensor _(optional)_
 | *Service Required* | Alerts when the appliance flags a service need
 | *Appliance Model* | Model number (e.g. `DEU2450R`, `313`)
 | *Appliance Uptime* | Time since last power cycle
 | *Raw JSON* | Full JSON response for debugging
 |===
 
+==== Dishwasher Sensors
+
+[cols="1,3"]
+|===
+| Sensor | Description
+
+| *Door* | Open/closed binary sensor
+| *Wash Cycle Active* | Whether a wash cycle is currently running
+| *Wash Status* | Numeric wash status code
+| *Wash Cycle* | Current wash cycle number
+| *Heated Dry* | Heated dry option enabled
+| *Extended Dry* | Extended dry option enabled
+| *High Temp Wash* | High temperature wash option enabled
+| *Sanitize Rinse* | Sanitize rinse option enabled
+| *Rinse Aid Low* | Rinse aid level is low (problem sensor)
+| *Light* | Interior light on/off
+| *Remote Ready* | Appliance is ready for remote commands
+| *Delay Start* | Delay start timer is active
+| *Service Required* | Alerts when the appliance flags a service need
+| *Appliance Model* | Model number (e.g. `DW2450`)
+| *Appliance Uptime* | Time since last power cycle
+| *Raw JSON* | Full JSON response for debugging
+|===
+
 === Tested Appliances
 
-[cols="1,1,1"]
+[cols="1,1,1,1"]
 |===
-| Model | Type | Status
+| Brand | Model | Type | Status
 
-| DEU2450R | Under-counter refrigerator | ✅ Fully working
-| 313 | French-door fridge/freezer with ice maker | ✅ Fully working
+| Sub-Zero | DEU2450R | Under-counter refrigerator | ✅ Fully working
+| Sub-Zero | 313 | French-door fridge/freezer with ice maker | ✅ Fully working
+| Cove | DW2450 | Dishwasher | ✅ Fully working
 |===
 
 Other Sub-Zero, Wolf, and Cove appliances with BLE should work — they all use the same protocol.
@@ -115,13 +142,15 @@ After the first successful bond, the keys are stored and reconnection is automat
 Command Framing:: Every command written to D5 *must* end with a newline character (`\n`).
 The appliance's serial parser silently discards any command without it.
 
-Response Fragmentation:: The appliance sends JSON responses as BLE indications, fragmented into chunks of approximately 40 bytes each.
-A full `get_async` response can be 1200–1800 bytes depending on the appliance model, arriving as 30–45 consecutive indications.
+Response Fragmentation:: The appliance sends JSON responses as BLE indications, fragmented into chunks.
+Fridges typically fragment at ~40 bytes per indication (30–45 fragments for a 1200–1800 byte response), while dishwashers use larger ~244 byte fragments (8 fragments for a ~1736 byte response).
 The receiver must buffer and reassemble these fragments by tracking JSON brace depth (`{` / `}`) to detect message completion.
 
-D5 Discovery Timing:: The encrypted D5 characteristic is *not visible* in the GATT database until after bonding completes.
+D5 Discovery Timing:: On refrigerators, the encrypted D5 characteristic is *not visible* in the GATT database until after bonding completes.
 The implementation must refresh the GATT cache (`esp_ble_gattc_cache_refresh`) and re-run service discovery after encryption is established.
 The code polls up to three times with delays to handle timing variations across different appliance models.
++
+NOTE: Cove dishwashers expose D5 in the GATT database *before* bonding, but still require BLE-level encryption for writes (GATT status 5 = insufficient authentication without it). The code always requests encryption regardless of when D5 is discovered.
 
 MTU:: Negotiated to 517 bytes, though the appliance still fragments at ~40 bytes per indication.
 
@@ -191,7 +220,37 @@ All commands are JSON objects written to D5, terminated with `\n`.
 ----
 ====
 
-Different appliance types include different properties. Refrigerator-only units won't have `frz_*` or `ice_maker_*` keys. This can be made optional in the ESPHome config with the `*_internal` flags.
+.Cove dishwasher (DW2450) — ~1736 bytes
+[%collapsible]
+====
+[source,json]
+----
+{
+  "status": 0,
+  "resp": {
+    "appliance_model": "DW2450",
+    "appliance_serial": "33333333",
+    "uptime": "05:12:30",
+    "door_ajar": false,
+    "wash_cycle_on": false,
+    "wash_status": 6,
+    "wash_cycle": 0,
+    "heated_dry_on": false,
+    "extended_dry_on": false,
+    "high_temp_wash_on": false,
+    "sani_rinse_on": false,
+    "rinse_aid_low": false,
+    "light_on": false,
+    "remote_ready": true,
+    "delay_start_timer_active": false,
+    "service_required": false,
+    "notifs": []
+  }
+}
+----
+====
+
+Different appliance types include different properties. Refrigerator-only units won't have `frz_*` or `ice_maker_*` keys, and dishwashers use `door_ajar` instead of `ref_door_ajar` and have wash-specific properties. Sensor visibility is controlled per-appliance with `*_internal` substitution flags.
 
 [[getting-started]]
 == Getting Started
@@ -277,11 +336,61 @@ packages:
       appliance_pin: !secret main_fridge_pin
       freezer_sensors_internal: "false"       # <1>
       ice_maker_sensor_internal: "false"      # <2>
+      sabbath_sensor_internal: "false"        # <3>
 ----
 <1> Exposes freezer temperature and freezer door sensors
 <2> Exposes ice maker on/off sensor
+<3> Exposes Sabbath Mode sensor (hidden by default)
 
-By default these sensors are hidden (`internal: true`) since not all appliances have them.
+By default, freezer, ice maker, Sabbath, and dishwasher sensors are hidden (`internal: true`) since not all appliances have them.
+Fridge sensors (Set Temperature) are visible by default.
+
+==== Cove Dishwashers
+
+For Cove dishwashers, enable dishwasher sensors and hide fridge-only sensors:
+
+[source,yaml]
+----
+packages:
+  dishwasher: !include
+    file: subzero_appliance.yaml
+    vars:
+      prefix: "szg"
+      appliance_name: "Dishwasher"
+      appliance_mac: !secret dishwasher_mac
+      appliance_pin: !secret dishwasher_pin
+      dishwasher_sensors_internal: "false"    # <1>
+      fridge_sensors_internal: "true"         # <2>
+      freezer_sensors_internal: "true"        # <3>
+      ice_maker_sensor_internal: "true"       # <4>
+      sabbath_sensor_internal: "true"         # <5>
+----
+<1> Exposes all dishwasher-specific sensors (wash cycle, heated dry, etc.)
+<2> Hides fridge-only sensors (Set Temperature)
+<3> Hides freezer sensors
+<4> Hides ice maker sensor
+<5> Hides Sabbath Mode sensor
+
+See `cove-minimal-dishwasher.yaml` for a complete standalone example.
+
+NOTE: Cove dishwashers actively disconnect BLE ~10 seconds after connection. The integration handles this with optimized handshake timing and a fast reconnect path that caches GATT handles between connections.
+
+==== Sensor Visibility Reference
+
+All sensor groups can be shown or hidden per-appliance using substitution variables:
+
+[cols="2,1,2"]
+|===
+| Substitution | Default | Controls
+
+| `fridge_sensors_internal` | `"false"` | Set Temperature
+| `freezer_sensors_internal` | `"true"` | Freezer Temperature, Freezer Door
+| `ice_maker_sensor_internal` | `"true"` | Ice Maker
+| `sabbath_sensor_internal` | `"true"` | Sabbath Mode
+| `dishwasher_sensors_internal` | `"true"` | All dishwasher sensors (wash cycle, heated dry, etc.)
+|===
+
+Set to `"false"` to expose sensors, `"true"` to hide them.
 
 ==== Multiple Appliances
 
@@ -402,6 +511,9 @@ If you experience crashes (typically `__cxa_allocate_exception` → `operator ne
 
 | *Appliance disconnects after 5 minutes*
 | This is the reconnect timeout working as designed. The ESP32 will automatically reconnect.
+
+| *Dishwasher disconnects after ~10 seconds*
+| This is normal for Cove dishwashers. The integration uses a fast reconnect path with cached GATT handles, and optimized handshake delays total ~3.25 seconds to complete the full poll within the connection window.
 |===
 
 == Project Structure
@@ -409,10 +521,11 @@ If you experience crashes (typically `__cxa_allocate_exception` → `operator ne
 [source]
 ----
 .
-├── README.adoc              # This file
-├── subzero_appliance.yaml   # Reusable package for any SZG appliance
-├── subzero.yaml             # Main ESPHome config (edit this)
-└── secrets.yaml             # Your WiFi/MAC/PIN secrets (git-ignored)
+├── README.adoc                    # This file
+├── subzero_appliance.yaml         # Reusable package for any SZG appliance
+├── subzero.yaml                   # Main config — two fridges (edit this)
+├── cove-minimal-dishwasher.yaml   # Standalone dishwasher config example
+└── secrets.yaml                   # Your WiFi/MAC/PIN secrets (git-ignored)
 ----
 
 == License
