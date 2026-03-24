@@ -5,4 +5,5 @@
 !.gitignore
 !README.adoc
 !subzero.yaml
+!cove-minimal-dishwasher.yaml
 !subzero_appliance.yaml
