@@ -581,7 +581,7 @@ The ESP32 (non-PSRAM) has only 320 KB of RAM. With BLE client connections, the B
 This integration uses several strategies to avoid out-of-memory crashes:
 
 * JSON response buffers are *pre-reserved* to 2048 bytes at startup to avoid repeated heap reallocation during the 40+ BLE indication fragments
-* All JSON parsing uses *zero-allocation* C string operations (`strstr`, `strncmp`, `atof`) — no `ArduinoJson` or `std::string` parsing
+* JSON parsing uses ESPHome's built-in `json` component (ArduinoJson) with a temporary heap allocation that is freed immediately after parsing
 * JSON parsing runs on the *main loop* (via ESPHome scripts), not inside the BLE notification callback
 * Logger levels are tuned to suppress high-frequency BLE debug messages that would otherwise overwhelm the API frame buffer
 
