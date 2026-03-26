@@ -25,22 +25,6 @@ esphome:
   name: ${name}
   friendly_name: ${friendly_name}
   name_add_mac_suffix: true
-  on_boot:
-    priority: -100
-    then:
-      - lambda: |-
-          // BLE security: SC_MITM_BOND + keyboard_only (passkey entry)
-          esp_ble_auth_req_t auth_req = ESP_LE_AUTH_REQ_SC_MITM_BOND;
-          uint8_t key_size = 16;
-          uint8_t init_key = ESP_BLE_ENC_KEY_MASK | ESP_BLE_ID_KEY_MASK;
-          uint8_t rsp_key = ESP_BLE_ENC_KEY_MASK | ESP_BLE_ID_KEY_MASK;
-          esp_ble_io_cap_t io_cap = ESP_IO_CAP_IN;
-          esp_ble_gap_set_security_param(ESP_BLE_SM_AUTHEN_REQ_MODE, &auth_req, sizeof(auth_req));
-          esp_ble_gap_set_security_param(ESP_BLE_SM_MAX_KEY_SIZE, &key_size, sizeof(key_size));
-          esp_ble_gap_set_security_param(ESP_BLE_SM_SET_INIT_KEY, &init_key, sizeof(init_key));
-          esp_ble_gap_set_security_param(ESP_BLE_SM_SET_RSP_KEY, &rsp_key, sizeof(rsp_key));
-          esp_ble_gap_set_security_param(ESP_BLE_SM_IOCAP_MODE, &io_cap, sizeof(io_cap));
-          ESP_LOGI("ble", "BLE security: SC_MITM_BOND + IO_CAP_IN (keyboard_only)");
 
 esp32:
   board: esp32dev
@@ -49,9 +33,6 @@ esp32:
     version: 5.5.3.1
     sdkconfig_options:
       CONFIG_BT_GATTC_CACHE_NVS_FLASH: "n"
-
-esp32_ble:
-  io_capability: keyboard_only
 
 logger:
   level: DEBUG

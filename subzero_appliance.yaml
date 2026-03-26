@@ -45,6 +45,26 @@ substitutions:
 
 json:
 
+esphome:
+  on_boot:
+    priority: -100
+    then:
+      - lambda: |-
+          esp_ble_auth_req_t auth_req = ESP_LE_AUTH_REQ_SC_MITM_BOND;
+          uint8_t key_size = 16;
+          uint8_t init_key = ESP_BLE_ENC_KEY_MASK | ESP_BLE_ID_KEY_MASK;
+          uint8_t rsp_key = ESP_BLE_ENC_KEY_MASK | ESP_BLE_ID_KEY_MASK;
+          esp_ble_io_cap_t io_cap = ESP_IO_CAP_IN;
+          esp_ble_gap_set_security_param(ESP_BLE_SM_AUTHEN_REQ_MODE, &auth_req, sizeof(auth_req));
+          esp_ble_gap_set_security_param(ESP_BLE_SM_MAX_KEY_SIZE, &key_size, sizeof(key_size));
+          esp_ble_gap_set_security_param(ESP_BLE_SM_SET_INIT_KEY, &init_key, sizeof(init_key));
+          esp_ble_gap_set_security_param(ESP_BLE_SM_SET_RSP_KEY, &rsp_key, sizeof(rsp_key));
+          esp_ble_gap_set_security_param(ESP_BLE_SM_IOCAP_MODE, &io_cap, sizeof(io_cap));
+          ESP_LOGI("ble", "BLE security: SC_MITM_BOND + IO_CAP_IN (keyboard_only)");
+
+esp32_ble:
+  io_capability: keyboard_only
+
 globals:
   - id: ${prefix}_phase
     type: int
@@ -69,6 +89,9 @@ globals:
   - id: ${prefix}_poll_ok
     type: bool
     initial_value: "false"
+  - id: ${prefix}_fast_retries
+    type: int
+    initial_value: "0"
 
 ble_client:
   - mac_address: ${appliance_mac}
@@ -94,10 +117,25 @@ ble_client:
         - lambda: |-
             // Fast path: handles cached from previous connection (bonded)
             if (id(${prefix}_d5_handle) > 0 && id(${prefix}_phase) >= 1) {
-              ESP_LOGI("ble", "[${appliance_name}] Reconnected (fast path, d5=%d)", id(${prefix}_d5_handle));
-              id(${prefix}_debug).publish_state("Reconnected, encrypting...");
-              id(${prefix}_fast_reconnect).execute();
-              return;
+              if (id(${prefix}_fast_retries) >= 3) {
+                // Bond is likely stale — clear cached state and start fresh
+                ESP_LOGW("ble", "[${appliance_name}] Fast reconnect failed %d times, clearing bond & rediscovering",
+                  id(${prefix}_fast_retries));
+                auto *client = id(${prefix}_appliance);
+                esp_ble_remove_bond_device(*(esp_bd_addr_t*)client->get_remote_bda());
+                id(${prefix}_d5_handle) = 0;
+                id(${prefix}_d4_handle) = 0;
+                id(${prefix}_phase) = 0;
+                id(${prefix}_fast_retries) = 0;
+                id(${prefix}_debug).publish_state("Bond stale, re-pairing...");
+                // Fall through to phase==0 path below
+              } else {
+                ESP_LOGI("ble", "[${appliance_name}] Reconnected (fast path, d5=%d, attempt %d)",
+                  id(${prefix}_d5_handle), id(${prefix}_fast_retries) + 1);
+                id(${prefix}_debug).publish_state("Reconnected, encrypting...");
+                id(${prefix}_fast_reconnect).execute();
+                return;
+              }
             }
             int phase = id(${prefix}_phase);
             if (phase == 0) {
@@ -128,7 +166,9 @@ ble_client:
             id(${prefix}_fast_reconnect).stop();
             if (id(${prefix}_d5_handle) > 0 && id(${prefix}_phase) >= 1) {
               // Keep handles cached for fast reconnect (bonded)
-              ESP_LOGI("ble", "[${appliance_name}] Disconnected (handles cached, d5=%d)", id(${prefix}_d5_handle));
+              id(${prefix}_fast_retries) += 1;
+              ESP_LOGI("ble", "[${appliance_name}] Disconnected (handles cached, d5=%d, retries=%d)",
+                id(${prefix}_d5_handle), id(${prefix}_fast_retries));
             } else {
               id(${prefix}_phase) = 0;
               id(${prefix}_d4_handle) = 0;
@@ -715,6 +755,7 @@ script:
           });
           if (buf.size() > 100) {
             id(${prefix}_poll_ok) = true;
+            id(${prefix}_fast_retries) = 0;
           }
           buf.clear();
 

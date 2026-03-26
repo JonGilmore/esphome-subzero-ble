@@ -172,6 +172,7 @@ The full handshake follows these steps:
 BLE Security:: The appliance requires *Secure Connections with MITM protection and bonding* (`SC_MITM_BOND`).
 The ESP32 must be configured with `IO_CAP_IN` (keyboard-only) so the user can enter the 6-digit passkey displayed on the appliance.
 After the first successful bond, the keys are stored and reconnection is automatic.
+If the bond becomes stale (e.g. appliance-side timeout overnight), the integration detects repeated auth failures (3 attempts) and automatically clears the stale bond, then re-pairs from scratch.
 
 Command Framing:: Every command written to D5 *must* end with a newline character (`\n`).
 The appliance's serial parser silently discards any command without it.
@@ -179,6 +180,9 @@ The appliance's serial parser silently discards any command without it.
 Response Fragmentation:: The appliance sends JSON responses as BLE indications, fragmented into chunks.
 Fridges typically fragment at ~40 bytes per indication (30–45 fragments for a 1200–1800 byte response), while dishwashers and ranges use larger ~244 byte fragments (7–8 fragments for a ~1600–1736 byte response).
 The receiver must buffer and reassemble these fragments by tracking JSON brace depth (`{` / `}`) to detect message completion.
+
+Push Notifications:: In addition to polled responses (`{"status":0,"resp":{...}}`), appliances send real-time push notifications for state changes (e.g. door open/close, light toggle).
+These use the format `{"seq":N,"props":{...},"msg_types":2}` — the parser handles both formats, extracting sensor data from `"resp"` (polls) or `"props"` (pushes).
 
 D5 Discovery Timing:: On refrigerators, the encrypted D5 characteristic is *not visible* in the GATT database until after bonding completes.
 The implementation must refresh the GATT cache (`esp_ble_gattc_cache_refresh`) and re-run service discovery after encryption is established.
@@ -616,6 +620,9 @@ If you experience crashes (typically `__cxa_allocate_exception` → `operator ne
 
 | *Appliance disconnects after 5 minutes*
 | This is the reconnect timeout working as designed. The ESP32 will automatically reconnect.
+
+| *Auth failures overnight (auth fail reason=102)*
+| The BLE bond went stale. The integration automatically detects this after 3 consecutive fast-reconnect failures, clears the old bond, and re-pairs. No action needed — recovery is automatic.
 
 | *Dishwasher disconnects after ~10 seconds*
 | This is normal for Cove dishwashers. The integration uses a fast reconnect path with cached GATT handles, and optimized handshake delays total ~3.25 seconds to complete the full poll within the connection window.
