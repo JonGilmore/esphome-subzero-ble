@@ -6,6 +6,8 @@
 
 Connect Sub-Zero kitchen appliances to Home Assistant over Bluetooth Low Energy (BLE), using an ESP32 running https://esphome.io[ESPHome]. *FULLY LOCAL*.
 
+WARNING: This project is in an extreme alpha phase. It does work for me, but I have a limited number of appliances that I can test with. I'm looking for more people to help me test _and_ someone that has knowledge of the BT stack and connection handling.
+
 toc::[]
 
 == Overview
