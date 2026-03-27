@@ -1,66 +1,13 @@
-# Sub-Zero / Wolf / Cove Appliance BLE Package
-# Include with vars: prefix, appliance_name, appliance_mac, appliance_pin
-# Optional vars: freezer_sensors_internal, ice_maker_sensor_internal,
-#   dishwasher_sensors_internal, range_sensors_internal
-#   Set to "false" to expose appliance-specific sensors in HA
-#
-# Example:
-#   packages:
-#     basement_fridge: !include
-#       file: subzero_appliance.yaml
-#       vars:
-#         prefix: "szg"
-#         appliance_name: "Basement Fridge"
-#         appliance_mac: !secret basement_fridge_mac
-#         appliance_pin: !secret basement_fridge_pin
-#     main_fridge: !include
-#       file: subzero_appliance.yaml
-#       vars:
-#         prefix: "szg2"
-#         appliance_name: "Main Fridge"
-#         appliance_mac: !secret main_fridge_mac
-#         appliance_pin: !secret main_fridge_pin
-#         freezer_sensors_internal: "false"
-#         ice_maker_sensor_internal: "false"
-#     right_dishwasher: !include
-#       file: subzero_appliance.yaml
-#       vars:
-#         prefix: "szg"
-#         appliance_name: "Right Dishwasher"
-#         appliance_mac: !secret right_dishwasher_mac
-#         appliance_pin: !secret right_dishwasher_pin
-#         dishwasher_sensors_internal: "false"
-#         fridge_sensors_internal: "true"
-#         freezer_sensors_internal: "true"
-#         ice_maker_sensor_internal: "true"
-#         sabbath_sensor_internal: "true"
+# Sub-Zero / Wolf / Cove — Shared BLE Package
+# Do not include this file directly. Use one of the appliance-type packages:
+#   subzero_fridge.yaml      — Sub-Zero refrigerators and freezers
+#   subzero_dishwasher.yaml  — Cove dishwashers
+#   subzero_range.yaml       — Wolf ranges and ovens
 
 substitutions:
-  freezer_sensors_internal: "true"
-  ice_maker_sensor_internal: "true"
-  sabbath_sensor_internal: "true"
-  dishwasher_sensors_internal: "true"
-  range_sensors_internal: "true"
-  fridge_sensors_internal: "false"
+  poll_offset: "0s"
 
 json:
-
-esphome:
-  on_boot:
-    priority: -100
-    then:
-      - lambda: |-
-          esp_ble_auth_req_t auth_req = ESP_LE_AUTH_REQ_SC_MITM_BOND;
-          uint8_t key_size = 16;
-          uint8_t init_key = ESP_BLE_ENC_KEY_MASK | ESP_BLE_ID_KEY_MASK;
-          uint8_t rsp_key = ESP_BLE_ENC_KEY_MASK | ESP_BLE_ID_KEY_MASK;
-          esp_ble_io_cap_t io_cap = ESP_IO_CAP_IN;
-          esp_ble_gap_set_security_param(ESP_BLE_SM_AUTHEN_REQ_MODE, &auth_req, sizeof(auth_req));
-          esp_ble_gap_set_security_param(ESP_BLE_SM_MAX_KEY_SIZE, &key_size, sizeof(key_size));
-          esp_ble_gap_set_security_param(ESP_BLE_SM_SET_INIT_KEY, &init_key, sizeof(init_key));
-          esp_ble_gap_set_security_param(ESP_BLE_SM_SET_RSP_KEY, &rsp_key, sizeof(rsp_key));
-          esp_ble_gap_set_security_param(ESP_BLE_SM_IOCAP_MODE, &io_cap, sizeof(io_cap));
-          ESP_LOGI("ble", "BLE security: SC_MITM_BOND + IO_CAP_IN (keyboard_only)");
 
 esp32_ble:
   io_capability: keyboard_only
@@ -92,6 +39,9 @@ globals:
   - id: ${prefix}_fast_retries
     type: int
     initial_value: "0"
+  - id: ${prefix}_poll_miss
+    type: int
+    initial_value: "0"
 
 ble_client:
   - mac_address: ${appliance_mac}
@@ -115,27 +65,17 @@ ble_client:
     on_connect:
       then:
         - lambda: |-
+            // Request large MTU — fridge firmware sends 40-byte chunks at default MTU,
+            // but may use larger chunks if we negotiate higher (dishwasher/range use 244).
+            auto *cl = id(${prefix}_appliance);
+            esp_ble_gattc_send_mtu_req(cl->get_gattc_if(), cl->get_conn_id());
             // Fast path: handles cached from previous connection (bonded)
             if (id(${prefix}_d5_handle) > 0 && id(${prefix}_phase) >= 1) {
-              if (id(${prefix}_fast_retries) >= 3) {
-                // Bond is likely stale — clear cached state and start fresh
-                ESP_LOGW("ble", "[${appliance_name}] Fast reconnect failed %d times, clearing bond & rediscovering",
-                  id(${prefix}_fast_retries));
-                auto *client = id(${prefix}_appliance);
-                esp_ble_remove_bond_device(*(esp_bd_addr_t*)client->get_remote_bda());
-                id(${prefix}_d5_handle) = 0;
-                id(${prefix}_d4_handle) = 0;
-                id(${prefix}_phase) = 0;
-                id(${prefix}_fast_retries) = 0;
-                id(${prefix}_debug).publish_state("Bond stale, re-pairing...");
-                // Fall through to phase==0 path below
-              } else {
-                ESP_LOGI("ble", "[${appliance_name}] Reconnected (fast path, d5=%d, attempt %d)",
-                  id(${prefix}_d5_handle), id(${prefix}_fast_retries) + 1);
-                id(${prefix}_debug).publish_state("Reconnected, encrypting...");
-                id(${prefix}_fast_reconnect).execute();
-                return;
-              }
+              ESP_LOGI("ble", "[${appliance_name}] Reconnected (fast path, d5=%d, retries=%d)",
+                id(${prefix}_d5_handle), id(${prefix}_fast_retries));
+              id(${prefix}_debug).publish_state("Reconnected, encrypting...");
+              id(${prefix}_fast_reconnect).execute();
+              return;
             }
             int phase = id(${prefix}_phase);
             if (phase == 0) {
@@ -165,10 +105,22 @@ ble_client:
             id(${prefix}_subscribe).stop();
             id(${prefix}_fast_reconnect).stop();
             if (id(${prefix}_d5_handle) > 0 && id(${prefix}_phase) >= 1) {
-              // Keep handles cached for fast reconnect (bonded)
               id(${prefix}_fast_retries) += 1;
-              ESP_LOGI("ble", "[${appliance_name}] Disconnected (handles cached, d5=%d, retries=%d)",
-                id(${prefix}_d5_handle), id(${prefix}_fast_retries));
+              if (id(${prefix}_fast_retries) >= 3) {
+                // Stale bond — clear while disconnected so next connect starts fresh
+                ESP_LOGW("ble", "[${appliance_name}] Stale bond (%d failures), clearing for re-pair",
+                  id(${prefix}_fast_retries));
+                auto *client = id(${prefix}_appliance);
+                esp_ble_remove_bond_device(*(esp_bd_addr_t*)client->get_remote_bda());
+                id(${prefix}_d5_handle) = 0;
+                id(${prefix}_d4_handle) = 0;
+                id(${prefix}_phase) = 0;
+                id(${prefix}_fast_retries) = 0;
+                id(${prefix}_debug).publish_state("Bond cleared, re-pairing on next connect...");
+              } else {
+                ESP_LOGI("ble", "[${appliance_name}] Disconnected (handles cached, d5=%d, retries=%d)",
+                  id(${prefix}_d5_handle), id(${prefix}_fast_retries));
+              }
             } else {
               id(${prefix}_phase) = 0;
               id(${prefix}_d4_handle) = 0;
@@ -178,88 +130,6 @@ ble_client:
             id(${prefix}_debug).publish_state("Disconnected");
 
 sensor:
-  - platform: template
-    name: "${appliance_name} Set Temperature"
-    id: ${prefix}_set_temp
-    unit_of_measurement: "°F"
-    device_class: temperature
-    state_class: measurement
-    accuracy_decimals: 0
-    icon: "mdi:thermometer"
-    internal: ${fridge_sensors_internal}
-
-  - platform: template
-    name: "${appliance_name} Freezer Temperature"
-    id: ${prefix}_frz_temp
-    unit_of_measurement: "°F"
-    device_class: temperature
-    state_class: measurement
-    accuracy_decimals: 0
-    icon: "mdi:snowflake-thermometer"
-    internal: ${freezer_sensors_internal}
-
-  - platform: template
-    name: "${appliance_name} Wash Status"
-    id: ${prefix}_wash_status
-    icon: "mdi:dishwasher"
-    accuracy_decimals: 0
-    internal: ${dishwasher_sensors_internal}
-
-  - platform: template
-    name: "${appliance_name} Wash Cycle"
-    id: ${prefix}_wash_cycle
-    icon: "mdi:counter"
-    accuracy_decimals: 0
-    internal: ${dishwasher_sensors_internal}
-
-  # --- Range / Oven sensors ---
-  - platform: template
-    name: "${appliance_name} Oven Temperature"
-    id: ${prefix}_cav_temp
-    unit_of_measurement: "°F"
-    device_class: temperature
-    state_class: measurement
-    accuracy_decimals: 0
-    icon: "mdi:thermometer"
-    internal: ${range_sensors_internal}
-
-  - platform: template
-    name: "${appliance_name} Oven Set Temperature"
-    id: ${prefix}_cav_set_temp
-    unit_of_measurement: "°F"
-    device_class: temperature
-    state_class: measurement
-    accuracy_decimals: 0
-    icon: "mdi:thermometer-check"
-    internal: ${range_sensors_internal}
-
-  - platform: template
-    name: "${appliance_name} Cook Mode"
-    id: ${prefix}_cav_cook_mode
-    icon: "mdi:stove"
-    accuracy_decimals: 0
-    internal: ${range_sensors_internal}
-
-  - platform: template
-    name: "${appliance_name} Probe Temperature"
-    id: ${prefix}_probe_temp
-    unit_of_measurement: "°F"
-    device_class: temperature
-    state_class: measurement
-    accuracy_decimals: 0
-    icon: "mdi:thermometer-probe"
-    internal: ${range_sensors_internal}
-
-  - platform: template
-    name: "${appliance_name} Probe Set Temperature"
-    id: ${prefix}_probe_set_temp
-    unit_of_measurement: "°F"
-    device_class: temperature
-    state_class: measurement
-    accuracy_decimals: 0
-    icon: "mdi:thermometer-probe-off"
-    internal: ${range_sensors_internal}
-
   - platform: ble_client
     type: characteristic
     ble_client_id: ${prefix}_appliance
@@ -275,6 +145,8 @@ sensor:
       if (buf.capacity() < 2048) buf.reserve(2048);
       if (buf.size() > 4096) { buf.clear(); return {}; }
       buf.append((char*)x.data(), x.size());
+      // Any notification = connection alive (resets zombie detection)
+      id(${prefix}_poll_ok) = true;
       int depth = 0;
       bool complete = false;
       for (char c : buf) {
@@ -293,160 +165,9 @@ binary_sensor:
     device_class: door
 
   - platform: template
-    name: "${appliance_name} Sabbath Mode"
-    id: ${prefix}_sabbath_on
-    icon: "mdi:candelabra"
-    internal: ${sabbath_sensor_internal}
-
-  - platform: template
-    name: "${appliance_name} Freezer Door"
-    id: ${prefix}_frz_door_ajar
-    device_class: door
-    internal: ${freezer_sensors_internal}
-
-  - platform: template
-    name: "${appliance_name} Ice Maker"
-    id: ${prefix}_ice_maker
-    icon: "mdi:ice-cream"
-    internal: ${ice_maker_sensor_internal}
-
-  - platform: template
     name: "${appliance_name} Service Required"
     id: ${prefix}_svc_required
     device_class: problem
-
-  - platform: template
-    name: "${appliance_name} Wash Cycle Active"
-    id: ${prefix}_wash_cycle_on
-    icon: "mdi:dishwasher"
-    internal: ${dishwasher_sensors_internal}
-
-  - platform: template
-    name: "${appliance_name} Heated Dry"
-    id: ${prefix}_heated_dry
-    icon: "mdi:heat-wave"
-    internal: ${dishwasher_sensors_internal}
-
-  - platform: template
-    name: "${appliance_name} Extended Dry"
-    id: ${prefix}_extended_dry
-    icon: "mdi:heat-wave"
-    internal: ${dishwasher_sensors_internal}
-
-  - platform: template
-    name: "${appliance_name} High Temp Wash"
-    id: ${prefix}_high_temp_wash
-    icon: "mdi:thermometer-high"
-    internal: ${dishwasher_sensors_internal}
-
-  - platform: template
-    name: "${appliance_name} Sanitize Rinse"
-    id: ${prefix}_sani_rinse
-    icon: "mdi:hand-wash"
-    internal: ${dishwasher_sensors_internal}
-
-  - platform: template
-    name: "${appliance_name} Rinse Aid Low"
-    id: ${prefix}_rinse_aid_low
-    device_class: problem
-    internal: ${dishwasher_sensors_internal}
-
-  - platform: template
-    name: "${appliance_name} Light"
-    id: ${prefix}_light_on
-    icon: "mdi:lightbulb"
-    internal: ${dishwasher_sensors_internal}
-
-  - platform: template
-    name: "${appliance_name} Remote Ready"
-    id: ${prefix}_remote_ready
-    icon: "mdi:remote"
-    internal: ${dishwasher_sensors_internal}
-
-  - platform: template
-    name: "${appliance_name} Delay Start"
-    id: ${prefix}_delay_start
-    icon: "mdi:timer-sand"
-    internal: ${dishwasher_sensors_internal}
-
-  # --- Range / Oven binary sensors ---
-  - platform: template
-    name: "${appliance_name} Oven"
-    id: ${prefix}_cav_unit_on
-    icon: "mdi:stove"
-    internal: ${range_sensors_internal}
-
-  - platform: template
-    name: "${appliance_name} Oven At Temperature"
-    id: ${prefix}_cav_at_set_temp
-    icon: "mdi:thermometer-check"
-    internal: ${range_sensors_internal}
-
-  - platform: template
-    name: "${appliance_name} Oven Light"
-    id: ${prefix}_cav_light_on
-    icon: "mdi:lightbulb"
-    internal: ${range_sensors_internal}
-
-  - platform: template
-    name: "${appliance_name} Oven Remote Ready"
-    id: ${prefix}_cav_remote_ready
-    icon: "mdi:remote"
-    internal: ${range_sensors_internal}
-
-  - platform: template
-    name: "${appliance_name} Probe Inserted"
-    id: ${prefix}_cav_probe_on
-    icon: "mdi:thermometer-probe"
-    internal: ${range_sensors_internal}
-
-  - platform: template
-    name: "${appliance_name} Probe At Temperature"
-    id: ${prefix}_cav_probe_at_temp
-    icon: "mdi:thermometer-probe"
-    internal: ${range_sensors_internal}
-
-  - platform: template
-    name: "${appliance_name} Probe Within 10°"
-    id: ${prefix}_cav_probe_near
-    icon: "mdi:thermometer-probe"
-    internal: ${range_sensors_internal}
-
-  - platform: template
-    name: "${appliance_name} Gourmet Mode"
-    id: ${prefix}_cav_gourmet
-    icon: "mdi:chef-hat"
-    internal: ${range_sensors_internal}
-
-  - platform: template
-    name: "${appliance_name} Cook Timer Complete"
-    id: ${prefix}_cook_timer_done
-    icon: "mdi:timer-alert"
-    internal: ${range_sensors_internal}
-
-  - platform: template
-    name: "${appliance_name} Kitchen Timer Active"
-    id: ${prefix}_ktimer_active
-    icon: "mdi:timer"
-    internal: ${range_sensors_internal}
-
-  - platform: template
-    name: "${appliance_name} Kitchen Timer Complete"
-    id: ${prefix}_ktimer_done
-    icon: "mdi:timer-alert"
-    internal: ${range_sensors_internal}
-
-  - platform: template
-    name: "${appliance_name} Kitchen Timer 2 Active"
-    id: ${prefix}_ktimer2_active
-    icon: "mdi:timer"
-    internal: ${range_sensors_internal}
-
-  - platform: template
-    name: "${appliance_name} Kitchen Timer 2 Complete"
-    id: ${prefix}_ktimer2_done
-    icon: "mdi:timer-alert"
-    internal: ${range_sensors_internal}
 
 text_sensor:
   - platform: template
@@ -588,176 +309,80 @@ button:
     icon: "mdi:bluetooth-settings"
     entity_category: config
     on_press:
-      - logger.log: "[${appliance_name}] Removing bond..."
+      - logger.log: "[${appliance_name}] Full pairing reset..."
       - lambda: |-
           id(${prefix}_pin_confirmed) = false;
+          id(${prefix}_d5_handle) = 0;
+          id(${prefix}_d4_handle) = 0;
+          id(${prefix}_phase) = 0;
+          id(${prefix}_fast_retries) = 0;
+          id(${prefix}_poll_miss) = 0;
+          id(${prefix}_json_buf).clear();
           auto *client = id(${prefix}_appliance);
           esp_bd_addr_t addr;
           memcpy(addr, client->get_remote_bda(), 6);
+          // Clear GATT client cache
           esp_ble_gattc_cache_clean(addr);
+          // Remove bond from ESP-IDF BLE security manager
+          esp_ble_remove_bond_device(addr);
+          ESP_LOGW("ble", "[${appliance_name}] Bond removed, GATT cache cleared, all state reset");
       - ble_client.disconnect:
           id: ${prefix}_appliance
       - delay: 1s
       - ble_client.remove_bond:
           id: ${prefix}_appliance
       - lambda: |-
-          id(${prefix}_debug).publish_state("Pairing reset. Press Connect to re-pair.");
+          id(${prefix}_debug).publish_state("Pairing fully reset. Power-cycle appliance, then press Connect.");
 
 interval:
   - interval: 120s
     then:
+      - script.execute: ${prefix}_periodic_poll
+
+script:
+  # === Periodic poll — staggered to avoid concurrent BLE transfers ===
+  - id: ${prefix}_periodic_poll
+    mode: single
+    then:
+      - delay: ${poll_offset}
       - lambda: |-
           if (!id(${prefix}_pin_confirmed)) return;
           if (id(${prefix}_subscribe).is_running() || id(${prefix}_post_bond).is_running() || id(${prefix}_fast_reconnect).is_running()) return;
           uint16_t d5 = id(${prefix}_d5_handle);
           if (d5 == 0) return;
-          id(${prefix}_poll_ok) = false;
           auto *client = id(${prefix}_appliance);
+          if (!client->connected()) return;
+          // Zombie detection: no notifications since last poll interval
+          if (id(${prefix}_poll_ok)) {
+            id(${prefix}_poll_miss) = 0;
+          } else {
+            id(${prefix}_poll_miss) += 1;
+            if (id(${prefix}_poll_miss) >= 15) {
+              ESP_LOGW("szg", "[${appliance_name}] Connection stale (%d intervals, no data), forcing reconnect",
+                id(${prefix}_poll_miss));
+              id(${prefix}_poll_miss) = 0;
+              id(${prefix}_json_buf).clear();
+              id(${prefix}_debug).publish_state("Connection stale, reconnecting...");
+              client->disconnect();
+              return;
+            }
+          }
+          id(${prefix}_poll_ok) = false;
+          // Clear any stale partial JSON from interrupted previous transfer
+          id(${prefix}_json_buf).clear();
           std::string cmd = "{\"cmd\":\"get_async\"}\n";
-          esp_ble_gattc_write_char(
+          esp_err_t err = esp_ble_gattc_write_char(
             client->get_gattc_if(), client->get_conn_id(),
             d5, cmd.size(), (uint8_t*)cmd.data(),
             ESP_GATT_WRITE_TYPE_RSP, ESP_GATT_AUTH_REQ_NONE);
-          ESP_LOGD("szg", "[${appliance_name}] Periodic get_async");
-
-script:
-  # === JSON parser — runs in main loop (NOT in BLE callback) ===
-  - id: ${prefix}_parse_json
-    mode: single
-    then:
-      - lambda: |-
-          auto &buf = id(${prefix}_json_buf);
-          size_t start = buf.find('{');
-          if (start == std::string::npos) { buf.clear(); return; }
-          if (start > 0) buf.erase(0, start);
-          ESP_LOGI("szg", "[${appliance_name}] Parsing JSON (%d bytes)", buf.size());
-          if (buf.size() < 255) {
-            id(${prefix}_raw_json).publish_state(buf);
-          } else {
-            ESP_LOGI("szg", "[${appliance_name}] Response: %.200s...", buf.c_str());
+          if (err != ESP_OK) {
+            ESP_LOGW("szg", "[${appliance_name}] Write failed (err=%d), forcing reconnect", err);
+            id(${prefix}_debug).publish_state("Write failed, reconnecting...");
+            client->disconnect();
+            return;
           }
-          json::parse_json(buf, [](JsonObject root) -> bool {
-            // Determine data source: full poll ("resp") or push notification ("props")
-            JsonObject data;
-            if (root["status"].is<int>()) {
-              if (root["status"].as<int>() != 0) {
-                ESP_LOGW("szg", "[${appliance_name}] status=%d, skipping", root["status"].as<int>());
-                return false;
-              }
-              data = root["resp"].as<JsonObject>();
-            } else if (root["props"].is<JsonObject>()) {
-              data = root["props"].as<JsonObject>();
-              ESP_LOGD("szg", "[${appliance_name}] Push update (seq %d)", root["seq"].as<int>());
-            } else {
-              ESP_LOGW("szg", "[${appliance_name}] Unknown JSON format, skipping");
-              return false;
-            }
-            if (data.isNull()) return false;
-            // PIN confirmation (unlock_channel response)
-            if (data["pin"].is<const char*>()) {
-              const char *pin = data["pin"].as<const char*>();
-              if (pin && strlen(pin) <= 10) {
-                id(${prefix}_stored_pin) = pin;
-                id(${prefix}_pin_confirmed) = true;
-                id(${prefix}_pin_input).publish_state(pin);
-                ESP_LOGI("szg", "[${appliance_name}] PIN confirmed: %s", pin);
-                id(${prefix}_debug).publish_state("PIN confirmed! Channel unlocked.");
-              }
-            }
-            // --- Fridge sensors ---
-            if (data["ref_set_temp"].is<float>())
-              id(${prefix}_set_temp).publish_state(data["ref_set_temp"].as<float>());
-            // Door (fallback chain: ref_door_ajar -> door_ajar -> cav_door_ajar)
-            if (data["ref_door_ajar"].is<bool>())
-              id(${prefix}_door_ajar).publish_state(data["ref_door_ajar"].as<bool>());
-            else if (data["door_ajar"].is<bool>())
-              id(${prefix}_door_ajar).publish_state(data["door_ajar"].as<bool>());
-            else if (data["cav_door_ajar"].is<bool>())
-              id(${prefix}_door_ajar).publish_state(data["cav_door_ajar"].as<bool>());
-            // --- Freezer sensors ---
-            if (data["frz_set_temp"].is<float>())
-              id(${prefix}_frz_temp).publish_state(data["frz_set_temp"].as<float>());
-            if (data["frz_door_ajar"].is<bool>())
-              id(${prefix}_frz_door_ajar).publish_state(data["frz_door_ajar"].as<bool>());
-            if (data["ice_maker_on"].is<bool>())
-              id(${prefix}_ice_maker).publish_state(data["ice_maker_on"].as<bool>());
-            // --- Common sensors ---
-            if (data["sabbath_on"].is<bool>())
-              id(${prefix}_sabbath_on).publish_state(data["sabbath_on"].as<bool>());
-            if (data["service_required"].is<bool>())
-              id(${prefix}_svc_required).publish_state(data["service_required"].as<bool>());
-            // --- Dishwasher sensors ---
-            if (data["wash_cycle_on"].is<bool>())
-              id(${prefix}_wash_cycle_on).publish_state(data["wash_cycle_on"].as<bool>());
-            if (data["heated_dry_on"].is<bool>())
-              id(${prefix}_heated_dry).publish_state(data["heated_dry_on"].as<bool>());
-            if (data["extended_dry_on"].is<bool>())
-              id(${prefix}_extended_dry).publish_state(data["extended_dry_on"].as<bool>());
-            if (data["high_temp_wash_on"].is<bool>())
-              id(${prefix}_high_temp_wash).publish_state(data["high_temp_wash_on"].as<bool>());
-            if (data["sani_rinse_on"].is<bool>())
-              id(${prefix}_sani_rinse).publish_state(data["sani_rinse_on"].as<bool>());
-            if (data["rinse_aid_low"].is<bool>())
-              id(${prefix}_rinse_aid_low).publish_state(data["rinse_aid_low"].as<bool>());
-            if (data["light_on"].is<bool>())
-              id(${prefix}_light_on).publish_state(data["light_on"].as<bool>());
-            if (data["remote_ready"].is<bool>())
-              id(${prefix}_remote_ready).publish_state(data["remote_ready"].as<bool>());
-            if (data["delay_start_timer_active"].is<bool>())
-              id(${prefix}_delay_start).publish_state(data["delay_start_timer_active"].as<bool>());
-            if (data["wash_status"].is<float>())
-              id(${prefix}_wash_status).publish_state(data["wash_status"].as<float>());
-            if (data["wash_cycle"].is<float>())
-              id(${prefix}_wash_cycle).publish_state(data["wash_cycle"].as<float>());
-            // --- Range / Oven sensors ---
-            if (data["cav_unit_on"].is<bool>())
-              id(${prefix}_cav_unit_on).publish_state(data["cav_unit_on"].as<bool>());
-            if (data["cav_at_set_temp"].is<bool>())
-              id(${prefix}_cav_at_set_temp).publish_state(data["cav_at_set_temp"].as<bool>());
-            if (data["cav_light_on"].is<bool>())
-              id(${prefix}_cav_light_on).publish_state(data["cav_light_on"].as<bool>());
-            if (data["cav_remote_ready"].is<bool>())
-              id(${prefix}_cav_remote_ready).publish_state(data["cav_remote_ready"].as<bool>());
-            if (data["cav_probe_on"].is<bool>())
-              id(${prefix}_cav_probe_on).publish_state(data["cav_probe_on"].as<bool>());
-            if (data["cav_probe_at_set_temp"].is<bool>())
-              id(${prefix}_cav_probe_at_temp).publish_state(data["cav_probe_at_set_temp"].as<bool>());
-            if (data["cav_probe_within_10deg"].is<bool>())
-              id(${prefix}_cav_probe_near).publish_state(data["cav_probe_within_10deg"].as<bool>());
-            if (data["cav_gourmet_mode_on"].is<bool>())
-              id(${prefix}_cav_gourmet).publish_state(data["cav_gourmet_mode_on"].as<bool>());
-            if (data["cav_cook_timer_complete"].is<bool>())
-              id(${prefix}_cook_timer_done).publish_state(data["cav_cook_timer_complete"].as<bool>());
-            if (data["kitchen_timer_active"].is<bool>())
-              id(${prefix}_ktimer_active).publish_state(data["kitchen_timer_active"].as<bool>());
-            if (data["kitchen_timer_complete"].is<bool>())
-              id(${prefix}_ktimer_done).publish_state(data["kitchen_timer_complete"].as<bool>());
-            if (data["kitchen_timer2_active"].is<bool>())
-              id(${prefix}_ktimer2_active).publish_state(data["kitchen_timer2_active"].as<bool>());
-            if (data["kitchen_timer2_complete"].is<bool>())
-              id(${prefix}_ktimer2_done).publish_state(data["kitchen_timer2_complete"].as<bool>());
-            if (data["cav_temp"].is<float>())
-              id(${prefix}_cav_temp).publish_state(data["cav_temp"].as<float>());
-            if (data["cav_set_temp"].is<float>())
-              id(${prefix}_cav_set_temp).publish_state(data["cav_set_temp"].as<float>());
-            if (data["cav_cook_mode"].is<float>())
-              id(${prefix}_cav_cook_mode).publish_state(data["cav_cook_mode"].as<float>());
-            if (data["cav_probe_temp"].is<float>())
-              id(${prefix}_probe_temp).publish_state(data["cav_probe_temp"].as<float>());
-            if (data["cav_probe_set_temp"].is<float>())
-              id(${prefix}_probe_set_temp).publish_state(data["cav_probe_set_temp"].as<float>());
-            // --- Text sensors ---
-            if (data["appliance_model"].is<const char*>())
-              id(${prefix}_model).publish_state(data["appliance_model"].as<std::string>());
-            if (data["uptime"].is<const char*>())
-              id(${prefix}_uptime).publish_state(data["uptime"].as<std::string>());
-            return true;
-          });
-          if (buf.size() > 100) {
-            id(${prefix}_poll_ok) = true;
-            id(${prefix}_fast_retries) = 0;
-          }
-          buf.clear();
+          ESP_LOGI("szg", "[${appliance_name}] Periodic poll (miss=%d, retries=%d)",
+            id(${prefix}_poll_miss), id(${prefix}_fast_retries));
 
   - id: ${prefix}_post_bond
     mode: restart
@@ -907,7 +532,7 @@ script:
           memcpy(addr, client->get_remote_bda(), 6);
           esp_ble_set_encryption(addr, ESP_BLE_SEC_ENCRYPT_MITM);
           ESP_LOGI("ble", "[${appliance_name}] Fast reconnect: encryption requested");
-      - delay: 500ms
+      - delay: 1500ms
       - lambda: |-
           id(${prefix}_subscribe).execute();
 
@@ -927,7 +552,9 @@ script:
           id(${prefix}_d5_notify)->handle = d5;
           ESP_LOGI("ble", "[${appliance_name}] Injected D5 handle %d", d5);
           uint16_t d4 = id(${prefix}_d4_handle);
-          // register_for_notify handles CCCD subscription automatically
+          // register_for_notify for local callback, then manual CCCD write
+          // (fast reconnect GATT cache may be incomplete → register_for_notify
+          //  fails to find CCCD handle internally, so we write it directly)
           esp_ble_gattc_register_for_notify(
             client->get_gattc_if(), client->get_remote_bda(), d5);
           ESP_LOGI("ble", "[${appliance_name}] Subscribe D5 (h=%d)", d5);
@@ -935,6 +562,21 @@ script:
             esp_ble_gattc_register_for_notify(
               client->get_gattc_if(), client->get_remote_bda(), d4);
             ESP_LOGI("ble", "[${appliance_name}] Subscribe D4 (h=%d) for diagnostics", d4);
+          }
+          // Manually write CCCD enable value (0x0002 = indications on)
+          // CCCD descriptor is at char_value_handle + 2 (standard BLE layout)
+          uint8_t cccd_on[2] = {0x02, 0x00};
+          esp_ble_gattc_write_char(
+            client->get_gattc_if(), client->get_conn_id(),
+            d5 + 2, sizeof(cccd_on), cccd_on,
+            ESP_GATT_WRITE_TYPE_RSP, ESP_GATT_AUTH_REQ_NONE);
+          ESP_LOGI("ble", "[${appliance_name}] CCCD write D5 (h=%d)", d5 + 2);
+          if (d4 > 0) {
+            esp_ble_gattc_write_char(
+              client->get_gattc_if(), client->get_conn_id(),
+              d4 + 2, sizeof(cccd_on), cccd_on,
+              ESP_GATT_WRITE_TYPE_RSP, ESP_GATT_AUTH_REQ_NONE);
+            ESP_LOGI("ble", "[${appliance_name}] CCCD write D4 (h=%d)", d4 + 2);
           }
           id(${prefix}_json_buf).clear();
       - delay: 500ms
@@ -954,7 +596,7 @@ script:
             ESP_GATT_WRITE_TYPE_RSP, ESP_GATT_AUTH_REQ_NONE);
           ESP_LOGI("ble", "[${appliance_name}] Auto-unlock (PIN=%s) err=%d", pin.c_str(), err);
           id(${prefix}_debug).publish_state("Auto-unlocking...");
-      - delay: 500ms
+      - delay: 1s
       - lambda: |-
           if (!id(${prefix}_pin_confirmed)) return;
           auto *client = id(${prefix}_appliance);

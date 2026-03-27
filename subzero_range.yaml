@@ -1,0 +1,230 @@
+# Wolf Range/Oven BLE Package
+# Include with vars: prefix, appliance_name, appliance_mac, appliance_pin
+#
+# Example:
+#   packages:
+#     kitchen_range: !include
+#       file: subzero_range.yaml
+#       vars:
+#         prefix: "szg"
+#         appliance_name: "Kitchen Range"
+#         appliance_mac: !secret kitchen_range_mac
+#         appliance_pin: !secret kitchen_range_pin
+
+packages:
+  base: !include subzero_base.yaml
+
+sensor:
+  - platform: template
+    name: "${appliance_name} Oven Temperature"
+    id: ${prefix}_cav_temp
+    unit_of_measurement: "°F"
+    device_class: temperature
+    state_class: measurement
+    accuracy_decimals: 0
+    icon: "mdi:thermometer"
+
+  - platform: template
+    name: "${appliance_name} Oven Set Temperature"
+    id: ${prefix}_cav_set_temp
+    unit_of_measurement: "°F"
+    device_class: temperature
+    state_class: measurement
+    accuracy_decimals: 0
+    icon: "mdi:thermometer-check"
+
+  - platform: template
+    name: "${appliance_name} Cook Mode"
+    id: ${prefix}_cav_cook_mode
+    icon: "mdi:stove"
+    accuracy_decimals: 0
+
+  - platform: template
+    name: "${appliance_name} Probe Temperature"
+    id: ${prefix}_probe_temp
+    unit_of_measurement: "°F"
+    device_class: temperature
+    state_class: measurement
+    accuracy_decimals: 0
+    icon: "mdi:thermometer-probe"
+
+  - platform: template
+    name: "${appliance_name} Probe Set Temperature"
+    id: ${prefix}_probe_set_temp
+    unit_of_measurement: "°F"
+    device_class: temperature
+    state_class: measurement
+    accuracy_decimals: 0
+    icon: "mdi:thermometer-probe-off"
+
+binary_sensor:
+  - platform: template
+    name: "${appliance_name} Sabbath Mode"
+    id: ${prefix}_sabbath_on
+    icon: "mdi:candelabra"
+
+  - platform: template
+    name: "${appliance_name} Oven"
+    id: ${prefix}_cav_unit_on
+    icon: "mdi:stove"
+
+  - platform: template
+    name: "${appliance_name} Oven At Temperature"
+    id: ${prefix}_cav_at_set_temp
+    icon: "mdi:thermometer-check"
+
+  - platform: template
+    name: "${appliance_name} Oven Light"
+    id: ${prefix}_cav_light_on
+    icon: "mdi:lightbulb"
+
+  - platform: template
+    name: "${appliance_name} Oven Remote Ready"
+    id: ${prefix}_cav_remote_ready
+    icon: "mdi:remote"
+
+  - platform: template
+    name: "${appliance_name} Probe Inserted"
+    id: ${prefix}_cav_probe_on
+    icon: "mdi:thermometer-probe"
+
+  - platform: template
+    name: "${appliance_name} Probe At Temperature"
+    id: ${prefix}_cav_probe_at_temp
+    icon: "mdi:thermometer-probe"
+
+  - platform: template
+    name: "${appliance_name} Probe Within 10°"
+    id: ${prefix}_cav_probe_near
+    icon: "mdi:thermometer-probe"
+
+  - platform: template
+    name: "${appliance_name} Gourmet Mode"
+    id: ${prefix}_cav_gourmet
+    icon: "mdi:chef-hat"
+
+  - platform: template
+    name: "${appliance_name} Cook Timer Complete"
+    id: ${prefix}_cook_timer_done
+    icon: "mdi:timer-alert"
+
+  - platform: template
+    name: "${appliance_name} Kitchen Timer Active"
+    id: ${prefix}_ktimer_active
+    icon: "mdi:timer"
+
+  - platform: template
+    name: "${appliance_name} Kitchen Timer Complete"
+    id: ${prefix}_ktimer_done
+    icon: "mdi:timer-alert"
+
+  - platform: template
+    name: "${appliance_name} Kitchen Timer 2 Active"
+    id: ${prefix}_ktimer2_active
+    icon: "mdi:timer"
+
+  - platform: template
+    name: "${appliance_name} Kitchen Timer 2 Complete"
+    id: ${prefix}_ktimer2_done
+    icon: "mdi:timer-alert"
+
+script:
+  - id: ${prefix}_parse_json
+    mode: single
+    then:
+      - lambda: |-
+          auto &buf = id(${prefix}_json_buf);
+          size_t start = buf.find('{');
+          if (start == std::string::npos) { buf.clear(); return; }
+          if (start > 0) buf.erase(0, start);
+          ESP_LOGI("szg", "[${appliance_name}] Parsing JSON (%d bytes)", buf.size());
+          if (buf.size() < 255) {
+            id(${prefix}_raw_json).publish_state(buf);
+          } else {
+            ESP_LOGI("szg", "[${appliance_name}] Response: %.200s...", buf.c_str());
+          }
+          json::parse_json(buf, [](JsonObject root) -> bool {
+            // Determine data source: full poll ("resp") or push notification ("props")
+            JsonObject data;
+            if (root["status"].is<int>()) {
+              if (root["status"].as<int>() != 0) {
+                ESP_LOGW("szg", "[${appliance_name}] status=%d, skipping", root["status"].as<int>());
+                return false;
+              }
+              data = root["resp"].as<JsonObject>();
+            } else if (root["props"].is<JsonObject>()) {
+              data = root["props"].as<JsonObject>();
+              ESP_LOGD("szg", "[${appliance_name}] Push update (seq %d)", root["seq"].as<int>());
+            } else {
+              ESP_LOGW("szg", "[${appliance_name}] Unknown JSON format, skipping");
+              return false;
+            }
+            if (data.isNull()) return false;
+            // PIN confirmation (unlock_channel response)
+            if (data["pin"].is<const char*>()) {
+              const char *pin = data["pin"].as<const char*>();
+              if (pin && strlen(pin) <= 10) {
+                id(${prefix}_stored_pin) = pin;
+                id(${prefix}_pin_confirmed) = true;
+                id(${prefix}_pin_input).publish_state(pin);
+                ESP_LOGI("szg", "[${appliance_name}] PIN confirmed: %s", pin);
+                id(${prefix}_debug).publish_state("PIN confirmed! Channel unlocked.");
+              }
+            }
+            // Door (fallback: cav_door_ajar -> door_ajar)
+            if (data["cav_door_ajar"].is<bool>())
+              id(${prefix}_door_ajar).publish_state(data["cav_door_ajar"].as<bool>());
+            else if (data["door_ajar"].is<bool>())
+              id(${prefix}_door_ajar).publish_state(data["door_ajar"].as<bool>());
+            // --- Range / Oven sensors ---
+            if (data["cav_unit_on"].is<bool>())
+              id(${prefix}_cav_unit_on).publish_state(data["cav_unit_on"].as<bool>());
+            if (data["cav_at_set_temp"].is<bool>())
+              id(${prefix}_cav_at_set_temp).publish_state(data["cav_at_set_temp"].as<bool>());
+            if (data["cav_light_on"].is<bool>())
+              id(${prefix}_cav_light_on).publish_state(data["cav_light_on"].as<bool>());
+            if (data["cav_remote_ready"].is<bool>())
+              id(${prefix}_cav_remote_ready).publish_state(data["cav_remote_ready"].as<bool>());
+            if (data["cav_probe_on"].is<bool>())
+              id(${prefix}_cav_probe_on).publish_state(data["cav_probe_on"].as<bool>());
+            if (data["cav_probe_at_set_temp"].is<bool>())
+              id(${prefix}_cav_probe_at_temp).publish_state(data["cav_probe_at_set_temp"].as<bool>());
+            if (data["cav_probe_within_10deg"].is<bool>())
+              id(${prefix}_cav_probe_near).publish_state(data["cav_probe_within_10deg"].as<bool>());
+            if (data["cav_gourmet_mode_on"].is<bool>())
+              id(${prefix}_cav_gourmet).publish_state(data["cav_gourmet_mode_on"].as<bool>());
+            if (data["cav_cook_timer_complete"].is<bool>())
+              id(${prefix}_cook_timer_done).publish_state(data["cav_cook_timer_complete"].as<bool>());
+            if (data["kitchen_timer_active"].is<bool>())
+              id(${prefix}_ktimer_active).publish_state(data["kitchen_timer_active"].as<bool>());
+            if (data["kitchen_timer_complete"].is<bool>())
+              id(${prefix}_ktimer_done).publish_state(data["kitchen_timer_complete"].as<bool>());
+            if (data["kitchen_timer2_active"].is<bool>())
+              id(${prefix}_ktimer2_active).publish_state(data["kitchen_timer2_active"].as<bool>());
+            if (data["kitchen_timer2_complete"].is<bool>())
+              id(${prefix}_ktimer2_done).publish_state(data["kitchen_timer2_complete"].as<bool>());
+            if (data["cav_temp"].is<float>())
+              id(${prefix}_cav_temp).publish_state(data["cav_temp"].as<float>());
+            if (data["cav_set_temp"].is<float>())
+              id(${prefix}_cav_set_temp).publish_state(data["cav_set_temp"].as<float>());
+            if (data["cav_cook_mode"].is<float>())
+              id(${prefix}_cav_cook_mode).publish_state(data["cav_cook_mode"].as<float>());
+            if (data["cav_probe_temp"].is<float>())
+              id(${prefix}_probe_temp).publish_state(data["cav_probe_temp"].as<float>());
+            if (data["cav_probe_set_temp"].is<float>())
+              id(${prefix}_probe_set_temp).publish_state(data["cav_probe_set_temp"].as<float>());
+            // --- Common sensors ---
+            if (data["sabbath_on"].is<bool>())
+              id(${prefix}_sabbath_on).publish_state(data["sabbath_on"].as<bool>());
+            if (data["service_required"].is<bool>())
+              id(${prefix}_svc_required).publish_state(data["service_required"].as<bool>());
+            // --- Text sensors ---
+            if (data["appliance_model"].is<const char*>())
+              id(${prefix}_model).publish_state(data["appliance_model"].as<std::string>());
+            if (data["uptime"].is<const char*>())
+              id(${prefix}_uptime).publish_state(data["uptime"].as<std::string>());
+            return true;
+          });
+          id(${prefix}_poll_ok) = true;
+          id(${prefix}_fast_retries) = 0;
+          buf.clear();

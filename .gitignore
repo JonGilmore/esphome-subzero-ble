@@ -7,4 +7,7 @@
 !subzero.yaml
 !cove-minimal-dishwasher.yaml
 !wolf-minimal-range.yaml
-!subzero_appliance.yaml
+!subzero_fridge.yaml
+!subzero_dishwasher.yaml
+!subzero_range.yaml
+!subzero_base.yaml

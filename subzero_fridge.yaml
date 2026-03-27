@@ -1,0 +1,149 @@
+# Sub-Zero Fridge/Freezer BLE Package
+# Include with vars: prefix, appliance_name, appliance_mac, appliance_pin
+# Optional vars:
+#   hide_freezer: "true" to hide freezer temp & door (default: "false")
+#   hide_ice_maker: "true" to hide ice maker (default: "false")
+#   hide_sabbath: "true" to hide sabbath mode (default: "false")
+#
+# Example (fridge/freezer combo — all sensors exposed):
+#   packages:
+#     main_fridge: !include
+#       file: subzero_fridge.yaml
+#       vars:
+#         prefix: "szg"
+#         appliance_name: "Main Fridge"
+#         appliance_mac: !secret main_fridge_mac
+#         appliance_pin: !secret main_fridge_pin
+#
+# Example (fridge-only — no freezer or ice maker):
+#   packages:
+#     basement_fridge: !include
+#       file: subzero_fridge.yaml
+#       vars:
+#         prefix: "szg"
+#         appliance_name: "Basement Fridge"
+#         appliance_mac: !secret basement_fridge_mac
+#         appliance_pin: !secret basement_fridge_pin
+#         hide_freezer: "true"
+#         hide_ice_maker: "true"
+
+substitutions:
+  hide_freezer: "false"
+  hide_ice_maker: "false"
+  hide_sabbath: "false"
+
+packages:
+  base: !include subzero_base.yaml
+
+sensor:
+  - platform: template
+    name: "${appliance_name} Set Temperature"
+    id: ${prefix}_set_temp
+    unit_of_measurement: "°F"
+    device_class: temperature
+    state_class: measurement
+    accuracy_decimals: 0
+    icon: "mdi:thermometer"
+
+  - platform: template
+    name: "${appliance_name} Freezer Temperature"
+    id: ${prefix}_frz_temp
+    unit_of_measurement: "°F"
+    device_class: temperature
+    state_class: measurement
+    accuracy_decimals: 0
+    icon: "mdi:snowflake-thermometer"
+    internal: ${hide_freezer}
+
+binary_sensor:
+  - platform: template
+    name: "${appliance_name} Sabbath Mode"
+    id: ${prefix}_sabbath_on
+    icon: "mdi:candelabra"
+    internal: ${hide_sabbath}
+
+  - platform: template
+    name: "${appliance_name} Freezer Door"
+    id: ${prefix}_frz_door_ajar
+    device_class: door
+    internal: ${hide_freezer}
+
+  - platform: template
+    name: "${appliance_name} Ice Maker"
+    id: ${prefix}_ice_maker
+    icon: "mdi:ice-cream"
+    internal: ${hide_ice_maker}
+
+script:
+  - id: ${prefix}_parse_json
+    mode: single
+    then:
+      - lambda: |-
+          auto &buf = id(${prefix}_json_buf);
+          size_t start = buf.find('{');
+          if (start == std::string::npos) { buf.clear(); return; }
+          if (start > 0) buf.erase(0, start);
+          ESP_LOGI("szg", "[${appliance_name}] Parsing JSON (%d bytes)", buf.size());
+          if (buf.size() < 255) {
+            id(${prefix}_raw_json).publish_state(buf);
+          } else {
+            ESP_LOGI("szg", "[${appliance_name}] Response: %.200s...", buf.c_str());
+          }
+          json::parse_json(buf, [](JsonObject root) -> bool {
+            // Determine data source: full poll ("resp") or push notification ("props")
+            JsonObject data;
+            if (root["status"].is<int>()) {
+              if (root["status"].as<int>() != 0) {
+                ESP_LOGW("szg", "[${appliance_name}] status=%d, skipping", root["status"].as<int>());
+                return false;
+              }
+              data = root["resp"].as<JsonObject>();
+            } else if (root["props"].is<JsonObject>()) {
+              data = root["props"].as<JsonObject>();
+              ESP_LOGD("szg", "[${appliance_name}] Push update (seq %d)", root["seq"].as<int>());
+            } else {
+              ESP_LOGW("szg", "[${appliance_name}] Unknown JSON format, skipping");
+              return false;
+            }
+            if (data.isNull()) return false;
+            // PIN confirmation (unlock_channel response)
+            if (data["pin"].is<const char*>()) {
+              const char *pin = data["pin"].as<const char*>();
+              if (pin && strlen(pin) <= 10) {
+                id(${prefix}_stored_pin) = pin;
+                id(${prefix}_pin_confirmed) = true;
+                id(${prefix}_pin_input).publish_state(pin);
+                ESP_LOGI("szg", "[${appliance_name}] PIN confirmed: %s", pin);
+                id(${prefix}_debug).publish_state("PIN confirmed! Channel unlocked.");
+              }
+            }
+            // --- Fridge sensors ---
+            if (data["ref_set_temp"].is<float>())
+              id(${prefix}_set_temp).publish_state(data["ref_set_temp"].as<float>());
+            // Door (fallback chain: ref_door_ajar -> door_ajar)
+            if (data["ref_door_ajar"].is<bool>())
+              id(${prefix}_door_ajar).publish_state(data["ref_door_ajar"].as<bool>());
+            else if (data["door_ajar"].is<bool>())
+              id(${prefix}_door_ajar).publish_state(data["door_ajar"].as<bool>());
+            // --- Freezer sensors ---
+            if (data["frz_set_temp"].is<float>())
+              id(${prefix}_frz_temp).publish_state(data["frz_set_temp"].as<float>());
+            if (data["frz_door_ajar"].is<bool>())
+              id(${prefix}_frz_door_ajar).publish_state(data["frz_door_ajar"].as<bool>());
+            if (data["ice_maker_on"].is<bool>())
+              id(${prefix}_ice_maker).publish_state(data["ice_maker_on"].as<bool>());
+            // --- Common sensors ---
+            if (data["sabbath_on"].is<bool>())
+              id(${prefix}_sabbath_on).publish_state(data["sabbath_on"].as<bool>());
+            if (data["service_required"].is<bool>())
+              id(${prefix}_svc_required).publish_state(data["service_required"].as<bool>());
+            // --- Text sensors ---
+            if (data["appliance_model"].is<const char*>())
+              id(${prefix}_model).publish_state(data["appliance_model"].as<std::string>());
+            if (data["uptime"].is<const char*>())
+              id(${prefix}_uptime).publish_state(data["uptime"].as<std::string>());
+            return true;
+          });
+          id(${prefix}_poll_ok) = true;
+          id(${prefix}_fast_retries) = 0;
+          buf.clear();

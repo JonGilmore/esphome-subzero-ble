@@ -1,0 +1,157 @@
+# Cove Dishwasher BLE Package
+# Include with vars: prefix, appliance_name, appliance_mac, appliance_pin
+#
+# Example:
+#   packages:
+#     right_dishwasher: !include
+#       file: subzero_dishwasher.yaml
+#       vars:
+#         prefix: "szg"
+#         appliance_name: "Right Dishwasher"
+#         appliance_mac: !secret right_dishwasher_mac
+#         appliance_pin: !secret right_dishwasher_pin
+
+packages:
+  base: !include subzero_base.yaml
+
+sensor:
+  - platform: template
+    name: "${appliance_name} Wash Status"
+    id: ${prefix}_wash_status
+    icon: "mdi:dishwasher"
+    accuracy_decimals: 0
+
+  - platform: template
+    name: "${appliance_name} Wash Cycle"
+    id: ${prefix}_wash_cycle
+    icon: "mdi:counter"
+    accuracy_decimals: 0
+
+binary_sensor:
+  - platform: template
+    name: "${appliance_name} Wash Cycle Active"
+    id: ${prefix}_wash_cycle_on
+    icon: "mdi:dishwasher"
+
+  - platform: template
+    name: "${appliance_name} Heated Dry"
+    id: ${prefix}_heated_dry
+    icon: "mdi:heat-wave"
+
+  - platform: template
+    name: "${appliance_name} Extended Dry"
+    id: ${prefix}_extended_dry
+    icon: "mdi:heat-wave"
+
+  - platform: template
+    name: "${appliance_name} High Temp Wash"
+    id: ${prefix}_high_temp_wash
+    icon: "mdi:thermometer-high"
+
+  - platform: template
+    name: "${appliance_name} Sanitize Rinse"
+    id: ${prefix}_sani_rinse
+    icon: "mdi:hand-wash"
+
+  - platform: template
+    name: "${appliance_name} Rinse Aid Low"
+    id: ${prefix}_rinse_aid_low
+    device_class: problem
+
+  - platform: template
+    name: "${appliance_name} Light"
+    id: ${prefix}_light_on
+    icon: "mdi:lightbulb"
+
+  - platform: template
+    name: "${appliance_name} Remote Ready"
+    id: ${prefix}_remote_ready
+    icon: "mdi:remote"
+
+  - platform: template
+    name: "${appliance_name} Delay Start"
+    id: ${prefix}_delay_start
+    icon: "mdi:timer-sand"
+
+script:
+  - id: ${prefix}_parse_json
+    mode: single
+    then:
+      - lambda: |-
+          auto &buf = id(${prefix}_json_buf);
+          size_t start = buf.find('{');
+          if (start == std::string::npos) { buf.clear(); return; }
+          if (start > 0) buf.erase(0, start);
+          ESP_LOGI("szg", "[${appliance_name}] Parsing JSON (%d bytes)", buf.size());
+          if (buf.size() < 255) {
+            id(${prefix}_raw_json).publish_state(buf);
+          } else {
+            ESP_LOGI("szg", "[${appliance_name}] Response: %.200s...", buf.c_str());
+          }
+          json::parse_json(buf, [](JsonObject root) -> bool {
+            // Determine data source: full poll ("resp") or push notification ("props")
+            JsonObject data;
+            if (root["status"].is<int>()) {
+              if (root["status"].as<int>() != 0) {
+                ESP_LOGW("szg", "[${appliance_name}] status=%d, skipping", root["status"].as<int>());
+                return false;
+              }
+              data = root["resp"].as<JsonObject>();
+            } else if (root["props"].is<JsonObject>()) {
+              data = root["props"].as<JsonObject>();
+              ESP_LOGD("szg", "[${appliance_name}] Push update (seq %d)", root["seq"].as<int>());
+            } else {
+              ESP_LOGW("szg", "[${appliance_name}] Unknown JSON format, skipping");
+              return false;
+            }
+            if (data.isNull()) return false;
+            // PIN confirmation (unlock_channel response)
+            if (data["pin"].is<const char*>()) {
+              const char *pin = data["pin"].as<const char*>();
+              if (pin && strlen(pin) <= 10) {
+                id(${prefix}_stored_pin) = pin;
+                id(${prefix}_pin_confirmed) = true;
+                id(${prefix}_pin_input).publish_state(pin);
+                ESP_LOGI("szg", "[${appliance_name}] PIN confirmed: %s", pin);
+                id(${prefix}_debug).publish_state("PIN confirmed! Channel unlocked.");
+              }
+            }
+            // Door (fallback: door_ajar)
+            if (data["door_ajar"].is<bool>())
+              id(${prefix}_door_ajar).publish_state(data["door_ajar"].as<bool>());
+            // --- Dishwasher sensors ---
+            if (data["wash_cycle_on"].is<bool>())
+              id(${prefix}_wash_cycle_on).publish_state(data["wash_cycle_on"].as<bool>());
+            if (data["heated_dry_on"].is<bool>())
+              id(${prefix}_heated_dry).publish_state(data["heated_dry_on"].as<bool>());
+            if (data["extended_dry_on"].is<bool>())
+              id(${prefix}_extended_dry).publish_state(data["extended_dry_on"].as<bool>());
+            if (data["high_temp_wash_on"].is<bool>())
+              id(${prefix}_high_temp_wash).publish_state(data["high_temp_wash_on"].as<bool>());
+            if (data["sani_rinse_on"].is<bool>())
+              id(${prefix}_sani_rinse).publish_state(data["sani_rinse_on"].as<bool>());
+            if (data["rinse_aid_low"].is<bool>())
+              id(${prefix}_rinse_aid_low).publish_state(data["rinse_aid_low"].as<bool>());
+            if (data["light_on"].is<bool>())
+              id(${prefix}_light_on).publish_state(data["light_on"].as<bool>());
+            if (data["remote_ready"].is<bool>())
+              id(${prefix}_remote_ready).publish_state(data["remote_ready"].as<bool>());
+            if (data["delay_start_timer_active"].is<bool>())
+              id(${prefix}_delay_start).publish_state(data["delay_start_timer_active"].as<bool>());
+            if (data["wash_status"].is<float>())
+              id(${prefix}_wash_status).publish_state(data["wash_status"].as<float>());
+            if (data["wash_cycle"].is<float>())
+              id(${prefix}_wash_cycle).publish_state(data["wash_cycle"].as<float>());
+            // --- Common sensors ---
+            if (data["service_required"].is<bool>())
+              id(${prefix}_svc_required).publish_state(data["service_required"].as<bool>());
+            // --- Text sensors ---
+            if (data["appliance_model"].is<const char*>())
+              id(${prefix}_model).publish_state(data["appliance_model"].as<std::string>());
+            if (data["uptime"].is<const char*>())
+              id(${prefix}_uptime).publish_state(data["uptime"].as<std::string>());
+            return true;
+          });
+          id(${prefix}_poll_ok) = true;
+          id(${prefix}_fast_retries) = 0;
+          buf.clear();

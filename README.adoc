@@ -169,8 +169,10 @@ The full handshake follows these steps:
 
 ==== Key Protocol Details
 
-BLE Security:: The appliance requires *Secure Connections with MITM protection and bonding* (`SC_MITM_BOND`).
+BLE Security:: The appliance requires *Legacy Pairing with MITM protection and bonding*.
 The ESP32 must be configured with `IO_CAP_IN` (keyboard-only) so the user can enter the 6-digit passkey displayed on the appliance.
++
+NOTE: Sub-Zero's BLE module seems to only support Legacy Pairing, *not* BLE Secure Connections (LESC). Do not set `ESP_LE_AUTH_REQ_SC_MITM_BOND` — it causes pairing to silently fall back to "Just Works" with no passkey exchange.
 After the first successful bond, the keys are stored and reconnection is automatic.
 If the bond becomes stale (e.g. appliance-side timeout overnight), the integration detects repeated auth failures (3 attempts) and automatically clears the stale bond, then re-pairs from scratch.
 
@@ -326,7 +328,7 @@ All commands are JSON objects written to D5, terminated with `\n`.
 ----
 ====
 
-Different appliance types include different properties. Refrigerator-only units won't have `frz_*` or `ice_maker_*` keys, dishwashers use `door_ajar` instead of `ref_door_ajar` and have wash-specific properties, and ranges use `cav_door_ajar` with oven-specific `cav_*` and `kitchen_timer*` properties. Sensor visibility is controlled per-appliance with `*_internal` substitution flags.
+Different appliance types include different properties. Refrigerator-only units won't have `frz_*` or `ice_maker_*` keys, dishwashers use `door_ajar` instead of `ref_door_ajar` and have wash-specific properties, and ranges use `cav_door_ajar` with oven-specific `cav_*` and `kitchen_timer*` properties. Each appliance type has its own package file that only includes the relevant sensors.
 
 [[getting-started]]
 == Getting Started
@@ -378,13 +380,26 @@ TIP: Sub-Zero appliance BLE MAC addresses seem to always start with `00:06:80` -
 
 === 5. Configure Your Appliances
 
-Edit `subzero.yaml` and set up your appliance packages:
+Choose the package file that matches your appliance type:
+
+[cols="1,1"]
+|===
+| Appliance Type | Package File
+
+| Sub-Zero refrigerator/freezer | `subzero_fridge.yaml`
+| Cove dishwasher | `subzero_dishwasher.yaml`
+| Wolf range/oven | `subzero_range.yaml`
+|===
+
+Each package only includes sensors relevant to that appliance type — no need to toggle visibility flags.
+
+==== Sub-Zero Refrigerators
 
 [source,yaml]
 ----
 packages:
   my_fridge: !include
-    file: subzero_appliance.yaml
+    file: subzero_fridge.yaml
     vars:
       prefix: "szg"                         # <1>
       appliance_name: "Kitchen Fridge"      # <2>
@@ -396,56 +411,47 @@ packages:
 <3> BLE MAC address from `secrets.yaml`
 <4> 6-digit PIN from `secrets.yaml`
 
-==== Appliances With Freezer / Ice Maker
-
-For appliances that have a freezer compartment and/or ice maker, enable those sensors:
+All fridge/freezer sensors are exposed by default. For fridge-only units (no freezer or ice maker) have the option to hide the irrelevant sensors:
 
 [source,yaml]
 ----
 packages:
-  main_fridge: !include
-    file: subzero_appliance.yaml
+  basement_fridge: !include
+    file: subzero_fridge.yaml
     vars:
-      prefix: "szg2"
-      appliance_name: "Main Fridge"
-      appliance_mac: !secret main_fridge_mac
-      appliance_pin: !secret main_fridge_pin
-      freezer_sensors_internal: "false"       # <1>
-      ice_maker_sensor_internal: "false"      # <2>
-      sabbath_sensor_internal: "false"        # <3>
+      prefix: "szg"
+      appliance_name: "Basement Fridge"
+      appliance_mac: !secret basement_fridge_mac
+      appliance_pin: !secret basement_fridge_pin
+      hide_freezer: "true"      # <1>
+      hide_ice_maker: "true"    # <2>
 ----
-<1> Exposes freezer temperature and freezer door sensors
-<2> Exposes ice maker on/off sensor
-<3> Exposes Sabbath Mode sensor (hidden by default)
+<1> Hides freezer temperature and freezer door sensors
+<2> Hides ice maker sensor
 
-By default, freezer, ice maker, Sabbath, and dishwasher sensors are hidden (`internal: true`) since not all appliances have them.
-Fridge sensors (Set Temperature) are visible by default.
+.Available options for `subzero_fridge.yaml`
+[cols="1,1,2"]
+|===
+| Option | Default | Hides
+
+| `hide_freezer` | `"false"` | Freezer Temperature, Freezer Door
+| `hide_ice_maker` | `"false"` | Ice Maker
+| `hide_sabbath` | `"false"` | Sabbath Mode
+|===
 
 ==== Cove Dishwashers
-
-For Cove dishwashers, enable dishwasher sensors and hide fridge-only sensors:
 
 [source,yaml]
 ----
 packages:
   dishwasher: !include
-    file: subzero_appliance.yaml
+    file: subzero_dishwasher.yaml
     vars:
       prefix: "szg"
       appliance_name: "Dishwasher"
       appliance_mac: !secret dishwasher_mac
       appliance_pin: !secret dishwasher_pin
-      dishwasher_sensors_internal: "false"    # <1>
-      fridge_sensors_internal: "true"         # <2>
-      freezer_sensors_internal: "true"        # <3>
-      ice_maker_sensor_internal: "true"       # <4>
-      sabbath_sensor_internal: "true"         # <5>
 ----
-<1> Exposes all dishwasher-specific sensors (wash cycle, heated dry, etc.)
-<2> Hides fridge-only sensors (Set Temperature)
-<3> Hides freezer sensors
-<4> Hides ice maker sensor
-<5> Hides Sabbath Mode sensor
 
 See `cove-minimal-dishwasher.yaml` for a complete standalone example.
 
@@ -453,80 +459,53 @@ NOTE: Cove dishwashers actively disconnect BLE ~10 seconds after connection. The
 
 ==== Wolf Ranges
 
-For Wolf ranges, enable range sensors and hide fridge-only sensors:
-
 [source,yaml]
 ----
 packages:
   range: !include
-    file: subzero_appliance.yaml
+    file: subzero_range.yaml
     vars:
       prefix: "szg"
       appliance_name: "Kitchen Range"
       appliance_mac: !secret range_mac
       appliance_pin: !secret range_pin
-      range_sensors_internal: "false"          # <1>
-      fridge_sensors_internal: "true"           # <2>
-      freezer_sensors_internal: "true"          # <3>
-      ice_maker_sensor_internal: "true"         # <4>
-      sabbath_sensor_internal: "true"           # <5>
-      dishwasher_sensors_internal: "true"       # <6>
 ----
-<1> Exposes all range/oven sensors (cavity temp, probe, cook mode, timers, etc.)
-<2> Hides fridge-only sensors (Set Temperature)
-<3> Hides freezer sensors
-<4> Hides ice maker sensor
-<5> Hides Sabbath Mode sensor
-<6> Hides dishwasher sensors
 
 See `wolf-minimal-range.yaml` for a complete standalone example.
 
 NOTE: Wolf ranges disconnect BLE connections quickly, similar to Cove dishwashers. For best results, use `fast_connect: true` and `power_save_mode: none` in your WiFi config to minimize BLE/WiFi coexistence interference during data transfer.
 
-==== Sensor Visibility Reference
-
-All sensor groups can be shown or hidden per-appliance using substitution variables:
-
-[cols="2,1,2"]
-|===
-| Substitution | Default | Controls
-
-| `fridge_sensors_internal` | `"false"` | Set Temperature
-| `freezer_sensors_internal` | `"true"` | Freezer Temperature, Freezer Door
-| `ice_maker_sensor_internal` | `"true"` | Ice Maker
-| `sabbath_sensor_internal` | `"true"` | Sabbath Mode
-| `dishwasher_sensors_internal` | `"true"` | All dishwasher sensors (wash cycle, heated dry, etc.)
-| `range_sensors_internal` | `"true"` | All range/oven sensors (cavity temp, probe, cook mode, timers, etc.)
-|===
-
-Set to `"false"` to expose sensors, `"true"` to hide them.
-
 ==== Multiple Appliances
 
-You can monitor multiple appliances from a single ESP32 — just add more package includes with unique prefixes:
+You can monitor multiple appliances from a single ESP32 — just add more package includes with unique prefixes. You can mix appliance types:
 
 [source,yaml]
 ----
 packages:
-  fridge_1: !include
-    file: subzero_appliance.yaml
+  fridge: !include
+    file: subzero_fridge.yaml
     vars:
       prefix: "szg"
-      appliance_name: "Under-Counter Fridge"
-      appliance_mac: !secret fridge_1_mac
-      appliance_pin: !secret fridge_1_pin
-  fridge_2: !include
-    file: subzero_appliance.yaml
+      appliance_name: "Main Fridge"
+      appliance_mac: !secret fridge_mac
+      appliance_pin: !secret fridge_pin
+  range: !include
+    file: subzero_range.yaml
     vars:
       prefix: "szg2"
-      appliance_name: "Main Fridge"
-      appliance_mac: !secret fridge_2_mac
-      appliance_pin: !secret fridge_2_pin
-      freezer_sensors_internal: "false"
-      ice_maker_sensor_internal: "false"
+      appliance_name: "Kitchen Range"
+      appliance_mac: !secret range_mac
+      appliance_pin: !secret range_pin
+  dishwasher: !include
+    file: subzero_dishwasher.yaml
+    vars:
+      prefix: "szg3"
+      appliance_name: "Dishwasher"
+      appliance_mac: !secret dishwasher_mac
+      appliance_pin: !secret dishwasher_pin
 ----
 
-NOTE: Two concurrent BLE appliance connections is the practical limit on a standard ESP32 - heap usage is tight
+NOTE: Be cautious about how many appliances you add here, heap usage is tight
 
 == ESPHome Commands
 
@@ -580,6 +559,59 @@ esphome logs subzero.yaml --device /dev/cu.usbserial-210
 ----
 esphome logs subzero.yaml --device 192.168.x.x
 ----
+
+== BLE Stack Tuning (sdkconfig_options)
+
+The ESP-IDF BLE stack has several compile-time settings that affect reliability and connection limits.
+These are set in your device YAML under `esp32: framework: sdkconfig_options:`.
+
+=== Required for All Configs
+
+[source,yaml]
+----
+esp32:
+  board: esp32-s3-devkitc-1
+  framework:
+    type: esp-idf
+    version: 5.5.3.1
+    sdkconfig_options:
+      CONFIG_BT_GATTC_CACHE_NVS_FLASH: "n"
+----
+
+Disables persisting the GATT client cache to flash.
+Without this, stale cached GATT data causes D5 characteristic discovery failures after re-pairing or bond changes.
+This is already set in all example configs.
+
+=== Required for 2+ Concurrent Appliances
+
+If you are connecting to *two or more* appliances from a single ESP32, add these options:
+
+[source,yaml]
+----
+esp32:
+  board: esp32-s3-devkitc-1
+  framework:
+    type: esp-idf
+    version: 5.5.3.1
+    sdkconfig_options:
+      # Disable GATT cache persistence — stale cached data causes D5 discovery
+      # failures after re-pairing. Required for all configs.
+      CONFIG_BT_GATTC_CACHE_NVS_FLASH: "n"
+      # The options below are only needed when running 2+ concurrent BLE
+      # appliance connections. They increase the max connection count (default 3)
+      # and enlarge the ACL buffer pool to avoid dropping indication fragments
+      # during rapid 40-byte JSON transfers across multiple connections.
+      CONFIG_BT_ACL_CONNECTIONS: "4"        # <1>
+      CONFIG_BT_BLE_ACL_BUF_COUNT: "20"     # <2>
+      CONFIG_BT_BLE_ACL_BUF_SIZE: "255"     # <3>
+----
+<1> Maximum simultaneous BLE connections. Default is 3. Set to the number of appliances + 1 for headroom.
+<2> Number of ACL data buffers in the BLE controller pool. Default is 10. More buffers prevent dropped indication fragments when multiple appliances send data concurrently.
+<3> Size of each ACL buffer in bytes. Default is 251. Increase to 255 to accommodate full-size BLE packets.
+
+WARNING: These options increase RAM usage in the BLE stack. An ESP32-S3 with PSRAM can handle more.
+
+If you only have *one* appliance, you do not need these — the defaults work fine.
 
 == Memory Considerations
 
@@ -637,8 +669,11 @@ If you experience crashes (typically `__cxa_allocate_exception` → `operator ne
 ----
 .
 ├── README.adoc                    # This file
-├── subzero_appliance.yaml         # Reusable package for any SZG appliance
-├── subzero.yaml                   # Main config — two fridges (edit this)
+├── subzero_base.yaml              # Shared BLE connection logic (included by type packages)
+├── subzero_fridge.yaml            # Sub-Zero refrigerator/freezer package
+├── subzero_dishwasher.yaml        # Cove dishwasher package
+├── subzero_range.yaml             # Wolf range/oven package
+├── subzero.yaml                   # Example config — two fridges (edit this)
 ├── cove-minimal-dishwasher.yaml   # Standalone dishwasher config example
 ├── wolf-minimal-range.yaml        # Standalone range config example
 └── secrets.yaml                   # Your WiFi/MAC/PIN secrets (git-ignored)
