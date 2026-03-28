@@ -5,7 +5,7 @@
 #   hide_ice_maker: "true" to hide ice maker (default: "false")
 #   hide_sabbath: "true" to hide sabbath mode (default: "false")
 #
-# Example (fridge/freezer combo — all sensors exposed):
+# Example (fridge/freezer combo - all sensors exposed):
 #   packages:
 #     main_fridge: !include
 #       file: subzero_fridge.yaml
@@ -15,7 +15,7 @@
 #         appliance_mac: !secret main_fridge_mac
 #         appliance_pin: !secret main_fridge_pin
 #
-# Example (fridge-only — no freezer or ice maker):
+# Example (fridge-only - no freezer or ice maker):
 #   packages:
 #     basement_fridge: !include
 #       file: subzero_fridge.yaml
@@ -26,11 +26,25 @@
 #         appliance_pin: !secret basement_fridge_pin
 #         hide_freezer: "true"
 #         hide_ice_maker: "true"
+#
+# Example (wine fridge - dual zone, no freezer or ice maker):
+#   packages:
+#     wine_fridge: !include
+#       file: subzero_fridge.yaml
+#       vars:
+#         prefix: "szg"
+#         appliance_name: "Wine Fridge"
+#         appliance_mac: !secret wine_fridge_mac
+#         appliance_pin: !secret wine_fridge_pin
+#         hide_freezer: "true"
+#         hide_ice_maker: "true"
+#         hide_wine: "false"
 
 substitutions:
   hide_freezer: "false"
   hide_ice_maker: "false"
   hide_sabbath: "false"
+  hide_wine: "true"
 
 packages:
   base: !include subzero_base.yaml
@@ -84,6 +98,26 @@ sensor:
     icon: "mdi:snowflake-thermometer"
     internal: ${hide_freezer}
 
+  - platform: template
+    name: "${appliance_name} Wine Zone Upper Temperature"
+    id: ${prefix}_wine_temp
+    unit_of_measurement: "°F"
+    device_class: temperature
+    state_class: measurement
+    accuracy_decimals: 0
+    icon: "mdi:glass-wine"
+    internal: ${hide_wine}
+
+  - platform: template
+    name: "${appliance_name} Wine Zone Lower Temperature"
+    id: ${prefix}_wine2_temp
+    unit_of_measurement: "°F"
+    device_class: temperature
+    state_class: measurement
+    accuracy_decimals: 0
+    icon: "mdi:glass-wine"
+    internal: ${hide_wine}
+
 binary_sensor:
   - platform: template
     name: "${appliance_name} Sabbath Mode"
@@ -103,6 +137,18 @@ binary_sensor:
     icon: "mdi:ice-cream"
     internal: ${hide_ice_maker}
 
+  - platform: template
+    name: "${appliance_name} Wine Door"
+    id: ${prefix}_wine_door_ajar
+    device_class: door
+    internal: ${hide_wine}
+
+  - platform: template
+    name: "${appliance_name} Wine Temperature Alert"
+    id: ${prefix}_wine_temp_alert
+    device_class: problem
+    internal: ${hide_wine}
+
 button:
   - platform: template
     name: "${appliance_name} Log Debug Info"
@@ -110,7 +156,7 @@ button:
     entity_category: diagnostic
     on_press:
       # Fridges respond to get_async on D4 (open channel).
-      # Full sensor data comes via D5 push notifications — interact with the
+      # Full sensor data comes via D5 push notifications - interact with the
       # appliance (open door, change temp, toggle ice maker) with debug mode on.
       - lambda: |-
           uint16_t d4 = id(${prefix}_d4_handle);
@@ -127,7 +173,7 @@ button:
             d4, cmd.size(), (uint8_t*)cmd.data(),
             ESP_GATT_WRITE_TYPE_RSP, ESP_GATT_AUTH_REQ_NONE);
           ESP_LOGI("ble", "[${appliance_name}] Debug poll via D4 (h=%d) err=%d", d4, err);
-          id(${prefix}_debug).publish_state("Debug mode ON — polling D4, interact with appliance for full data");
+          id(${prefix}_debug).publish_state("Debug mode ON - polling D4, interact with appliance for full data");
 
 script:
   - id: ${prefix}_parse_json
@@ -188,6 +234,15 @@ script:
               id(${prefix}_frz_door_ajar).publish_state(data["frz_door_ajar"].as<bool>());
             if (data["ice_maker_on"].is<bool>())
               id(${prefix}_ice_maker).publish_state(data["ice_maker_on"].as<bool>());
+            // --- Wine sensors ---
+            if (data["wine_door_ajar"].is<bool>())
+              id(${prefix}_wine_door_ajar).publish_state(data["wine_door_ajar"].as<bool>());
+            if (data["wine_set_temp"].is<float>())
+              id(${prefix}_wine_temp).publish_state(data["wine_set_temp"].as<float>());
+            if (data["wine2_set_temp"].is<float>())
+              id(${prefix}_wine2_temp).publish_state(data["wine2_set_temp"].as<float>());
+            if (data["wine_temp_alert_on"].is<bool>())
+              id(${prefix}_wine_temp_alert).publish_state(data["wine_temp_alert_on"].as<bool>());
             // --- Common sensors ---
             if (data["sabbath_on"].is<bool>())
               id(${prefix}_sabbath_on).publish_state(data["sabbath_on"].as<bool>());

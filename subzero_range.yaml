@@ -150,7 +150,7 @@ button:
             d5, cmd.size(), (uint8_t*)cmd.data(),
             ESP_GATT_WRITE_TYPE_RSP, ESP_GATT_AUTH_REQ_NONE);
           ESP_LOGI("ble", "[${appliance_name}] Debug poll via D5 (h=%d) err=%d", d5, err);
-          id(${prefix}_debug).publish_state("Debug mode ON — full state logged");
+          id(${prefix}_debug).publish_state("Debug mode ON - full state logged");
 
 script:
   - id: ${prefix}_parse_json

@@ -178,7 +178,21 @@ vars:
 | `hide_freezer` | `"false"` | Freezer Temperature, Freezer Door
 | `hide_ice_maker` | `"false"` | Ice Maker
 | `hide_sabbath` | `"false"` | Sabbath Mode
+| `hide_wine` | `"true"` | Wine Door, Wine Zone Upper Temperature, Wine Zone Lower Temperature, Wine Temperature Alert
 |===
+
+.Wine Fridge (dual-zone, no freezer or ice maker)
+[source,yaml]
+----
+vars:
+  prefix: "szg"
+  appliance_name: "Wine Fridge"
+  appliance_mac: "00:06:80:XX:XX:XX"
+  appliance_pin: "123456"
+  hide_freezer: "true"
+  hide_ice_maker: "true"
+  hide_wine: "false"
+----
 
 === 3. Compile and Flash
 
@@ -247,6 +261,10 @@ TIP: Sub-Zero appliance BLE MAC addresses typically start with `00:06:80`. You c
 | *Freezer Door* | Open/closed binary sensor _(optional)_
 | *Ice Maker* | On/off binary sensor _(optional)_
 | *Sabbath Mode* | On/off binary sensor _(optional)_
+| *Wine Door* | Open/closed binary sensor _(optional)_
+| *Wine Zone Upper Temperature* | Upper zone setpoint (°F) _(optional)_
+| *Wine Zone Lower Temperature* | Lower zone setpoint (°F) _(optional)_
+| *Wine Temperature Alert* | Temperature alert binary sensor _(optional)_
 | *Service Required* | Alerts when the appliance flags a service need
 | *Appliance Model* | Model number (e.g. `DEU2450R`, `313`)
 | *Appliance Uptime* | Time since last power cycle
@@ -316,6 +334,7 @@ TIP: Sub-Zero appliance BLE MAC addresses typically start with `00:06:80`. You c
 | Cove | DW2450 | Dishwasher | Fully working
 | Wolf | DF36450GSP | Dual-fuel range | Fully working
 | Wolf | SO3050PESP | Wall oven | Fully working
+| Sub-Zero | IW30R | Wine storage (dual-zone) | Fully working
 |===
 
 Other Sub-Zero, Wolf, and Cove appliances with BLE should work - they all use the same protocol. If you test with a different model, please open an issue or PR to update this table. See link:docs/advanced.adoc#_debug_mode[Debug Mode] for how to capture your appliance's data.

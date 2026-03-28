@@ -39,26 +39,26 @@ The characteristics serve different roles depending on the appliance type:
 
 | *D4*
 | Open (unencrypted) diagnostic channel
-| Open channel — responds to `get_async` with basic diagnostic data; also mirrors D5 push notifications with `msg_types: 8`
+| Open channel - responds to `get_async` with basic diagnostic data; also mirrors D5 push notifications with `msg_types: 8`
 
 | *D5*
-| Encrypted command/response channel — handles `unlock_channel`, `get_async`, `display_pin`, and delivers push notifications
-| Encrypted channel — delivers push notifications (`msg_types: 2`) for state changes, but *does not respond* to poll commands (`get_async`, `get`)
+| Encrypted command/response channel - handles `unlock_channel`, `get_async`, `display_pin`, and delivers push notifications
+| Encrypted channel - delivers push notifications (`msg_types: 2`) for state changes; also responds to `get_async` after a successful `unlock_channel`, but the unlock session expires after some time (possibly hours), after which command responses stop until a fresh unlock is performed
 
 | *D6*
 | _Not present_
-| Encrypted channel — accepts writes, no observed responses
+| Encrypted channel - accepts writes, no observed responses
 
 | *D7*
 | _Not present_
-| Open channel — accepts writes, no observed responses
+| Open channel - accepts writes, no observed responses
 
 | *D8*
 | _Not present_
-| Open channel — accepts writes, no observed responses
+| Open channel - accepts writes, no observed responses
 |===
 
-NOTE: The behavioral differences may be related to firmware versions. Tested fridges run API 5.4 / fw 8.5, while tested dishwashers and ranges run API 5.5 / fw 2.27. It is unknown whether newer fridge firmware versions behave like dishwashers/ranges.
+NOTE: Firmware versions are model-dependent, not simply split by appliance category. The Sub-Zero 313 fridge and Wolf SO3050PESP wall oven both run API 5.4 / fw 8.5, while the Sub-Zero IW30R wine fridge, Cove dishwashers, and Wolf ranges run API 5.5 / fw 2.27.
 
 == Connection & Authentication Flow
 
@@ -98,10 +98,10 @@ The full handshake follows these steps (shown for dishwashers/ranges where D5 is
 
 Fridges follow the same connection and bonding flow, but command/response routing differs:
 
-* *Polling:* `get_async` must be sent to *D4* (not D5). The response contains basic diagnostic data (model, door status, uptime) but not the full sensor state.
-* *Sensor data:* Full sensor data (set temperatures, ice maker status, sabbath mode, etc.) arrives via *D5 push notifications* triggered by state changes on the appliance — not via polling.
+* *D4 polling:* `get_async` on *D4* works without an unlock and returns basic diagnostic data (model, door status, uptime) but not the full sensor state.
+* *D5 polling:* `get_async` on *D5* returns the full sensor state (set temperatures, ice maker status, sabbath mode, wine zones, etc.) *after a successful `unlock_channel`*. However, the unlock session appears to expire after some time (possibly hours). After expiry, writes to D5 are still accepted (GATT write status 0) but produce no indication response - a fresh `unlock_channel` restores command functionality.
+* *Push notifications:* Full sensor data also arrives via *D5 push notifications* triggered by state changes on the appliance. Push notifications continue even after the unlock session expires (they are CCCD-based, not session-based).
 * *Push mirroring:* Fridges send each push notification on *both* D4 (`msg_types: 8`) and D5 (`msg_types: 2`) simultaneously with identical `props` content.
-* *Command responses:* `unlock_channel` and `get_async` writes to D5 are accepted (GATT write status 0) but produce no indication response.
 
 === Key Protocol Details
 
@@ -122,8 +122,8 @@ The receiver must buffer and reassemble these fragments by tracking JSON brace d
 Push Notifications:: In addition to polled responses (`{"status":0,"resp":{...}}`), appliances send real-time push notifications for state changes (e.g. door open/close, temperature change, light toggle).
 These use the format `{"seq":N,"props":{...},"msg_types":M}` where `msg_types` indicates the channel:
 +
-* `msg_types: 2` — D5 (encrypted channel)
-* `msg_types: 8` — D4 (open channel, fridges only)
+* `msg_types: 2` - D5 (encrypted channel)
+* `msg_types: 8` - D4 (open channel, fridges only)
 +
 The parser handles both poll and push formats, extracting sensor data from `"resp"` (polls) or `"props"` (pushes).
 
@@ -160,12 +160,13 @@ Fridges use different channels for different operations:
 |===
 | Command | Channel | Payload | Response
 
-| `get_async` | *D4* | `{"cmd":"get_async"}\n` | Basic diagnostic data (see <<D4 Response>>)
+| `get_async` | *D4* | `{"cmd":"get_async"}\n` | Basic diagnostic data, no unlock needed (see <<D4 Response>>)
+| `unlock_channel` | *D5* | `{"cmd":"unlock_channel","params":{"pin":"XXXXXX"}}\n` | `{"status": 0, "resp": {"pin": "XXXXXX"}}` (after successful unlock)
+| `get_async` | *D5* | `{"cmd":"get_async"}\n` | Full appliance state (requires prior `unlock_channel`; session expires after some time)
 | `display_pin` | D5 | `{"cmd":"display_pin","params":{"duration": 30}}\n` | Displays PIN on appliance display
-| `unlock_channel` | D5 | `{"cmd":"unlock_channel","params":{"pin":"XXXXXX"}}\n` | Write accepted, no indication response observed
 |===
 
-NOTE: Full sensor data (set temperatures, ice maker, sabbath mode, filter status, etc.) is not available via polling. It arrives via D5 push notifications when the appliance state changes.
+NOTE: D5 command responses require an active unlock session. After the session expires (possibly hours), `get_async` writes to D5 are accepted but produce no response. A fresh `unlock_channel` restores functionality. Push notifications on D5 continue regardless of session state.
 
 [[example-responses]]
 == Example Responses
@@ -276,7 +277,7 @@ Fridges respond to `get_async` on D4 with basic diagnostic data. This is a small
 ----
 ====
 
-NOTE: Keys like `ref_set_temp`, `frz_set_temp`, `ice_maker_on`, and `sabbath_on` are *not* included in D4 responses. These arrive only via D5 push notifications when the appliance state changes.
+NOTE: Keys like `ref_set_temp`, `frz_set_temp`, `ice_maker_on`, and `sabbath_on` are *not* included in D4 responses. These are available via D5 `get_async` (with an active unlock session) or D5 push notifications when the appliance state changes.
 
 === D5 Push Notification (Refrigerators)
 
@@ -294,7 +295,38 @@ Sensor data from fridges arrives as push notifications on D5. Each push contains
 {"msg_types": 2, "seq": 80, "props": {"ref_set_temp": 38}}
 ----
 
-The combined set of keys observed across D4 polls and D5 push notifications for fridge/freezer units includes: `ref_door_ajar`, `frz_door_ajar`, `ref_set_temp`, `frz_set_temp`, `ice_maker_on`, `max_ice_on`, `night_ice_on`, `sabbath_on`, `service_required`, `water_filter_gal_remaining`, `water_filter_pct_remaining`, `air_filter_pct_remaining`, `air_filter_on`, `appliance_model`, `uptime`, and others. Refrigerator-only units (no freezer) will not have `frz_*` or `ice_maker_*` keys.
+The combined set of keys observed across D4 polls and D5 push notifications for fridge/freezer units includes: `ref_door_ajar`, `frz_door_ajar`, `ref_set_temp`, `frz_set_temp`, `ice_maker_on`, `max_ice_on`, `night_ice_on`, `sabbath_on`, `service_required`, `water_filter_gal_remaining`, `water_filter_pct_remaining`, `air_filter_pct_remaining`, `air_filter_on`, `appliance_model`, `uptime`, and others. Refrigerator-only units (no freezer) will not have `frz_*` or `ice_maker_*` keys. Wine storage units include `wine_door_ajar`, `wine_set_temp`, `wine2_set_temp`, and `wine_temp_alert_on`.
+
+=== D5 `get_async` Response (Wine Fridge)
+
+Wine fridges respond to `get_async` on D5 after a successful `unlock_channel` with their full state, similar to dishwashers and ranges.
+
+.Sub-Zero wine storage (IW30R)
+[%collapsible]
+====
+[source,json]
+----
+{
+  "status": 0,
+  "resp": {
+    "accent_light_level": 0,
+    "ref_door_ajar": false,
+    "ref_set_temp": 38,
+    "sabbath_on": false,
+    "service_required": false,
+    "unit_on": true,
+    "wine_door_ajar": true,
+    "wine_set_temp": 55,
+    "wine_temp_alert_on": false,
+    "wine2_set_temp": 45,
+    "appliance_model": "IW30R",
+    "appliance_serial": "XXXXXXXX",
+    "uptime": "02:41:34",
+    "notifs": []
+  }
+}
+----
+====
 
 === GATT Handle Map (Refrigerator)
 

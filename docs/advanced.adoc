@@ -149,11 +149,11 @@ Dishwashers and ranges respond to polls on the D5 (encrypted) channel with their
 
 Fridges behave differently from dishwashers and ranges. They have 5 BLE characteristics (D4-D8) instead of 2 (D4-D5), and the command routing is different:
 
-* *D4* (open channel) - responds to `get_async` with basic diagnostic data (model, doors, uptime)
-* *D5* (encrypted channel) - sends *push notifications* for state changes but does not respond to poll commands
+* *D4* (open channel) - responds to `get_async` with basic diagnostic data (model, doors, uptime), no unlock needed
+* *D5* (encrypted channel) - responds to `get_async` with the full appliance state after a fresh `unlock_channel`, but the unlock session expires after some time (possibly hours); push notifications continue regardless of session state
 * *D6-D8* - accept writes but do not respond
 
-Because of this, capturing the full set of keys from a fridge requires two steps:
+The *Log Debug Info* button polls D4, which always works without an unlock session. To capture the full set of keys from a fridge:
 
 . Press *Log Debug Info* - this polls D4 and logs the basic diagnostic keys.
 . *Interact with the appliance* - open/close doors, change the set temperature on the panel, toggle the ice maker, etc. Each change triggers a push notification on D5 with the relevant keys, which debug mode captures and logs.

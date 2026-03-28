@@ -1,8 +1,8 @@
-# Sub-Zero / Wolf / Cove — Shared BLE Package
+# Sub-Zero / Wolf / Cove - Shared BLE Package
 # Do not include this file directly. Use one of the appliance-type packages:
-#   subzero_fridge.yaml      — Sub-Zero refrigerators and freezers
-#   subzero_dishwasher.yaml  — Cove dishwashers
-#   subzero_range.yaml       — Wolf ranges and ovens
+#   subzero_fridge.yaml      - Sub-Zero refrigerators and freezers
+#   subzero_dishwasher.yaml  - Cove dishwashers
+#   subzero_range.yaml       - Wolf ranges and ovens
 
 substitutions:
   poll_offset: "0s"
@@ -78,7 +78,7 @@ ble_client:
     on_connect:
       then:
         - lambda: |-
-            // Request large MTU — fridge firmware sends 40-byte chunks at default MTU,
+            // Request large MTU - fridge firmware sends 40-byte chunks at default MTU,
             // but may use larger chunks if we negotiate higher (dishwasher/range use 244).
             auto *cl = id(${prefix}_appliance);
             esp_ble_gattc_send_mtu_req(cl->get_gattc_if(), cl->get_conn_id());
@@ -120,7 +120,7 @@ ble_client:
             if (id(${prefix}_d5_handle) > 0 && id(${prefix}_phase) >= 1) {
               id(${prefix}_fast_retries) += 1;
               if (id(${prefix}_fast_retries) >= 3) {
-                // Stale bond — clear while disconnected so next connect starts fresh
+                // Stale bond - clear while disconnected so next connect starts fresh
                 ESP_LOGW("ble", "[${appliance_name}] Stale bond (%d failures), clearing for re-pair",
                   id(${prefix}_fast_retries));
                 auto *client = id(${prefix}_appliance);
@@ -377,7 +377,7 @@ interval:
       - script.execute: ${prefix}_periodic_poll
 
 script:
-  # === Periodic poll — staggered to avoid concurrent BLE transfers ===
+  # === Periodic poll - staggered to avoid concurrent BLE transfers ===
   - id: ${prefix}_periodic_poll
     mode: single
     then:
@@ -462,7 +462,7 @@ script:
               }
             }
           }
-          // Always request encryption — some appliances (dishwashers) expose D5
+          // Always request encryption - some appliances (dishwashers) expose D5
           // before bonding but still require encryption for writes (status=5).
           ESP_LOGI("ble", "[${appliance_name}] D5 %s. Requesting encryption...",
             id(${prefix}_d5_handle) > 0 ? "found immediately" : "not yet visible");
@@ -478,7 +478,7 @@ script:
       - lambda: |-
           if (id(${prefix}_d5_handle) > 0) {
             // D5 was found before encryption (e.g. dishwashers).
-            // Encryption should be established by now — proceed to subscribe.
+            // Encryption should be established by now - proceed to subscribe.
             ESP_LOGI("ble", "[${appliance_name}] Post-encryption: D5 already known, subscribing...");
             id(${prefix}_subscribe).execute();
             return;
@@ -590,7 +590,7 @@ script:
     mode: restart
     then:
       # Subscribe D5, then auto-unlock if PIN is saved
-      # All commands MUST end with \n — the appliance's serial parser requires it!
+      # All commands MUST end with \n - the appliance's serial parser requires it!
       - lambda: |-
           auto *client = id(${prefix}_appliance);
           uint16_t d5 = id(${prefix}_d5_handle);
