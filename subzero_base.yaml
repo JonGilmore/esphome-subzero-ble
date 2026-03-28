@@ -6,6 +6,7 @@
 
 substitutions:
   poll_offset: "0s"
+  poll_via_d4: "false"
 
 json:
 
@@ -20,6 +21,15 @@ globals:
     type: int
     initial_value: "0"
   - id: ${prefix}_d5_handle
+    type: int
+    initial_value: "0"
+  - id: ${prefix}_d6_handle
+    type: int
+    initial_value: "0"
+  - id: ${prefix}_d7_handle
+    type: int
+    initial_value: "0"
+  - id: ${prefix}_d8_handle
     type: int
     initial_value: "0"
   - id: ${prefix}_json_buf
@@ -42,6 +52,9 @@ globals:
   - id: ${prefix}_poll_miss
     type: int
     initial_value: "0"
+  - id: ${prefix}_debug_mode
+    type: bool
+    initial_value: "false"
 
 ble_client:
   - mac_address: ${appliance_mac}
@@ -114,6 +127,9 @@ ble_client:
                 esp_ble_remove_bond_device(*(esp_bd_addr_t*)client->get_remote_bda());
                 id(${prefix}_d5_handle) = 0;
                 id(${prefix}_d4_handle) = 0;
+                id(${prefix}_d6_handle) = 0;
+                id(${prefix}_d7_handle) = 0;
+                id(${prefix}_d8_handle) = 0;
                 id(${prefix}_phase) = 0;
                 id(${prefix}_fast_retries) = 0;
                 id(${prefix}_debug).publish_state("Bond cleared, re-pairing on next connect...");
@@ -125,6 +141,9 @@ ble_client:
               id(${prefix}_phase) = 0;
               id(${prefix}_d4_handle) = 0;
               id(${prefix}_d5_handle) = 0;
+              id(${prefix}_d6_handle) = 0;
+              id(${prefix}_d7_handle) = 0;
+              id(${prefix}_d8_handle) = 0;
               ESP_LOGI("ble", "[${appliance_name}] Disconnected");
             }
             id(${prefix}_debug).publish_state("Disconnected");
@@ -209,6 +228,18 @@ text:
               ESP_LOGI("szg", "[${appliance_name}] PIN updated: %s", x.c_str());
             }
 
+switch:
+  - platform: template
+    name: "${appliance_name} Debug Mode"
+    id: ${prefix}_debug_switch
+    icon: "mdi:bug"
+    entity_category: diagnostic
+    optimistic: true
+    turn_on_action:
+      - lambda: 'id(${prefix}_debug_mode) = true;'
+    turn_off_action:
+      - lambda: 'id(${prefix}_debug_mode) = false;'
+
 button:
   - platform: template
     name: "Connect to ${appliance_name}"
@@ -219,6 +250,9 @@ button:
           id(${prefix}_phase) = 0;
           id(${prefix}_d4_handle) = 0;
           id(${prefix}_d5_handle) = 0;
+          id(${prefix}_d6_handle) = 0;
+          id(${prefix}_d7_handle) = 0;
+          id(${prefix}_d8_handle) = 0;
           id(${prefix}_json_buf).clear();
           id(${prefix}_post_bond).stop();
           id(${prefix}_subscribe).stop();
@@ -314,6 +348,9 @@ button:
           id(${prefix}_pin_confirmed) = false;
           id(${prefix}_d5_handle) = 0;
           id(${prefix}_d4_handle) = 0;
+          id(${prefix}_d6_handle) = 0;
+          id(${prefix}_d7_handle) = 0;
+          id(${prefix}_d8_handle) = 0;
           id(${prefix}_phase) = 0;
           id(${prefix}_fast_retries) = 0;
           id(${prefix}_poll_miss) = 0;
@@ -348,8 +385,9 @@ script:
       - lambda: |-
           if (!id(${prefix}_pin_confirmed)) return;
           if (id(${prefix}_subscribe).is_running() || id(${prefix}_post_bond).is_running() || id(${prefix}_fast_reconnect).is_running()) return;
-          uint16_t d5 = id(${prefix}_d5_handle);
-          if (d5 == 0) return;
+          // Fridges respond on D4 (open channel), dishwashers/ranges on D5
+          uint16_t handle = ${poll_via_d4} ? id(${prefix}_d4_handle) : id(${prefix}_d5_handle);
+          if (handle == 0) return;
           auto *client = id(${prefix}_appliance);
           if (!client->connected()) return;
           // Zombie detection: no notifications since last poll interval
@@ -373,7 +411,7 @@ script:
           std::string cmd = "{\"cmd\":\"get_async\"}\n";
           esp_err_t err = esp_ble_gattc_write_char(
             client->get_gattc_if(), client->get_conn_id(),
-            d5, cmd.size(), (uint8_t*)cmd.data(),
+            handle, cmd.size(), (uint8_t*)cmd.data(),
             ESP_GATT_WRITE_TYPE_RSP, ESP_GATT_AUTH_REQ_NONE);
           if (err != ESP_OK) {
             ESP_LOGW("szg", "[${appliance_name}] Write failed (err=%d), forcing reconnect", err);
@@ -418,6 +456,9 @@ script:
                 uint8_t suffix = e.uuid.uuid.uuid128[0];
                 if (suffix == 0xD4) id(${prefix}_d4_handle) = e.attribute_handle;
                 else if (suffix == 0xD5) id(${prefix}_d5_handle) = e.attribute_handle;
+                else if (suffix == 0xD6) id(${prefix}_d6_handle) = e.attribute_handle;
+                else if (suffix == 0xD7) id(${prefix}_d7_handle) = e.attribute_handle;
+                else if (suffix == 0xD8) id(${prefix}_d8_handle) = e.attribute_handle;
               }
             }
           }
@@ -465,6 +506,9 @@ script:
               uint8_t s = db[i].uuid.uuid.uuid128[0];
               if (s == 0xD4) id(${prefix}_d4_handle) = db[i].attribute_handle;
               else if (s == 0xD5) id(${prefix}_d5_handle) = db[i].attribute_handle;
+              else if (s == 0xD6) id(${prefix}_d6_handle) = db[i].attribute_handle;
+              else if (s == 0xD7) id(${prefix}_d7_handle) = db[i].attribute_handle;
+              else if (s == 0xD8) id(${prefix}_d8_handle) = db[i].attribute_handle;
             }
           }
           if (id(${prefix}_d5_handle) > 0) { id(${prefix}_subscribe).execute(); return; }
@@ -482,6 +526,9 @@ script:
               uint8_t s = db[i].uuid.uuid.uuid128[0];
               if (s == 0xD4) id(${prefix}_d4_handle) = db[i].attribute_handle;
               else if (s == 0xD5) id(${prefix}_d5_handle) = db[i].attribute_handle;
+              else if (s == 0xD6) id(${prefix}_d6_handle) = db[i].attribute_handle;
+              else if (s == 0xD7) id(${prefix}_d7_handle) = db[i].attribute_handle;
+              else if (s == 0xD8) id(${prefix}_d8_handle) = db[i].attribute_handle;
             }
           }
           if (id(${prefix}_d5_handle) > 0) { id(${prefix}_subscribe).execute(); return; }
@@ -499,6 +546,9 @@ script:
               uint8_t s = db[i].uuid.uuid.uuid128[0];
               if (s == 0xD4) id(${prefix}_d4_handle) = db[i].attribute_handle;
               else if (s == 0xD5) id(${prefix}_d5_handle) = db[i].attribute_handle;
+              else if (s == 0xD6) id(${prefix}_d6_handle) = db[i].attribute_handle;
+              else if (s == 0xD7) id(${prefix}_d7_handle) = db[i].attribute_handle;
+              else if (s == 0xD8) id(${prefix}_d8_handle) = db[i].attribute_handle;
             }
           }
           if (id(${prefix}_d5_handle) > 0) { id(${prefix}_subscribe).execute(); return; }

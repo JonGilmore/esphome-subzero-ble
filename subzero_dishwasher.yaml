@@ -73,6 +73,30 @@ binary_sensor:
     id: ${prefix}_delay_start
     icon: "mdi:timer-sand"
 
+button:
+  - platform: template
+    name: "${appliance_name} Log Debug Info"
+    icon: "mdi:bug-play"
+    entity_category: diagnostic
+    on_press:
+      # Dishwashers respond to get_async on D5 with the full state.
+      - lambda: |-
+          uint16_t d5 = id(${prefix}_d5_handle);
+          if (d5 == 0) {
+            id(${prefix}_debug).publish_state("ERROR: Not connected");
+            return;
+          }
+          id(${prefix}_debug_mode) = true;
+          id(${prefix}_debug_switch).publish_state(true);
+          auto *client = id(${prefix}_appliance);
+          std::string cmd = "{\"cmd\":\"get_async\"}\n";
+          esp_err_t err = esp_ble_gattc_write_char(
+            client->get_gattc_if(), client->get_conn_id(),
+            d5, cmd.size(), (uint8_t*)cmd.data(),
+            ESP_GATT_WRITE_TYPE_RSP, ESP_GATT_AUTH_REQ_NONE);
+          ESP_LOGI("ble", "[${appliance_name}] Debug poll via D5 (h=%d) err=%d", d5, err);
+          id(${prefix}_debug).publish_state("Debug mode ON — full state logged");
+
 script:
   - id: ${prefix}_parse_json
     mode: single
@@ -82,8 +106,9 @@ script:
           size_t start = buf.find('{');
           if (start == std::string::npos) { buf.clear(); return; }
           if (start > 0) buf.erase(0, start);
+          bool dbg = id(${prefix}_debug_mode);
           ESP_LOGI("szg", "[${appliance_name}] Parsing JSON (%d bytes)", buf.size());
-          if (buf.size() < 255) {
+          if (dbg || buf.size() < 255) {
             id(${prefix}_raw_json).publish_state(buf);
           } else {
             ESP_LOGI("szg", "[${appliance_name}] Response: %.200s...", buf.c_str());
@@ -150,6 +175,12 @@ script:
               id(${prefix}_model).publish_state(data["appliance_model"].as<std::string>());
             if (data["uptime"].is<const char*>())
               id(${prefix}_uptime).publish_state(data["uptime"].as<std::string>());
+            // Debug: log all keys in the response
+            if (id(${prefix}_debug_mode)) {
+              for (JsonPair kv : data) {
+                ESP_LOGI("szg-debug", "[${appliance_name}] key=%s", kv.key().c_str());
+              }
+            }
             return true;
           });
           id(${prefix}_poll_ok) = true;

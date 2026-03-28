@@ -13,7 +13,7 @@ toc::[]
 == Overview
 
 Sub-Zero Group (SZG) appliances manufactured since ~2020 include a BLE radio that the official _Sub-Zero Group Owner_ mobile app (Android/iOS) uses for configuration and monitoring.
-This project reverse-engineers that BLE protocol and reimplements the connection, pairing, and polling logic entirely in ESPHome YAML + inline C++ lambdas — no custom components or external libraries required.
+This project reverse-engineers that BLE protocol and reimplements the connection, pairing, and polling logic entirely in ESPHome YAML + inline C++ lambdas - no custom components or external libraries required.
 
 === What You Get
 
@@ -100,15 +100,14 @@ This project reverse-engineers that BLE protocol and reimplements the connection
 | Sub-Zero | 313 | French-door fridge/freezer with ice maker | ✅ Fully working
 | Cove | DW2450 | Dishwasher | ✅ Fully working
 | Wolf | DF36450GSP | Dual-fuel range | ✅ Fully working
+| Wolf | SO3050PESP | Wall oven | ✅ Fully working
 |===
 
-Other Sub-Zero, Wolf, and Cove appliances with BLE should work — they all use the same protocol.
-If you test with a different model, please open an issue or PR to update this table.
+Other Sub-Zero, Wolf, and Cove appliances with BLE should work, they all seem to use the same protocol. If you test with a different model, please open an issue or PR to update this table. See <<Debug Mode>>
 
 == Requirements
 
-* An *ESP32* board.
-  The https://shop.everythingsmart.io/products/everything-presence-one-kit[Everything Presence One] works well as a dedicated appliance hub.
+* An *ESP32* board. The https://shop.everythingsmart.io/products/everything-presence-one-kit[Everything Presence One] and https://www.amazon.com/dp/B0DKJ5VXC9[Waveshare POE ESP32] are what I have experience with and seem to work well.
 * *ESPHome 2024.6+* (tested on 2026.3.0)
 * *Python 3.10+* and a working ESPHome installation (see <<getting-started>>)
 * The *6-digit PIN* from your appliance display (one-time)
@@ -172,7 +171,7 @@ The full handshake follows these steps:
 BLE Security:: The appliance requires *Legacy Pairing with MITM protection and bonding*.
 The ESP32 must be configured with `IO_CAP_IN` (keyboard-only) so the user can enter the 6-digit passkey displayed on the appliance.
 +
-NOTE: Sub-Zero's BLE module seems to only support Legacy Pairing, *not* BLE Secure Connections (LESC). Do not set `ESP_LE_AUTH_REQ_SC_MITM_BOND` — it causes pairing to silently fall back to "Just Works" with no passkey exchange.
+NOTE: Sub-Zero's BLE module seems to only support Legacy Pairing, *not* BLE Secure Connections (LESC). Do not set `ESP_LE_AUTH_REQ_SC_MITM_BOND` - it causes pairing to silently fall back to "Just Works" with no passkey exchange.
 After the first successful bond, the keys are stored and reconnection is automatic.
 If the bond becomes stale (e.g. appliance-side timeout overnight), the integration detects repeated auth failures (3 attempts) and automatically clears the stale bond, then re-pairs from scratch.
 
@@ -180,11 +179,11 @@ Command Framing:: Every command written to D5 *must* end with a newline characte
 The appliance's serial parser silently discards any command without it.
 
 Response Fragmentation:: The appliance sends JSON responses as BLE indications, fragmented into chunks.
-Fridges typically fragment at ~40 bytes per indication (30–45 fragments for a 1200–1800 byte response), while dishwashers and ranges use larger ~244 byte fragments (7–8 fragments for a ~1600–1736 byte response).
+Fridges typically fragment at ~40 bytes per indication (30-45 fragments for a 1200-1800 byte response), while dishwashers and ranges use larger ~244 byte fragments (7-8 fragments for a ~1600-1736 byte response).
 The receiver must buffer and reassemble these fragments by tracking JSON brace depth (`{` / `}`) to detect message completion.
 
 Push Notifications:: In addition to polled responses (`{"status":0,"resp":{...}}`), appliances send real-time push notifications for state changes (e.g. door open/close, light toggle).
-These use the format `{"seq":N,"props":{...},"msg_types":2}` — the parser handles both formats, extracting sensor data from `"resp"` (polls) or `"props"` (pushes).
+These use the format `{"seq":N,"props":{...},"msg_types":2}` - the parser handles both formats, extracting sensor data from `"resp"` (polls) or `"props"` (pushes).
 
 D5 Discovery Timing:: On refrigerators, the encrypted D5 characteristic is *not visible* in the GATT database until after bonding completes.
 The implementation must refresh the GATT cache (`esp_ble_gattc_cache_refresh`) and re-run service discovery after encryption is established.
@@ -209,7 +208,7 @@ All commands are JSON objects written to D5, terminated with `\n`.
 
 === Example `get_async` Response
 
-.Under-counter refrigerator (DEU2450R) — ~1259 bytes
+.Under-counter refrigerator (DEU2450R) - ~1259 bytes
 [%collapsible]
 ====
 [source,json]
@@ -230,7 +229,7 @@ All commands are JSON objects written to D5, terminated with `\n`.
 ----
 ====
 
-.French-door fridge/freezer (313) — ~1713 bytes
+.French-door fridge/freezer (313) - ~1713 bytes
 [%collapsible]
 ====
 [source,json]
@@ -260,7 +259,7 @@ All commands are JSON objects written to D5, terminated with `\n`.
 ----
 ====
 
-.Cove dishwasher (DW2450) — ~1736 bytes
+.Cove dishwasher (DW2450) - ~1736 bytes
 [%collapsible]
 ====
 [source,json]
@@ -290,7 +289,7 @@ All commands are JSON objects written to D5, terminated with `\n`.
 ----
 ====
 
-.Wolf dual-fuel range (DF36450GSP) — ~1629 bytes
+.Wolf dual-fuel range (DF36450GSP) - ~1629 bytes
 [%collapsible]
 ====
 [source,json]
@@ -355,7 +354,7 @@ cd esphome-subzero-ble
 You need the 6-digit PIN from your appliance. There are two ways:
 
 . **From the official app:** Open the _Sub-Zero Group Owner_ app, connect to your appliance, and note the PIN shown during pairing. *You will have to delete the BT pairing from your phone after this to allow the ESP32 to connect.*
-. **From the appliance display:** After ESP32 connects and bonds, press the "Start Pairing" button in Home Assistant — the PIN will appear on the appliance's physical display for 30 seconds.
+. **From the appliance display:** After ESP32 connects and bonds, press the "Start Pairing" button in Home Assistant, and the PIN will appear on the appliance's physical display for 30 seconds.
 
 === 4. Create `secrets.yaml`
 
@@ -376,7 +375,7 @@ main_fridge_mac: "00:06:80:XX:XX:XX"
 main_fridge_pin: "654321"
 ----
 
-TIP: Sub-Zero appliance BLE MAC addresses seem to always start with `00:06:80` - you can confirm with a Bluetooth scanner app on your phone if you're not sure.
+TIP: Sub-Zero appliance BLE MAC addresses seem to always start with `00:06:80`. You can confirm with a Bluetooth scanner app on your phone if you're not sure (if you have Android) or use a spare esp32 to scan for the appliance's BLE advertisement.
 
 === 5. Configure Your Appliances
 
@@ -391,7 +390,7 @@ Choose the package file that matches your appliance type:
 | Wolf range/oven | `subzero_range.yaml`
 |===
 
-Each package only includes sensors relevant to that appliance type — no need to toggle visibility flags.
+Each package only includes sensors relevant to that appliance type, no need to toggle visibility flags.
 
 ==== Sub-Zero Refrigerators
 
@@ -477,7 +476,7 @@ NOTE: Wolf ranges disconnect BLE connections quickly, similar to Cove dishwasher
 
 ==== Multiple Appliances
 
-You can monitor multiple appliances from a single ESP32 — just add more package includes with unique prefixes. You can mix appliance types:
+You can monitor multiple appliances from a single ESP32, just add more package includes with unique prefixes. You can mix appliance types:
 
 [source,yaml]
 ----
@@ -594,7 +593,7 @@ esp32:
     type: esp-idf
     version: 5.5.3.1
     sdkconfig_options:
-      # Disable GATT cache persistence — stale cached data causes D5 discovery
+      # Disable GATT cache persistence - stale cached data causes D5 discovery
       # failures after re-pairing. Required for all configs.
       CONFIG_BT_GATTC_CACHE_NVS_FLASH: "n"
       # The options below are only needed when running 2+ concurrent BLE
@@ -611,7 +610,7 @@ esp32:
 
 WARNING: These options increase RAM usage in the BLE stack. An ESP32-S3 with PSRAM can handle more.
 
-If you only have *one* appliance, you do not need these — the defaults work fine.
+If you only have *one* appliance, you do not need these - the defaults work fine.
 
 == Memory Considerations
 
@@ -636,7 +635,7 @@ If you experience crashes (typically `__cxa_allocate_exception` → `operator ne
 | Symptom | Fix
 
 | *D5 characteristic not found*
-| Normal on first connect. The code automatically handles encryption → GATT refresh → rediscovery. Wait 15–20 seconds.
+| Normal on first connect. The code automatically handles encryption → GATT refresh → rediscovery. Wait 15-20 seconds.
 
 | *"No sensor characteristic found" warning*
 | Expected. ESPHome's BLE sensor component looks for D5 before encryption exposes it. The code injects the correct handle later.
@@ -654,7 +653,7 @@ If you experience crashes (typically `__cxa_allocate_exception` → `operator ne
 | This is the reconnect timeout working as designed. The ESP32 will automatically reconnect.
 
 | *Auth failures overnight (auth fail reason=102)*
-| The BLE bond went stale. The integration automatically detects this after 3 consecutive fast-reconnect failures, clears the old bond, and re-pairs. No action needed — recovery is automatic.
+| The BLE bond went stale. The integration automatically detects this after 3 consecutive fast-reconnect failures, clears the old bond, and re-pairs. No action needed, recovery is automatic.
 
 | *Dishwasher disconnects after ~10 seconds*
 | This is normal for Cove dishwashers. The integration uses a fast reconnect path with cached GATT handles, and optimized handshake delays total ~3.25 seconds to complete the full poll within the connection window.
@@ -662,6 +661,72 @@ If you experience crashes (typically `__cxa_allocate_exception` → `operator ne
 | *Range disconnects before data arrives*
 | Wolf ranges have tight BLE connection windows. Add `fast_connect: true` and `power_save_mode: none` to your WiFi config to reduce BLE/WiFi coexistence interference. See the <<Wolf Ranges>> section.
 |===
+
+== Debug Mode
+
+Each appliance exposes a *Debug Mode* switch and a *Log Debug Info* button in Home Assistant (both under diagnostic entities).
+When debug mode is enabled, the full raw JSON response is published to the *Raw JSON* text sensor on every poll or push notification - even for large responses that are normally truncated.
+All response keys are also logged at `INFO` level with the `szg-debug` tag, making it easy to identify what data an untested appliance sends.
+
+The *Log Debug Info* button is a one-press shortcut: it turns on debug mode and immediately polls the appliance using the correct channel for that appliance type.
+
+=== Dishwashers & Ranges
+
+Dishwashers and ranges respond to polls on the D5 (encrypted) channel with their full state - all sensor keys in a single response.
+
+. Press *Log Debug Info* (or turn on *Debug Mode* and press *Poll*).
+. The full JSON appears in the *Raw JSON* text sensor and all keys are logged.
+. Turn *Debug Mode* off when done.
+
+=== Refrigerators / Freezers
+
+Fridges behave differently from dishwashers and ranges. They have 5 BLE characteristics (D4-D8) instead of 2 (D4-D5), and the command routing is different:
+
+* *D4* (open channel) - responds to `get_async` with basic diagnostic data (model, doors, uptime)
+* *D5* (encrypted channel) - sends *push notifications* for state changes but does not respond to poll commands
+* *D6-D8* - accept writes but do not respond
+
+Because of this, capturing the full set of keys from a fridge requires two steps:
+
+. Press *Log Debug Info* - this polls D4 and logs the basic diagnostic keys.
+. *Interact with the appliance* - open/close doors, change the set temperature on the panel, toggle the ice maker, etc. Each change triggers a push notification on D5 with the relevant keys, which debug mode captures and logs.
+
+Between the D4 poll and D5 push notifications, you can map out every key your fridge exposes.
+
+=== Reading the Logs
+
+With debug mode on, the ESPHome log output includes every key in the response:
+
+.Range/Dishwasher (single poll, all keys)
+[source]
+----
+[I][szg:087]: [Kitchen Range] Parsing JSON (1700 bytes)
+[I][szg-debug:140]: [Kitchen Range] key=cav_door_ajar
+[I][szg-debug:140]: [Kitchen Range] key=cav_unit_on
+[I][szg-debug:140]: [Kitchen Range] key=cav_temp
+[I][szg-debug:140]: [Kitchen Range] key=cav_set_temp
+...
+----
+
+.Fridge (D4 poll - basic info)
+[source]
+----
+[I][szg:087]: [Main Fridge] Parsing JSON (403 bytes)
+[I][szg-debug:140]: [Main Fridge] key=diagnostic_status
+[I][szg-debug:140]: [Main Fridge] key=appliance_model
+[I][szg-debug:140]: [Main Fridge] key=ref_door_ajar
+[I][szg-debug:140]: [Main Fridge] key=frz_door_ajar
+[I][szg-debug:140]: [Main Fridge] key=uptime
+----
+
+.Fridge (D5 push - triggered by opening door)
+[source]
+----
+[I][szg:087]: [Main Fridge] Parsing JSON (94 bytes)
+[I][szg-debug:140]: [Main Fridge] key=ref_door_ajar
+----
+
+If you have an appliance type that isn't fully supported, capture the full JSON and open an issue with the output. This helps expand support for new appliance variants.
 
 == Project Structure
 
@@ -673,7 +738,7 @@ If you experience crashes (typically `__cxa_allocate_exception` → `operator ne
 ├── subzero_fridge.yaml            # Sub-Zero refrigerator/freezer package
 ├── subzero_dishwasher.yaml        # Cove dishwasher package
 ├── subzero_range.yaml             # Wolf range/oven package
-├── subzero.yaml                   # Example config — two fridges (edit this)
+├── subzero.yaml                   # Example config - two fridges (edit this)
 ├── cove-minimal-dishwasher.yaml   # Standalone dishwasher config example
 ├── wolf-minimal-range.yaml        # Standalone range config example
 └── secrets.yaml                   # Your WiFi/MAC/PIN secrets (git-ignored)

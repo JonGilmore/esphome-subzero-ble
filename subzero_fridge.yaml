@@ -36,6 +36,35 @@ packages:
   base: !include subzero_base.yaml
 
 sensor:
+  # Fridges respond to get_async on D4 (open channel), not D5.
+  # This sensor captures D4 indications into the same JSON buffer.
+  - platform: ble_client
+    type: characteristic
+    ble_client_id: ${prefix}_appliance
+    name: "${appliance_name} D4 Notify"
+    id: ${prefix}_d4_notify
+    internal: true
+    service_uuid: 'E20A39F4-73F5-4BC4-A12F-17D1AD07A961'
+    characteristic_uuid: '08590F7E-DB05-467E-8757-72F6FAEB13D4'
+    notify: true
+    update_interval: never
+    lambda: |-
+      auto &buf = id(${prefix}_json_buf);
+      if (buf.capacity() < 2048) buf.reserve(2048);
+      if (buf.size() > 4096) { buf.clear(); return {}; }
+      buf.append((char*)x.data(), x.size());
+      id(${prefix}_poll_ok) = true;
+      int depth = 0;
+      bool complete = false;
+      for (char c : buf) {
+        if (c == '{') depth++;
+        else if (c == '}') { depth--; if (depth == 0) { complete = true; break; } }
+      }
+      if (complete) {
+        id(${prefix}_parse_json).execute();
+      }
+      return {};
+
   - platform: template
     name: "${appliance_name} Set Temperature"
     id: ${prefix}_set_temp
@@ -74,6 +103,32 @@ binary_sensor:
     icon: "mdi:ice-cream"
     internal: ${hide_ice_maker}
 
+button:
+  - platform: template
+    name: "${appliance_name} Log Debug Info"
+    icon: "mdi:bug-play"
+    entity_category: diagnostic
+    on_press:
+      # Fridges respond to get_async on D4 (open channel).
+      # Full sensor data comes via D5 push notifications — interact with the
+      # appliance (open door, change temp, toggle ice maker) with debug mode on.
+      - lambda: |-
+          uint16_t d4 = id(${prefix}_d4_handle);
+          if (d4 == 0) {
+            id(${prefix}_debug).publish_state("ERROR: Not connected");
+            return;
+          }
+          id(${prefix}_debug_mode) = true;
+          id(${prefix}_debug_switch).publish_state(true);
+          auto *client = id(${prefix}_appliance);
+          std::string cmd = "{\"cmd\":\"get_async\"}\n";
+          esp_err_t err = esp_ble_gattc_write_char(
+            client->get_gattc_if(), client->get_conn_id(),
+            d4, cmd.size(), (uint8_t*)cmd.data(),
+            ESP_GATT_WRITE_TYPE_RSP, ESP_GATT_AUTH_REQ_NONE);
+          ESP_LOGI("ble", "[${appliance_name}] Debug poll via D4 (h=%d) err=%d", d4, err);
+          id(${prefix}_debug).publish_state("Debug mode ON — polling D4, interact with appliance for full data");
+
 script:
   - id: ${prefix}_parse_json
     mode: single
@@ -83,8 +138,9 @@ script:
           size_t start = buf.find('{');
           if (start == std::string::npos) { buf.clear(); return; }
           if (start > 0) buf.erase(0, start);
+          bool dbg = id(${prefix}_debug_mode);
           ESP_LOGI("szg", "[${appliance_name}] Parsing JSON (%d bytes)", buf.size());
-          if (buf.size() < 255) {
+          if (dbg || buf.size() < 255) {
             id(${prefix}_raw_json).publish_state(buf);
           } else {
             ESP_LOGI("szg", "[${appliance_name}] Response: %.200s...", buf.c_str());
@@ -142,6 +198,12 @@ script:
               id(${prefix}_model).publish_state(data["appliance_model"].as<std::string>());
             if (data["uptime"].is<const char*>())
               id(${prefix}_uptime).publish_state(data["uptime"].as<std::string>());
+            // Debug: log all keys in the response
+            if (id(${prefix}_debug_mode)) {
+              for (JsonPair kv : data) {
+                ESP_LOGI("szg-debug", "[${appliance_name}] key=%s", kv.key().c_str());
+              }
+            }
             return true;
           });
           id(${prefix}_poll_ok) = true;
