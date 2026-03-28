@@ -7,6 +7,9 @@
 !.github/workflows/
 !.github/
 !README.adoc
+!docs/
+!docs/advanced.adoc
+!docs/ble-protocol.adoc
 !subzero.yaml
 !cove-minimal-dishwasher.yaml
 !wolf-minimal-range.yaml
