@@ -44,8 +44,8 @@ sensor:
     name: "${appliance_name} D4 Notify"
     id: ${prefix}_d4_notify
     internal: true
-    service_uuid: 'E20A39F4-73F5-4BC4-A12F-17D1AD07A961'
-    characteristic_uuid: '08590F7E-DB05-467E-8757-72F6FAEB13D4'
+    service_uuid: "E20A39F4-73F5-4BC4-A12F-17D1AD07A961"
+    characteristic_uuid: "08590F7E-DB05-467E-8757-72F6FAEB13D4"
     notify: true
     update_interval: never
     lambda: |-

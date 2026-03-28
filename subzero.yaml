@@ -199,17 +199,17 @@ binary_sensor:
     id: pir_motion_sensor
     device_class: motion
     filters:
-      - delayed_on: !lambda 'return id(pir_on_latency).state * 1000.0;'
-      - delayed_off: !lambda 'return id(pir_off_latency).state * 1000.0;'
+      - delayed_on: !lambda "return id(pir_on_latency).state * 1000.0;"
+      - delayed_off: !lambda "return id(pir_off_latency).state * 1000.0;"
 
   - platform: template
     name: Occupancy
     id: occupancy
     device_class: occupancy
     filters:
-      - delayed_off: !lambda 'return id(occupancy_off_latency).state * 1000.0;'
+      - delayed_off: !lambda "return id(occupancy_off_latency).state * 1000.0;"
     on_state:
-      - lambda: 'id(illuminance_sensor).update();'
+      - lambda: "id(illuminance_sensor).update();"
     lambda: |-
       if ( id(mmwave).state or id(pir_motion_sensor).state) {
         return true;
@@ -466,7 +466,7 @@ number:
     icon: "mdi:thermometer"
     entity_category: config
     on_value:
-      - lambda: 'id(shtc3_sensor).update();'
+      - lambda: "id(shtc3_sensor).update();"
 
   - platform: template
     name: "Humidity Offset"
@@ -483,7 +483,7 @@ number:
     icon: "mdi:water-percent"
     entity_category: config
     on_value:
-      - lambda: 'id(shtc3_sensor).update();'
+      - lambda: "id(shtc3_sensor).update();"
 
   - platform: template
     name: "Illuminance Offset"
@@ -500,7 +500,7 @@ number:
     icon: "mdi:brightness-5"
     entity_category: config
     on_value:
-      - lambda: 'id(illuminance_sensor).update();'
+      - lambda: "id(illuminance_sensor).update();"
 
 select:
   - platform: template

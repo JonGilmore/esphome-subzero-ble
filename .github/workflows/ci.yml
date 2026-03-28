@@ -1,0 +1,74 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  validate:
+    name: Validate ESPHome configs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install ESPHome
+        run: pip install esphome
+
+      - name: Create dummy secrets
+        run: |
+          cat > secrets.yaml <<'EOF'
+          wifi_ssid: "test-ssid"
+          wifi_password: "test-password"
+          right_dishwasher_mac: "00:06:80:00:00:01"
+          right_dishwasher_pin: "000001"
+          kitchen_range_mac: "00:06:80:00:00:02"
+          kitchen_range_pin: "000002"
+          EOF
+
+      - name: Validate configs
+        run: |
+          for yaml in cove-minimal-dishwasher.yaml wolf-minimal-range.yaml; do
+            echo "::group::Validating $yaml"
+            esphome config "$yaml"
+            echo "::endgroup::"
+          done
+
+  compile:
+    name: Compile ${{ matrix.file }}
+    runs-on: ubuntu-latest
+    needs: validate
+    strategy:
+      fail-fast: false
+      matrix:
+        file:
+          - cove-minimal-dishwasher.yaml
+          - wolf-minimal-range.yaml
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install ESPHome
+        run: pip install esphome
+
+      - name: Create dummy secrets
+        run: |
+          cat > secrets.yaml <<'EOF'
+          wifi_ssid: "test-ssid"
+          wifi_password: "test-password"
+          right_dishwasher_mac: "00:06:80:00:00:01"
+          right_dishwasher_pin: "000001"
+          kitchen_range_mac: "00:06:80:00:00:02"
+          kitchen_range_pin: "000002"
+          EOF
+
+      - name: Compile ${{ matrix.file }}
+        run: esphome compile "${{ matrix.file }}"

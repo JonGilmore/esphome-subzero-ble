@@ -155,8 +155,8 @@ sensor:
     name: "${appliance_name} D5 Notify"
     id: ${prefix}_d5_notify
     internal: true
-    service_uuid: 'E20A39F4-73F5-4BC4-A12F-17D1AD07A961'
-    characteristic_uuid: '08590F7E-DB05-467E-8757-72F6FAEB13D5'
+    service_uuid: "E20A39F4-73F5-4BC4-A12F-17D1AD07A961"
+    characteristic_uuid: "08590F7E-DB05-467E-8757-72F6FAEB13D5"
     notify: true
     update_interval: never
     lambda: |-
@@ -236,9 +236,9 @@ switch:
     entity_category: diagnostic
     optimistic: true
     turn_on_action:
-      - lambda: 'id(${prefix}_debug_mode) = true;'
+      - lambda: "id(${prefix}_debug_mode) = true;"
     turn_off_action:
-      - lambda: 'id(${prefix}_debug_mode) = false;'
+      - lambda: "id(${prefix}_debug_mode) = false;"
 
 button:
   - platform: template
@@ -557,7 +557,7 @@ script:
           id(${prefix}_phase) = 1;
       - if:
           condition:
-            lambda: 'return id(${prefix}_d5_handle) == 0;'
+            lambda: "return id(${prefix}_d5_handle) == 0;"
           then:
             - ble_client.disconnect:
                 id: ${prefix}_appliance

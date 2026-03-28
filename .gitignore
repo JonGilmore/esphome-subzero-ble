@@ -3,6 +3,9 @@
 */
 
 !.gitignore
+!.github/workflows/ci.yml
+!.github/workflows/
+!.github/
 !README.adoc
 !subzero.yaml
 !cove-minimal-dishwasher.yaml
