@@ -1,0 +1,314 @@
+= BLE Protocol Reference
+:toc: macro
+:toc-title: Contents
+:toclevels: 3
+:icons: font
+
+This document describes the Sub-Zero BLE protocol as reverse-engineered from the official Android APK and live traffic analysis.
+
+toc::[]
+
+== GATT Service Structure
+
+All Sub-Zero appliances expose a single custom GATT service:
+
+[cols="1,2"]
+|===
+| Item | Value
+
+| *Service UUID* | `E20A39F4-73F5-4BC4-A12F-17D1AD07A961`
+| *D4 Characteristic* | `08590F7E-DB05-467E-8757-72F6FAEB13D4`
+| *D5 Characteristic* | `08590F7E-DB05-467E-8757-72F6FAEB13D5`
+| *D6 Characteristic* | `08590F7E-DB05-467E-8757-72F6FAEB13D6`
+| *D7 Characteristic* | `08590F7E-DB05-467E-8757-72F6FAEB13D7`
+| *D8 Characteristic* | `08590F7E-DB05-467E-8757-72F6FAEB13D8`
+|===
+
+The number of visible characteristics varies by appliance type:
+
+* **Dishwashers & Ranges** expose *D4 and D5* only.
+* **Refrigerators** expose *all five* (D4-D8).
+
+=== Channel Roles
+
+The characteristics serve different roles depending on the appliance type:
+
+[cols="1,2,2"]
+|===
+| Channel | Dishwashers & Ranges | Refrigerators
+
+| *D4*
+| Open (unencrypted) diagnostic channel
+| Open channel — responds to `get_async` with basic diagnostic data; also mirrors D5 push notifications with `msg_types: 8`
+
+| *D5*
+| Encrypted command/response channel — handles `unlock_channel`, `get_async`, `display_pin`, and delivers push notifications
+| Encrypted channel — delivers push notifications (`msg_types: 2`) for state changes, but *does not respond* to poll commands (`get_async`, `get`)
+
+| *D6*
+| _Not present_
+| Encrypted channel — accepts writes, no observed responses
+
+| *D7*
+| _Not present_
+| Open channel — accepts writes, no observed responses
+
+| *D8*
+| _Not present_
+| Open channel — accepts writes, no observed responses
+|===
+
+NOTE: The behavioral differences may be related to firmware versions. Tested fridges run API 5.4 / fw 8.5, while tested dishwashers and ranges run API 5.5 / fw 2.27. It is unknown whether newer fridge firmware versions behave like dishwashers/ranges.
+
+== Connection & Authentication Flow
+
+The full handshake follows these steps (shown for dishwashers/ranges where D5 is the command channel):
+
+[source]
+----
+  ESP32                           Appliance
+    |                                 |
+    +---- BLE Connect --------------->|
+    |                                 |
+    |<--- Service Discovery ----------|  (only D4 visible initially)
+    |                                 |
+    +---- Request Encryption -------->|  esp_ble_set_encryption(MITM)
+    |                                 |
+    |<--- Passkey Request ------------|  (6-digit PIN shown on appliance display)
+    +---- Passkey Reply ------------->|
+    |                                 |
+    |<--- Bond Complete (KEY_EVTs) ---|
+    |                                 |
+    +---- GATT Cache Refresh -------->|  esp_ble_gattc_cache_refresh()
+    |                                 |
+    |<--- Service Re-discovery -------|  (D5 now visible!)
+    |                                 |
+    +--- Subscribe D5 (indications) ->|  CCCD = 0x0200
+    +--- Subscribe D4 (indications) ->|
+    |                                 |
+    +---- unlock_channel ------------>|  {"cmd":"unlock_channel","params":{"pin":"XXXXXX"}}\n
+    |<--- PIN response ---------------|  {"status": 0, "resp": {"pin": "XXXXXX"}}
+    |                                 |
+    +---- get_async ----------------->|  {"cmd":"get_async"}\n
+    |<--- Full JSON state ------------|  (fragmented across indications)
+    |                                 |
+----
+
+=== Refrigerator Differences
+
+Fridges follow the same connection and bonding flow, but command/response routing differs:
+
+* *Polling:* `get_async` must be sent to *D4* (not D5). The response contains basic diagnostic data (model, door status, uptime) but not the full sensor state.
+* *Sensor data:* Full sensor data (set temperatures, ice maker status, sabbath mode, etc.) arrives via *D5 push notifications* triggered by state changes on the appliance — not via polling.
+* *Push mirroring:* Fridges send each push notification on *both* D4 (`msg_types: 8`) and D5 (`msg_types: 2`) simultaneously with identical `props` content.
+* *Command responses:* `unlock_channel` and `get_async` writes to D5 are accepted (GATT write status 0) but produce no indication response.
+
+=== Key Protocol Details
+
+BLE Security:: The appliance requires *Legacy Pairing with MITM protection and bonding*.
+The ESP32 must be configured with `IO_CAP_IN` (keyboard-only) so the user can enter the 6-digit passkey displayed on the appliance.
++
+NOTE: Sub-Zero's BLE module seems to only support Legacy Pairing, *not* BLE Secure Connections (LESC). Do not set `ESP_LE_AUTH_REQ_SC_MITM_BOND` - it causes pairing to silently fall back to "Just Works" with no passkey exchange.
+After the first successful bond, the keys are stored and reconnection is automatic.
+If the bond becomes stale (e.g. appliance-side timeout overnight), the integration detects repeated auth failures (3 attempts) and automatically clears the stale bond, then re-pairs from scratch.
+
+Command Framing:: Every command written to D5 *must* end with a newline character (`\n`).
+The appliance's serial parser silently discards any command without it.
+
+Response Fragmentation:: The appliance sends JSON responses as BLE indications, fragmented into chunks.
+Fridges fragment at ~40 bytes per indication on both D4 and D5 (30-45 fragments for a full poll response), while dishwashers and ranges use larger ~244 byte fragments on D5 (7-8 fragments for a ~1600-1736 byte response).
+The receiver must buffer and reassemble these fragments by tracking JSON brace depth (`{` / `}`) to detect message completion.
+
+Push Notifications:: In addition to polled responses (`{"status":0,"resp":{...}}`), appliances send real-time push notifications for state changes (e.g. door open/close, temperature change, light toggle).
+These use the format `{"seq":N,"props":{...},"msg_types":M}` where `msg_types` indicates the channel:
++
+* `msg_types: 2` — D5 (encrypted channel)
+* `msg_types: 8` — D4 (open channel, fridges only)
++
+The parser handles both poll and push formats, extracting sensor data from `"resp"` (polls) or `"props"` (pushes).
+
+D5 Discovery Timing:: On refrigerators, the encrypted D5 characteristic is *not visible* in the GATT database until after bonding completes.
+The implementation must refresh the GATT cache (`esp_ble_gattc_cache_refresh`) and re-run service discovery after encryption is established.
+The code polls up to three times with delays to handle timing variations across different appliance models.
++
+NOTE: Cove dishwashers expose D5 in the GATT database *before* bonding, but still require BLE-level encryption for writes (GATT status 5 = insufficient authentication without it). The code always requests encryption regardless of when D5 is discovered.
+
+MTU:: Negotiated to 517 bytes, though the appliance still fragments at ~40 bytes per indication (fridges) or ~244 bytes (dishwashers/ranges).
+
+== Command Reference
+
+Commands are JSON objects terminated with `\n`. The target characteristic depends on the appliance type and command.
+
+=== Dishwashers & Ranges
+
+All commands are written to *D5*. Responses arrive as D5 indications.
+
+[cols="1,2,2"]
+|===
+| Command | Payload | Response
+
+| `display_pin` | `{"cmd":"display_pin","params":{"duration": 30}}\n` | Displays PIN on appliance for 30 seconds
+| `unlock_channel` | `{"cmd":"unlock_channel","params":{"pin":"XXXXXX"}}\n` | `{"status": 0, "resp": {"pin": "XXXXXX"}}`
+| `get_async` | `{"cmd":"get_async"}\n` | Full appliance state as JSON (see <<Example Responses>>)
+|===
+
+=== Refrigerators
+
+Fridges use different channels for different operations:
+
+[cols="1,1,2,2"]
+|===
+| Command | Channel | Payload | Response
+
+| `get_async` | *D4* | `{"cmd":"get_async"}\n` | Basic diagnostic data (see <<D4 Response>>)
+| `display_pin` | D5 | `{"cmd":"display_pin","params":{"duration": 30}}\n` | Displays PIN on appliance display
+| `unlock_channel` | D5 | `{"cmd":"unlock_channel","params":{"pin":"XXXXXX"}}\n` | Write accepted, no indication response observed
+|===
+
+NOTE: Full sensor data (set temperatures, ice maker, sabbath mode, filter status, etc.) is not available via polling. It arrives via D5 push notifications when the appliance state changes.
+
+[[example-responses]]
+== Example Responses
+
+=== D5 `get_async` Response (Dishwashers & Ranges)
+
+Dishwashers and ranges return their full state in a single `get_async` response on D5.
+
+Different appliance types include different properties. Dishwashers use `door_ajar` and have wash-specific properties, while ranges use `cav_door_ajar` with oven-specific `cav_*` and `kitchen_timer*` properties. Each appliance type has its own package file that only includes the relevant sensors.
+
+.Cove dishwasher (DW2450) - ~1736 bytes
+[%collapsible]
+====
+[source,json]
+----
+{
+  "status": 0,
+  "resp": {
+    "appliance_model": "DW2450",
+    "appliance_serial": "33333333",
+    "uptime": "05:12:30",
+    "door_ajar": false,
+    "wash_cycle_on": false,
+    "wash_status": 6,
+    "wash_cycle": 0,
+    "heated_dry_on": false,
+    "extended_dry_on": false,
+    "high_temp_wash_on": false,
+    "sani_rinse_on": false,
+    "rinse_aid_low": false,
+    "light_on": false,
+    "remote_ready": true,
+    "delay_start_timer_active": false,
+    "service_required": false,
+    "notifs": []
+  }
+}
+----
+====
+
+.Wolf dual-fuel range (DF36450GSP) - ~1629 bytes
+[%collapsible]
+====
+[source,json]
+----
+{
+  "status": 0,
+  "resp": {
+    "appliance_model": "DF36450GSP",
+    "appliance_serial": "44444444",
+    "uptime": "02:10:58",
+    "sabbath_on": false,
+    "service_required": false,
+    "cav_door_ajar": false,
+    "cav_unit_on": false,
+    "cav_temp": 75,
+    "cav_set_temp": 0,
+    "cav_cook_mode": 0,
+    "cav_at_set_temp": false,
+    "cav_light_on": false,
+    "cav_remote_ready": false,
+    "cav_probe_on": false,
+    "cav_probe_temp": 1,
+    "cav_probe_set_temp": 0,
+    "cav_probe_at_set_temp": false,
+    "cav_probe_within_10deg": false,
+    "cav_gourmet_mode_on": false,
+    "cav_cook_timer_complete": false,
+    "kitchen_timer_active": false,
+    "kitchen_timer_complete": false,
+    "kitchen_timer2_active": false,
+    "kitchen_timer2_complete": false,
+    "notifs": []
+  }
+}
+----
+====
+
+[[d4-response]]
+=== D4 `get_async` Response (Refrigerators)
+
+Fridges respond to `get_async` on D4 with basic diagnostic data. This is a smaller response than what dishwashers/ranges return on D5.
+
+.French-door fridge/freezer (313) - ~403 bytes
+[%collapsible]
+====
+[source,json]
+----
+{
+  "status": 0,
+  "resp": {
+    "diagnostic_status": "0x00000003111",
+    "service": {},
+    "version": {
+      "api": "5.4",
+      "fw": "8.5",
+      "appliance": "main: 3.12.0; conf: 99.3.10; uim: N/A"
+    },
+    "appliance_name": "SubZeroCAT",
+    "appliance_type": "1.1.1.12",
+    "appliance_model": "313",
+    "ref_door_ajar": false,
+    "frz_door_ajar": false,
+    "uptime": "12:39:03",
+    "device_wlan_id": "000680229d63"
+  }
+}
+----
+====
+
+NOTE: Keys like `ref_set_temp`, `frz_set_temp`, `ice_maker_on`, and `sabbath_on` are *not* included in D4 responses. These arrive only via D5 push notifications when the appliance state changes.
+
+=== D5 Push Notification (Refrigerators)
+
+Sensor data from fridges arrives as push notifications on D5. Each push contains only the fields that changed.
+
+.Door opened
+[source,json]
+----
+{"msg_types": 2, "seq": 75, "timestamp": "2025-01-23T09:43:54.901", "props": {"ref_door_ajar": true}}
+----
+
+.Temperature change
+[source,json]
+----
+{"msg_types": 2, "seq": 80, "props": {"ref_set_temp": 38}}
+----
+
+The combined set of keys observed across D4 polls and D5 push notifications for fridge/freezer units includes: `ref_door_ajar`, `frz_door_ajar`, `ref_set_temp`, `frz_set_temp`, `ice_maker_on`, `max_ice_on`, `night_ice_on`, `sabbath_on`, `service_required`, `water_filter_gal_remaining`, `water_filter_pct_remaining`, `air_filter_pct_remaining`, `air_filter_on`, `appliance_model`, `uptime`, and others. Refrigerator-only units (no freezer) will not have `frz_*` or `ice_maker_*` keys.
+
+=== GATT Handle Map (Refrigerator)
+
+For reference, the GATT handle layout observed on a Sub-Zero 313 fridge/freezer:
+
+[cols="1,1,1"]
+|===
+| Characteristic | Handle | Notes
+
+| D5 | 3 | Push notifications, encrypted
+| D6 | 7 | Encrypted, no observed responses
+| D4 | 11 | Open channel, responds to `get_async`
+| D7 | 15 | Open, no observed responses
+| D8 | 19 | Open, no observed responses
+|===
+
+NOTE: Handle numbers are assigned by the appliance firmware and may vary across models. The implementation discovers handles dynamically by UUID suffix, not by hardcoded values.

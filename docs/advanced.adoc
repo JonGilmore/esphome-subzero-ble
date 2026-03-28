@@ -1,0 +1,196 @@
+= Advanced Configuration & Usage
+:toc: macro
+:toc-title: Contents
+:toclevels: 3
+:icons: font
+
+toc::[]
+
+== ESPHome Commands
+
+All commands assume you've activated the Python virtual environment:
+
+[source,bash]
+----
+source esphome-venv/bin/activate
+----
+
+=== Compile (Build Without Flashing)
+
+[source,bash]
+----
+esphome compile subzero.yaml
+----
+
+=== Flash via USB
+
+Connect your ESP32 via USB, then compile and flash in one step:
+
+[source,bash]
+----
+ls /dev/cu.*    # find your device name (e.g. /dev/cu.usbserial-210)
+esphome run subzero.yaml --device /dev/cu.usbserial-210    # macOS
+----
+
+This will compile, flash, and immediately show logs.
+
+=== Flash Over-the-Air (OTA)
+
+Once the ESP32 is on your network and running ESPHome, you can flash wirelessly:
+
+[source,bash]
+----
+esphome run subzero.yaml --device 192.168.x.x --no-logs
+----
+
+Replace `192.168.x.x` with your device's IP address.
+
+=== View Logs
+
+.Via USB
+[source,bash]
+----
+esphome logs subzero.yaml --device /dev/cu.usbserial-210
+----
+
+.Via network
+[source,bash]
+----
+esphome logs subzero.yaml --device 192.168.x.x
+----
+
+[[ble-stack-tuning]]
+== BLE Stack Tuning (sdkconfig_options)
+
+The ESP-IDF BLE stack has several compile-time settings that affect reliability and connection limits.
+These are set in your device YAML under `esp32: framework: sdkconfig_options:`.
+
+=== Required for All Configs
+
+[source,yaml]
+----
+esp32:
+  board: esp32dev
+  framework:
+    type: esp-idf
+    version: 5.5.3.1
+    sdkconfig_options:
+      CONFIG_BT_GATTC_CACHE_NVS_FLASH: "n"
+----
+
+Disables persisting the GATT client cache to flash.
+Without this, stale cached GATT data causes D5 characteristic discovery failures after re-pairing or bond changes.
+This is already set in all example configs.
+
+=== Required for 2+ Concurrent Appliances
+
+If you are connecting to *two or more* appliances from a single ESP32, add these options:
+
+[source,yaml]
+----
+esp32:
+  board: esp32dev
+  framework:
+    type: esp-idf
+    version: 5.5.3.1
+    sdkconfig_options:
+      # Disable GATT cache persistence - stale cached data causes D5 discovery
+      # failures after re-pairing. Required for all configs.
+      CONFIG_BT_GATTC_CACHE_NVS_FLASH: "n"
+      # The options below are only needed when running 2+ concurrent BLE
+      # appliance connections. They increase the max connection count (default 3)
+      # and enlarge the ACL buffer pool to avoid dropping indication fragments
+      # during rapid 40-byte JSON transfers across multiple connections.
+      CONFIG_BT_ACL_CONNECTIONS: "4"        # <1>
+      CONFIG_BT_BLE_ACL_BUF_COUNT: "20"     # <2>
+      CONFIG_BT_BLE_ACL_BUF_SIZE: "255"     # <3>
+----
+<1> Maximum simultaneous BLE connections. Default is 3. Set to the number of appliances + 1 for headroom.
+<2> Number of ACL data buffers in the BLE controller pool. Default is 10. More buffers prevent dropped indication fragments when multiple appliances send data concurrently.
+<3> Size of each ACL buffer in bytes. Default is 251. Increase to 255 to accommodate full-size BLE packets.
+
+WARNING: These options increase RAM usage in the BLE stack. An ESP32-S3 with PSRAM can handle more.
+
+If you only have *one* appliance, you do not need these - the defaults work fine.
+
+== Memory Considerations
+
+The ESP32 (non-PSRAM) has only 320 KB of RAM. With BLE client connections, the BLE stack alone consumes a significant portion.
+This integration uses several strategies to avoid out-of-memory crashes:
+
+* JSON response buffers are *pre-reserved* to 2048 bytes at startup to avoid repeated heap reallocation during the 40+ BLE indication fragments
+* JSON parsing uses ESPHome's built-in `json` component (ArduinoJson) with a temporary heap allocation that is freed immediately after parsing
+* JSON parsing runs on the *main loop* (via ESPHome scripts), not inside the BLE notification callback
+* Logger levels are tuned to suppress high-frequency BLE debug messages that would otherwise overwhelm the API frame buffer
+
+If you experience crashes (typically `__cxa_allocate_exception` -> `operator new` -> `abort()`), try:
+
+. Reducing the number of Home Assistant API connections to the device
+. Setting `ble_client: WARN` in the logger config
+. Reducing poll interval from `120s` to `300s`
+
+== Debug Mode
+
+Each appliance exposes a *Debug Mode* switch and a *Log Debug Info* button in Home Assistant (both under diagnostic entities).
+When debug mode is enabled, the full raw JSON response is published to the *Raw JSON* text sensor on every poll or push notification - even for large responses that are normally truncated.
+All response keys are also logged at `INFO` level with the `szg-debug` tag, making it easy to identify what data an untested appliance sends.
+
+The *Log Debug Info* button is a one-press shortcut: it turns on debug mode and immediately polls the appliance using the correct channel for that appliance type.
+
+=== Dishwashers & Ranges
+
+Dishwashers and ranges respond to polls on the D5 (encrypted) channel with their full state - all sensor keys in a single response.
+
+. Press *Log Debug Info* (or turn on *Debug Mode* and press *Poll*).
+. The full JSON appears in the *Raw JSON* text sensor and all keys are logged.
+. Turn *Debug Mode* off when done.
+
+=== Refrigerators / Freezers
+
+Fridges behave differently from dishwashers and ranges. They have 5 BLE characteristics (D4-D8) instead of 2 (D4-D5), and the command routing is different:
+
+* *D4* (open channel) - responds to `get_async` with basic diagnostic data (model, doors, uptime)
+* *D5* (encrypted channel) - sends *push notifications* for state changes but does not respond to poll commands
+* *D6-D8* - accept writes but do not respond
+
+Because of this, capturing the full set of keys from a fridge requires two steps:
+
+. Press *Log Debug Info* - this polls D4 and logs the basic diagnostic keys.
+. *Interact with the appliance* - open/close doors, change the set temperature on the panel, toggle the ice maker, etc. Each change triggers a push notification on D5 with the relevant keys, which debug mode captures and logs.
+
+Between the D4 poll and D5 push notifications, you can map out every key your fridge exposes.
+
+=== Reading the Logs
+
+With debug mode on, the ESPHome log output includes every key in the response:
+
+.Range/Dishwasher (single poll, all keys)
+[source]
+----
+[I][szg:087]: [Kitchen Range] Parsing JSON (1700 bytes)
+[I][szg-debug:140]: [Kitchen Range] key=cav_door_ajar
+[I][szg-debug:140]: [Kitchen Range] key=cav_unit_on
+[I][szg-debug:140]: [Kitchen Range] key=cav_temp
+[I][szg-debug:140]: [Kitchen Range] key=cav_set_temp
+...
+----
+
+.Fridge (D4 poll - basic info)
+[source]
+----
+[I][szg:087]: [Main Fridge] Parsing JSON (403 bytes)
+[I][szg-debug:140]: [Main Fridge] key=diagnostic_status
+[I][szg-debug:140]: [Main Fridge] key=appliance_model
+[I][szg-debug:140]: [Main Fridge] key=ref_door_ajar
+[I][szg-debug:140]: [Main Fridge] key=frz_door_ajar
+[I][szg-debug:140]: [Main Fridge] key=uptime
+----
+
+.Fridge (D5 push - triggered by opening door)
+[source]
+----
+[I][szg:087]: [Main Fridge] Parsing JSON (94 bytes)
+[I][szg-debug:140]: [Main Fridge] key=ref_door_ajar
+----
+
+If you have an appliance type that isn't fully supported, capture the full JSON and open an issue with the output. This helps expand support for new appliance variants.
