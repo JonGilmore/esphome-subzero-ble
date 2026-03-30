@@ -1,7 +1,9 @@
 # Wolf Range/Oven BLE Package
 # Include with vars: prefix, appliance_name, appliance_mac, appliance_pin
+# Optional vars:
+#   hide_oven2: "true" to hide second oven cavity sensors (default: "true")
 #
-# Example:
+# Example (single oven):
 #   packages:
 #     kitchen_range: !include
 #       file: subzero_range.yaml
@@ -10,6 +12,20 @@
 #         appliance_name: "Kitchen Range"
 #         appliance_mac: !secret kitchen_range_mac
 #         appliance_pin: !secret kitchen_range_pin
+#
+# Example (dual oven):
+#   packages:
+#     dual_oven: !include
+#       file: subzero_range.yaml
+#       vars:
+#         prefix: "szg"
+#         appliance_name: "Range"
+#         appliance_mac: !secret range_mac
+#         appliance_pin: !secret range_pin
+#         hide_oven2: "false"
+
+substitutions:
+  hide_oven2: "true"
 
 packages:
   base: !include subzero_base.yaml
@@ -56,6 +72,53 @@ sensor:
     state_class: measurement
     accuracy_decimals: 0
     icon: "mdi:thermometer-probe-off"
+
+  - platform: template
+    name: "${appliance_name} Oven 2 Temperature"
+    id: ${prefix}_cav2_temp
+    unit_of_measurement: "°F"
+    device_class: temperature
+    state_class: measurement
+    accuracy_decimals: 0
+    icon: "mdi:thermometer"
+    internal: ${hide_oven2}
+
+  - platform: template
+    name: "${appliance_name} Oven 2 Set Temperature"
+    id: ${prefix}_cav2_set_temp
+    unit_of_measurement: "°F"
+    device_class: temperature
+    state_class: measurement
+    accuracy_decimals: 0
+    icon: "mdi:thermometer-check"
+    internal: ${hide_oven2}
+
+  - platform: template
+    name: "${appliance_name} Oven 2 Cook Mode"
+    id: ${prefix}_cav2_cook_mode
+    icon: "mdi:stove"
+    accuracy_decimals: 0
+    internal: ${hide_oven2}
+
+  - platform: template
+    name: "${appliance_name} Oven 2 Probe Temperature"
+    id: ${prefix}_cav2_probe_temp
+    unit_of_measurement: "°F"
+    device_class: temperature
+    state_class: measurement
+    accuracy_decimals: 0
+    icon: "mdi:thermometer-probe"
+    internal: ${hide_oven2}
+
+  - platform: template
+    name: "${appliance_name} Oven 2 Probe Set Temperature"
+    id: ${prefix}_cav2_probe_set_temp
+    unit_of_measurement: "°F"
+    device_class: temperature
+    state_class: measurement
+    accuracy_decimals: 0
+    icon: "mdi:thermometer-probe-off"
+    internal: ${hide_oven2}
 
 binary_sensor:
   - platform: template
@@ -127,6 +190,66 @@ binary_sensor:
     name: "${appliance_name} Kitchen Timer 2 Complete"
     id: ${prefix}_ktimer2_done
     icon: "mdi:timer-alert"
+
+  - platform: template
+    name: "${appliance_name} Oven 2"
+    id: ${prefix}_cav2_unit_on
+    icon: "mdi:stove"
+    internal: ${hide_oven2}
+
+  - platform: template
+    name: "${appliance_name} Oven 2 Door"
+    id: ${prefix}_cav2_door_ajar
+    device_class: door
+    internal: ${hide_oven2}
+
+  - platform: template
+    name: "${appliance_name} Oven 2 At Temperature"
+    id: ${prefix}_cav2_at_set_temp
+    icon: "mdi:thermometer-check"
+    internal: ${hide_oven2}
+
+  - platform: template
+    name: "${appliance_name} Oven 2 Light"
+    id: ${prefix}_cav2_light_on
+    icon: "mdi:lightbulb"
+    internal: ${hide_oven2}
+
+  - platform: template
+    name: "${appliance_name} Oven 2 Remote Ready"
+    id: ${prefix}_cav2_remote_ready
+    icon: "mdi:remote"
+    internal: ${hide_oven2}
+
+  - platform: template
+    name: "${appliance_name} Oven 2 Probe Inserted"
+    id: ${prefix}_cav2_probe_on
+    icon: "mdi:thermometer-probe"
+    internal: ${hide_oven2}
+
+  - platform: template
+    name: "${appliance_name} Oven 2 Probe At Temperature"
+    id: ${prefix}_cav2_probe_at_temp
+    icon: "mdi:thermometer-probe"
+    internal: ${hide_oven2}
+
+  - platform: template
+    name: "${appliance_name} Oven 2 Probe Within 10°"
+    id: ${prefix}_cav2_probe_near
+    icon: "mdi:thermometer-probe"
+    internal: ${hide_oven2}
+
+  - platform: template
+    name: "${appliance_name} Oven 2 Gourmet Mode"
+    id: ${prefix}_cav2_gourmet
+    icon: "mdi:chef-hat"
+    internal: ${hide_oven2}
+
+  - platform: template
+    name: "${appliance_name} Oven 2 Cook Timer Complete"
+    id: ${prefix}_cav2_cook_timer_done
+    icon: "mdi:timer-alert"
+    internal: ${hide_oven2}
 
 button:
   - platform: template
@@ -238,6 +361,37 @@ script:
               id(${prefix}_probe_temp).publish_state(data["cav_probe_temp"].as<float>());
             if (data["cav_probe_set_temp"].is<float>())
               id(${prefix}_probe_set_temp).publish_state(data["cav_probe_set_temp"].as<float>());
+            // --- Oven 2 (dual-oven ranges) ---
+            if (data["cav2_door_ajar"].is<bool>())
+              id(${prefix}_cav2_door_ajar).publish_state(data["cav2_door_ajar"].as<bool>());
+            if (data["cav2_unit_on"].is<bool>())
+              id(${prefix}_cav2_unit_on).publish_state(data["cav2_unit_on"].as<bool>());
+            if (data["cav2_at_set_temp"].is<bool>())
+              id(${prefix}_cav2_at_set_temp).publish_state(data["cav2_at_set_temp"].as<bool>());
+            if (data["cav2_light_on"].is<bool>())
+              id(${prefix}_cav2_light_on).publish_state(data["cav2_light_on"].as<bool>());
+            if (data["cav2_remote_ready"].is<bool>())
+              id(${prefix}_cav2_remote_ready).publish_state(data["cav2_remote_ready"].as<bool>());
+            if (data["cav2_probe_on"].is<bool>())
+              id(${prefix}_cav2_probe_on).publish_state(data["cav2_probe_on"].as<bool>());
+            if (data["cav2_probe_at_set_temp"].is<bool>())
+              id(${prefix}_cav2_probe_at_temp).publish_state(data["cav2_probe_at_set_temp"].as<bool>());
+            if (data["cav2_probe_within_10deg"].is<bool>())
+              id(${prefix}_cav2_probe_near).publish_state(data["cav2_probe_within_10deg"].as<bool>());
+            if (data["cav2_gourmet_mode_on"].is<bool>())
+              id(${prefix}_cav2_gourmet).publish_state(data["cav2_gourmet_mode_on"].as<bool>());
+            if (data["cav2_cook_timer_complete"].is<bool>())
+              id(${prefix}_cav2_cook_timer_done).publish_state(data["cav2_cook_timer_complete"].as<bool>());
+            if (data["cav2_temp"].is<float>())
+              id(${prefix}_cav2_temp).publish_state(data["cav2_temp"].as<float>());
+            if (data["cav2_set_temp"].is<float>())
+              id(${prefix}_cav2_set_temp).publish_state(data["cav2_set_temp"].as<float>());
+            if (data["cav2_cook_mode"].is<float>())
+              id(${prefix}_cav2_cook_mode).publish_state(data["cav2_cook_mode"].as<float>());
+            if (data["cav2_probe_temp"].is<float>())
+              id(${prefix}_cav2_probe_temp).publish_state(data["cav2_probe_temp"].as<float>());
+            if (data["cav2_probe_set_temp"].is<float>())
+              id(${prefix}_cav2_probe_set_temp).publish_state(data["cav2_probe_set_temp"].as<float>());
             // --- Common sensors ---
             if (data["sabbath_on"].is<bool>())
               id(${prefix}_sabbath_on).publish_state(data["sabbath_on"].as<bool>());
