@@ -318,9 +318,35 @@ TIP: Sub-Zero appliance BLE MAC addresses typically start with `00:06:80`. You c
 | *Kitchen Timer Complete* | Kitchen timer 1 has finished
 | *Kitchen Timer 2 Active* | Kitchen timer 2 is running
 | *Kitchen Timer 2 Complete* | Kitchen timer 2 has finished
+| *Oven 2 Temperature* | Second cavity temperature (°F) _(optional)_
+| *Oven 2 Set Temperature* | Second cavity target temperature (°F) _(optional)_
+| *Oven 2 Cook Mode* | Second cavity cook mode code _(optional)_
+| *Oven 2 Probe Temperature* | Second cavity probe current temperature (°F) _(optional)_
+| *Oven 2 Probe Set Temperature* | Second cavity probe target temperature (°F) _(optional)_
+| *Oven 2 Door* | Second cavity open/closed _(optional)_
+| *Oven 2* | Second oven is on/off _(optional)_
+| *Oven 2 At Temperature* | Second cavity has reached set temperature _(optional)_
+| *Oven 2 Light* | Second oven light on/off _(optional)_
+| *Oven 2 Remote Ready* | Second oven is ready for remote commands _(optional)_
+| *Oven 2 Probe Inserted* | Second cavity meat probe is plugged in _(optional)_
+| *Oven 2 Probe At Temperature* | Second cavity probe has reached set temperature _(optional)_
+| *Oven 2 Probe Within 10°* | Second cavity probe is within 10° of set temperature _(optional)_
+| *Oven 2 Gourmet Mode* | Second cavity gourmet mode is active _(optional)_
+| *Oven 2 Cook Timer Complete* | Second cavity cook timer has finished _(optional)_
 | *Service Required* | Alerts when the appliance flags a service need
 | *Appliance Model* | Model number (e.g. `DF36450GSP`)
 | *Appliance Uptime* | Time since last power cycle
+|===
+
+==== Dual-Oven Options
+
+For ranges with two ovens, enable the second oven sensors using `hide_oven2: "false"`
+
+[cols="1,1,2"]
+|===
+| Option | Default | Hides
+
+| `hide_oven2` | `"true"` | All Oven 2 sensors (temperature, door, light, probe, cook mode, etc.)
 |===
 
 === Tested Appliances
