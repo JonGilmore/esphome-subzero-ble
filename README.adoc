@@ -179,7 +179,19 @@ vars:
 | `hide_ice_maker` | `"false"` | Ice Maker
 | `hide_sabbath` | `"false"` | Sabbath Mode
 | `hide_wine` | `"true"` | Wine Door, Wine Zone Upper Temperature, Wine Zone Lower Temperature, Wine Temperature Alert
+| `hide_ref_drawer` | `"true"` | Refrigerator Drawer Temperature, Refrigerator Drawer Door
 |===
+
+.Fridge with Refrigerator Drawer (e.g. PRO3650G)
+[source,yaml]
+----
+vars:
+  prefix: "szg"
+  appliance_name: "Fridge"
+  appliance_mac: "00:06:80:XX:XX:XX"
+  appliance_pin: "123456"
+  hide_ref_drawer: "false"
+----
 
 .Wine Fridge (dual-zone, no freezer or ice maker)
 [source,yaml]
@@ -265,6 +277,8 @@ TIP: Sub-Zero appliance BLE MAC addresses typically start with `00:06:80`. You c
 | *Wine Zone Upper Temperature* | Upper zone setpoint (°F) _(optional)_
 | *Wine Zone Lower Temperature* | Lower zone setpoint (°F) _(optional)_
 | *Wine Temperature Alert* | Temperature alert binary sensor _(optional)_
+| *Refrigerator Drawer Temperature* | Drawer compartment setpoint (°F) _(optional)_
+| *Refrigerator Drawer Door* | Drawer open/closed binary sensor _(optional)_
 | *Service Required* | Alerts when the appliance flags a service need
 | *Appliance Model* | Model number (e.g. `DEU2450R`, `313`)
 | *Appliance Uptime* | Time since last power cycle

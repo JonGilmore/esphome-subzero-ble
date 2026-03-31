@@ -39,12 +39,24 @@
 #         hide_freezer: "true"
 #         hide_ice_maker: "true"
 #         hide_wine: "false"
+#
+# Example (fridge with refrigerator drawer - e.g. PRO3650G):
+#   packages:
+#     fridge: !include
+#       file: subzero_fridge.yaml
+#       vars:
+#         prefix: "szg"
+#         appliance_name: "Fridge"
+#         appliance_mac: !secret fridge_mac
+#         appliance_pin: !secret fridge_pin
+#         hide_ref_drawer: "false"
 
 substitutions:
   hide_freezer: "false"
   hide_ice_maker: "false"
   hide_sabbath: "false"
   hide_wine: "true"
+  hide_ref_drawer: "true"
 
 packages:
   base: !include subzero_base.yaml
@@ -118,6 +130,16 @@ sensor:
     icon: "mdi:glass-wine"
     internal: ${hide_wine}
 
+  - platform: template
+    name: "${appliance_name} Refrigerator Drawer Temperature"
+    id: ${prefix}_ref2_temp
+    unit_of_measurement: "°F"
+    device_class: temperature
+    state_class: measurement
+    accuracy_decimals: 0
+    icon: "mdi:thermometer"
+    internal: ${hide_ref_drawer}
+
 binary_sensor:
   - platform: template
     name: "${appliance_name} Sabbath Mode"
@@ -148,6 +170,12 @@ binary_sensor:
     id: ${prefix}_wine_temp_alert
     device_class: problem
     internal: ${hide_wine}
+
+  - platform: template
+    name: "${appliance_name} Refrigerator Drawer Door"
+    id: ${prefix}_ref2_door_ajar
+    device_class: door
+    internal: ${hide_ref_drawer}
 
 button:
   - platform: template
@@ -234,6 +262,11 @@ script:
               id(${prefix}_frz_door_ajar).publish_state(data["frz_door_ajar"].as<bool>());
             if (data["ice_maker_on"].is<bool>())
               id(${prefix}_ice_maker).publish_state(data["ice_maker_on"].as<bool>());
+            // --- Refrigerator drawer sensors ---
+            if (data["ref2_set_temp"].is<float>())
+              id(${prefix}_ref2_temp).publish_state(data["ref2_set_temp"].as<float>());
+            if (data["ref2_door_ajar"].is<bool>())
+              id(${prefix}_ref2_door_ajar).publish_state(data["ref2_door_ajar"].as<bool>());
             // --- Wine sensors ---
             if (data["wine_door_ajar"].is<bool>())
               id(${prefix}_wine_door_ajar).publish_state(data["wine_door_ajar"].as<bool>());
