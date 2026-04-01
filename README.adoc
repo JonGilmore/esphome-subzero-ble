@@ -257,6 +257,9 @@ TIP: Sub-Zero appliance BLE MAC addresses typically start with `00:06:80`. You c
 
 | *Range disconnects before data arrives*
 | Wolf ranges have tight BLE windows. Add `fast_connect: true` and `power_save_mode: none` to your WiFi config.
+
+| *"ACL packet too short" / first push notification lost*
+| Known ESP-IDF BLE controller bug (https://github.com/espressif/esp-idf/issues/18323[espressif/esp-idf#18323]) on ESP32-S3. When an appliance sends a rapid burst of push notifications (e.g. activating gourmet mode), the first message may be dropped. The integration detects this and recovers for subsequent messages, but the first state change in the burst is lost. Fixed in ESP-IDF 5.5.4, pending ESPHome/PlatformIO adoption.
 |===
 
 == Supported Sensors

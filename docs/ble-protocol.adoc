@@ -135,6 +135,13 @@ NOTE: Cove dishwashers expose D5 in the GATT database *before* bonding, but stil
 
 MTU:: Negotiated to 517 bytes, though the appliance still fragments at ~40 bytes per indication (fridges) or ~244 bytes (dishwashers/ranges).
 
+ACL Fragment Drops (ESP32-S3):: A https://github.com/espressif/esp-idf/issues/18323[known bug] in the ESP-IDF BLE controller (present in 5.5.3 and earlier) causes the HCI layer to drop ACL fragments during rapid bursts of indications.
+This manifests as `BT_HCI: ACL packet too short` and `reassemble_and_dispatch found unfinished packet` errors.
+When a fragment is dropped, the JSON reassembly buffer is left with incomplete data.
+The integration detects this (a new `{` arriving while the buffer is non-empty) and discards the corrupt buffer, allowing subsequent messages to parse normally.
+However, the *first push notification in a burst* is typically lost - for example, `cav_gourmet_mode_on` during gourmet mode activation.
+This is fixed in ESP-IDF 5.5.4, which is not yet available in ESPHome/PlatformIO.
+
 == Command Reference
 
 Commands are JSON objects terminated with `\n`. The target characteristic depends on the appliance type and command.

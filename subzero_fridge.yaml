@@ -77,6 +77,10 @@ sensor:
     lambda: |-
       auto &buf = id(${prefix}_json_buf);
       if (buf.capacity() < 2048) buf.reserve(2048);
+      if (x.size() > 0 && x[0] == '{' && !buf.empty()) {
+        ESP_LOGW("ble", "[${appliance_name}] Discarding %d bytes of incomplete JSON (ACL drop)", buf.size());
+        buf.clear();
+      }
       if (buf.size() > 4096) { buf.clear(); return {}; }
       buf.append((char*)x.data(), x.size());
       id(${prefix}_poll_ok) = true;
