@@ -1,5 +1,7 @@
 # Cove Dishwasher BLE Package
 # Include with vars: prefix, appliance_name, appliance_mac, appliance_pin
+# Optional vars:
+#   hide_softener: "false" to show water softener sensor (default: "true")
 #
 # Example:
 #   packages:
@@ -10,6 +12,20 @@
 #         appliance_name: "Right Dishwasher"
 #         appliance_mac: !secret right_dishwasher_mac
 #         appliance_pin: !secret right_dishwasher_pin
+#
+# Example (DW2450WS with water softener):
+#   packages:
+#     dishwasher: !include
+#       file: subzero_dishwasher.yaml
+#       vars:
+#         prefix: "szg"
+#         appliance_name: "Dishwasher"
+#         appliance_mac: !secret dishwasher_mac
+#         appliance_pin: !secret dishwasher_pin
+#         hide_softener: "false"
+
+substitutions:
+  hide_softener: "true"
 
 packages:
   base: !include subzero_base.yaml
@@ -72,6 +88,12 @@ binary_sensor:
     name: "${appliance_name} Delay Start"
     id: ${prefix}_delay_start
     icon: "mdi:timer-sand"
+
+  - platform: template
+    name: "${appliance_name} Softener Low"
+    id: ${prefix}_softener_low
+    device_class: problem
+    internal: ${hide_softener}
 
 button:
   - platform: template
@@ -157,6 +179,8 @@ script:
               id(${prefix}_sani_rinse).publish_state(data["sani_rinse_on"].as<bool>());
             if (data["rinse_aid_low"].is<bool>())
               id(${prefix}_rinse_aid_low).publish_state(data["rinse_aid_low"].as<bool>());
+            if (data["softener_low"].is<bool>())
+              id(${prefix}_softener_low).publish_state(data["softener_low"].as<bool>());
             if (data["light_on"].is<bool>())
               id(${prefix}_light_on).publish_state(data["light_on"].as<bool>());
             if (data["remote_ready"].is<bool>())

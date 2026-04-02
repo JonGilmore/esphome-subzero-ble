@@ -259,7 +259,7 @@ TIP: Sub-Zero appliance BLE MAC addresses typically start with `00:06:80`. You c
 | Wolf ranges have tight BLE windows. Add `fast_connect: true` and `power_save_mode: none` to your WiFi config.
 
 | *"ACL packet too short" / first push notification lost*
-| Known ESP-IDF BLE controller bug (https://github.com/espressif/esp-idf/issues/18323[espressif/esp-idf#18323]) on ESP32-S3. When an appliance sends a rapid burst of push notifications (e.g. activating gourmet mode), the first message may be dropped. The integration detects this and recovers for subsequent messages, but the first state change in the burst is lost. Fixed in ESP-IDF 5.5.4, pending ESPHome/PlatformIO adoption.
+| Known ESP-IDF Bluedroid HCI bug on ESP32-S3. When an appliance sends a rapid burst of push notifications (e.g. activating gourmet mode on a wall oven), the first message may be dropped due to ACL fragment reassembly failure. The integration detects this and recovers for subsequent messages, but the first state change in the burst is lost. This seems to primarily affect appliances using 40-byte indication fragments (fw 8.5); appliances using 244-byte fragments (fw 2.27) are unaffected since their push notifications fit in a single indication.
 |===
 
 == Supported Sensors
@@ -302,11 +302,12 @@ TIP: Sub-Zero appliance BLE MAC addresses typically start with `00:06:80`. You c
 | *High Temp Wash* | High temperature wash option enabled
 | *Sanitize Rinse* | Sanitize rinse option enabled
 | *Rinse Aid Low* | Rinse aid level is low (problem sensor)
+| *Softener Low* | Water softener level is low (problem sensor, DW2450WS only)
 | *Light* | Interior light on/off
 | *Remote Ready* | Appliance is ready for remote commands
 | *Delay Start* | Delay start timer is active
 | *Service Required* | Alerts when the appliance flags a service need
-| *Appliance Model* | Model number (e.g. `DW2450`)
+| *Appliance Model* | Model number (e.g. `DW2450`, `DW2450WS`)
 | *Appliance Uptime* | Time since last power cycle
 |===
 
@@ -375,6 +376,7 @@ For ranges with two ovens, enable the second oven sensors using `hide_oven2: "fa
 | Sub-Zero | DEU2450R | Under-counter refrigerator | Fully working
 | Sub-Zero | 313 | French-door fridge/freezer with ice maker | Fully working
 | Cove | DW2450 | Dishwasher | Fully working
+| Cove | DW2450WS | Dishwasher (with water softener) | Fully working
 | Wolf | DF36450GSP | Dual-fuel range | Fully working
 | Wolf | SO3050PESP | Wall oven | Fully working
 | Sub-Zero | IW30R | Wine storage (dual-zone) | Fully working
