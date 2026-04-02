@@ -71,7 +71,6 @@ esp32:
   board: esp32dev
   framework:
     type: esp-idf
-    version: 5.5.3.1
     sdkconfig_options:
       CONFIG_BT_GATTC_CACHE_NVS_FLASH: "n"
 
@@ -152,7 +151,7 @@ packages:
           appliance_pin: "654321"
 ----
 
-NOTE: Use a unique `prefix` for each appliance (e.g. `szg`, `szg2`, `szg3`). See link:docs/advanced.adoc#ble-stack-tuning[BLE Stack Tuning] for `sdkconfig_options` needed when running 2+ concurrent connections.
+NOTE: Use a unique `prefix` for each appliance (e.g. `szg`, `szg2`, `szg3`). The base package sets `max_connections: 5` in `esp32_ble`, which supports up to 5 appliances on one ESP32. If you need more, add `esp32_ble: max_connections: 6` (or higher) to your device YAML. See link:docs/advanced.adoc#ble-stack-tuning[BLE Stack Tuning] for additional `sdkconfig_options` when running 2+ concurrent connections.
 
 TIP: Pin to a release tag (e.g. `ref: v0.1.2`) for stability, or use `ref: main` to track the latest changes
 

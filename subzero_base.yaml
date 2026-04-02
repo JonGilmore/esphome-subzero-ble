@@ -12,6 +12,7 @@ json:
 
 esp32_ble:
   io_capability: keyboard_only
+  max_connections: 5
 
 globals:
   - id: ${prefix}_phase

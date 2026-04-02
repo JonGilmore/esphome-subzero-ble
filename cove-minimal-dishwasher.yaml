@@ -24,16 +24,8 @@ esp32:
   board: esp32dev
   framework:
     type: esp-idf
-    version: 5.5.3.1
     sdkconfig_options:
       CONFIG_BT_GATTC_CACHE_NVS_FLASH: "n"
-      # The options below are only needed when running 2+ concurrent BLE
-      # appliance connections. They increase the max connection count (default 3)
-      # and enlarge the ACL buffer pool to avoid dropping indication fragments
-      # during rapid 40-byte JSON transfers across multiple connections.
-      # CONFIG_BT_ACL_CONNECTIONS: "4"
-      # CONFIG_BT_BLE_ACL_BUF_COUNT: "20"
-      # CONFIG_BT_BLE_ACL_BUF_SIZE: "255"
 
 logger:
   level: DEBUG

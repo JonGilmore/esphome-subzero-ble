@@ -73,7 +73,6 @@ esp32:
   board: esp32dev
   framework:
     type: esp-idf
-    version: 5.5.3.1
     sdkconfig_options:
       CONFIG_BT_GATTC_CACHE_NVS_FLASH: "n"
 ----
@@ -92,22 +91,11 @@ esp32:
   board: esp32dev
   framework:
     type: esp-idf
-    version: 5.5.3.1
     sdkconfig_options:
       # Disable GATT cache persistence - stale cached data causes D5 discovery
       # failures after re-pairing. Required for all configs.
       CONFIG_BT_GATTC_CACHE_NVS_FLASH: "n"
-      # The options below are only needed when running 2+ concurrent BLE
-      # appliance connections. They increase the max connection count (default 3)
-      # and enlarge the ACL buffer pool to avoid dropping indication fragments
-      # during rapid 40-byte JSON transfers across multiple connections.
-      CONFIG_BT_ACL_CONNECTIONS: "4"        # <1>
-      CONFIG_BT_BLE_ACL_BUF_COUNT: "20"     # <2>
-      CONFIG_BT_BLE_ACL_BUF_SIZE: "255"     # <3>
 ----
-<1> Maximum simultaneous BLE connections. Default is 3. Set to the number of appliances + 1 for headroom.
-<2> Number of ACL data buffers in the BLE controller pool. Default is 10. More buffers prevent dropped indication fragments when multiple appliances send data concurrently.
-<3> Size of each ACL buffer in bytes. Default is 251. Increase to 255 to accommodate full-size BLE packets.
 
 WARNING: These options increase RAM usage in the BLE stack. An ESP32-S3 with PSRAM can handle more.
 
