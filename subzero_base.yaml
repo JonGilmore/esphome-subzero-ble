@@ -8,6 +8,15 @@ substitutions:
   poll_offset: "0s"
   poll_via_d4: "false"
 
+external_components:
+  - source:
+      type: git
+      url: https://github.com/JonGilmore/esphome-subzero-ble
+      ref: v0.8.0
+    components: [patch_acl_reassembly]
+
+patch_acl_reassembly:
+
 json:
 
 esp32_ble:

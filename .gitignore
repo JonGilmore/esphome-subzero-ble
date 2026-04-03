@@ -17,3 +17,6 @@
 !subzero_dishwasher.yaml
 !subzero_range.yaml
 !subzero_base.yaml
+!components/
+!components/patch_acl_reassembly/
+!components/patch_acl_reassembly/**

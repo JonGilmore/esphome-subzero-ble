@@ -1,0 +1,30 @@
+"""
+PlatformIO pre-build script: copies the patched packet_fragmenter.c over the
+stock ESP-IDF version to fix Bluedroid ACL continuation fragment reassembly.
+
+See: https://github.com/espressif/esp-idf/issues/18414
+
+This will be removed once the upstream fix is merged into ESP-IDF.
+"""
+
+Import("env")
+
+import os
+import shutil
+
+PROJECT_DIR = env.subst("$PROJECT_DIR")
+FRAMEWORK_DIR = env.PioPlatform().get_package_dir("framework-espidf")
+
+SRC = os.path.join(PROJECT_DIR, "packet_fragmenter.c.patch")
+DST = os.path.join(
+    FRAMEWORK_DIR,
+    "components", "bt", "host", "bluedroid", "hci", "packet_fragmenter.c",
+)
+
+if not os.path.isfile(SRC):
+    print("  [ACL patch] Source file not found: %s" % SRC)
+elif not os.path.isfile(DST):
+    print("  [ACL patch] Target not found (ESP-IDF layout changed?): %s" % DST)
+else:
+    shutil.copy2(SRC, DST)
+    print("  [ACL patch] Patched packet_fragmenter.c")
