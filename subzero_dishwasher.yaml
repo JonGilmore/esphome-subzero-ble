@@ -43,6 +43,14 @@ sensor:
     icon: "mdi:counter"
     accuracy_decimals: 0
 
+  - platform: template
+    name: "${appliance_name} Wash Time Remaining"
+    id: ${prefix}_wash_time_remaining
+    icon: "mdi:timer-sand"
+    unit_of_measurement: "min"
+    accuracy_decimals: 0
+    device_class: duration
+
 binary_sensor:
   - platform: template
     name: "${appliance_name} Wash Cycle Active"
@@ -94,6 +102,17 @@ binary_sensor:
     id: ${prefix}_softener_low
     device_class: problem
     internal: ${hide_softener}
+
+text_sensor:
+  - platform: template
+    name: "${appliance_name} Wash Cycle End Time"
+    id: ${prefix}_wash_cycle_end_time
+    icon: "mdi:clock-end"
+
+globals:
+  - id: ${prefix}_wash_end_time_str
+    type: std::string
+    restore_value: false
 
 button:
   - platform: template
@@ -191,6 +210,39 @@ script:
               id(${prefix}_wash_status).publish_state(data["wash_status"].as<float>());
             if (data["wash_cycle"].is<float>())
               id(${prefix}_wash_cycle).publish_state(data["wash_cycle"].as<float>());
+            if (data["wash_cycle_end_time"].is<const char*>()) {
+              std::string end_str = data["wash_cycle_end_time"].as<std::string>();
+              id(${prefix}_wash_end_time_str) = end_str;
+              id(${prefix}_wash_cycle_end_time).publish_state(end_str);
+              // Compute remaining minutes from message timestamp
+              const char *ts = nullptr;
+              if (root["timestamp"].is<const char*>())
+                ts = root["timestamp"].as<const char*>();
+              else if (root["resp"].is<JsonObject>() && root["resp"]["time"].is<const char*>())
+                ts = root["resp"]["time"].as<const char*>();
+              if (ts && end_str.size() >= 16) {
+                // Parse end time "YYYY-MM-DDTHH:MM"
+                int ey, emo, ed, eh, emi;
+                if (sscanf(end_str.c_str(), "%d-%d-%dT%d:%d", &ey, &emo, &ed, &eh, &emi) == 5) {
+                  // Parse current timestamp "YYYY-MM-DDTHH:MM:SS..."
+                  int cy, cmo, cd, ch, cmi, cs = 0;
+                  if (sscanf(ts, "%d-%d-%dT%d:%d:%d", &cy, &cmo, &cd, &ch, &cmi, &cs) >= 5) {
+                    // Simple minute difference (same month assumption for wash cycles)
+                    int end_mins = (ed * 24 * 60) + (eh * 60) + emi;
+                    int cur_mins = (cd * 24 * 60) + (ch * 60) + cmi;
+                    int remaining = end_mins - cur_mins;
+                    if (remaining < 0) remaining = 0;
+                    id(${prefix}_wash_time_remaining).publish_state(remaining);
+                    ESP_LOGI("szg", "[${appliance_name}] Wash ends %s, ~%d min remaining", end_str.c_str(), remaining);
+                  }
+                }
+              }
+            }
+            // Clear remaining time when cycle ends
+            if (data["wash_cycle_on"].is<bool>() && !data["wash_cycle_on"].as<bool>()) {
+              if (id(${prefix}_wash_time_remaining).state > 0)
+                id(${prefix}_wash_time_remaining).publish_state(0);
+            }
             // --- Common sensors ---
             if (data["service_required"].is<bool>())
               id(${prefix}_svc_required).publish_state(data["service_required"].as<bool>());
