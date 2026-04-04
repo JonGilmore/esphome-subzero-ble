@@ -297,6 +297,8 @@ TIP: Sub-Zero appliance BLE MAC addresses typically start with `00:06:80`. You c
 | *Wash Cycle Active* | Whether a wash cycle is currently running
 | *Wash Status* | Numeric wash status code
 | *Wash Cycle* | Current wash cycle number
+| *Wash Time Remaining* | Minutes remaining in the current wash cycle
+| *Wash Cycle End Time* | Estimated completion time (e.g. `2026-04-04T07:03`)
 | *Heated Dry* | Heated dry option enabled
 | *Extended Dry* | Extended dry option enabled
 | *High Temp Wash* | High temperature wash option enabled
