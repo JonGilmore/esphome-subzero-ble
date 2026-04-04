@@ -4,6 +4,9 @@
 #   hide_freezer: "true" to hide freezer temp & door (default: "false")
 #   hide_ice_maker: "true" to hide ice maker (default: "false")
 #   hide_sabbath: "true" to hide sabbath mode (default: "false")
+#   hide_crisper: "false" to show crisper drawer temp (default: "true")
+#   hide_air_filter: "false" to show air filter sensors (default: "true")
+#   hide_water_filter: "false" to show water filter sensor (default: "true")
 #
 # Example (fridge/freezer combo - all sensors exposed):
 #   packages:
@@ -57,6 +60,9 @@ substitutions:
   hide_sabbath: "false"
   hide_wine: "true"
   hide_ref_drawer: "true"
+  hide_crisper: "true"
+  hide_air_filter: "true"
+  hide_water_filter: "true"
 
 packages:
   base: !include subzero_base.yaml
@@ -144,6 +150,34 @@ sensor:
     icon: "mdi:thermometer"
     internal: ${hide_ref_drawer}
 
+  - platform: template
+    name: "${appliance_name} Crisper Drawer Temperature"
+    id: ${prefix}_crisp_temp
+    unit_of_measurement: "°F"
+    device_class: temperature
+    state_class: measurement
+    accuracy_decimals: 0
+    icon: "mdi:thermometer"
+    internal: ${hide_crisper}
+
+  - platform: template
+    name: "${appliance_name} Air Filter Remaining"
+    id: ${prefix}_air_filter_pct
+    unit_of_measurement: "%"
+    state_class: measurement
+    accuracy_decimals: 0
+    icon: "mdi:air-filter"
+    internal: ${hide_air_filter}
+
+  - platform: template
+    name: "${appliance_name} Water Filter Remaining"
+    id: ${prefix}_water_filter_pct
+    unit_of_measurement: "%"
+    state_class: measurement
+    accuracy_decimals: 0
+    icon: "mdi:water-percent"
+    internal: ${hide_water_filter}
+
 binary_sensor:
   - platform: template
     name: "${appliance_name} Sabbath Mode"
@@ -180,6 +214,12 @@ binary_sensor:
     id: ${prefix}_ref2_door_ajar
     device_class: door
     internal: ${hide_ref_drawer}
+
+  - platform: template
+    name: "${appliance_name} Air Filter"
+    id: ${prefix}_air_filter_on
+    icon: "mdi:air-filter"
+    internal: ${hide_air_filter}
 
 button:
   - platform: template
@@ -254,6 +294,8 @@ script:
             // --- Fridge sensors ---
             if (data["ref_set_temp"].is<float>())
               id(${prefix}_set_temp).publish_state(data["ref_set_temp"].as<float>());
+            else if (data["frz_set_temp"].is<float>() && !data["ref_set_temp"].is<float>())
+              id(${prefix}_set_temp).publish_state(data["frz_set_temp"].as<float>());
             // Door (fallback chain: ref_door_ajar -> door_ajar)
             if (data["ref_door_ajar"].is<bool>())
               id(${prefix}_door_ajar).publish_state(data["ref_door_ajar"].as<bool>());
@@ -280,6 +322,16 @@ script:
               id(${prefix}_wine2_temp).publish_state(data["wine2_set_temp"].as<float>());
             if (data["wine_temp_alert_on"].is<bool>())
               id(${prefix}_wine_temp_alert).publish_state(data["wine_temp_alert_on"].as<bool>());
+            // --- Crisper drawer sensors ---
+            if (data["crisp_set_temp"].is<float>())
+              id(${prefix}_crisp_temp).publish_state(data["crisp_set_temp"].as<float>());
+            // --- Filter sensors ---
+            if (data["air_filter_on"].is<bool>())
+              id(${prefix}_air_filter_on).publish_state(data["air_filter_on"].as<bool>());
+            if (data["air_filter_pct_remaining"].is<float>())
+              id(${prefix}_air_filter_pct).publish_state(data["air_filter_pct_remaining"].as<float>());
+            if (data["water_filter_pct_remaining"].is<float>())
+              id(${prefix}_water_filter_pct).publish_state(data["water_filter_pct_remaining"].as<float>());
             // --- Common sensors ---
             if (data["sabbath_on"].is<bool>())
               id(${prefix}_sabbath_on).publish_state(data["sabbath_on"].as<bool>());

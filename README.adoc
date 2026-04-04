@@ -179,6 +179,9 @@ vars:
 | `hide_sabbath` | `"false"` | Sabbath Mode
 | `hide_wine` | `"true"` | Wine Door, Wine Zone Upper Temperature, Wine Zone Lower Temperature, Wine Temperature Alert
 | `hide_ref_drawer` | `"true"` | Refrigerator Drawer Temperature, Refrigerator Drawer Door
+| `hide_crisper` | `"true"` | Crisper Drawer Temperature
+| `hide_air_filter` | `"true"` | Air Filter, Air Filter Remaining
+| `hide_water_filter` | `"true"` | Water Filter Remaining
 | `hide_softener` | `"true"` | Water softener on a dishwasher
 |===
 
@@ -191,6 +194,19 @@ vars:
   appliance_mac: "00:06:80:XX:XX:XX"
   appliance_pin: "123456"
   hide_ref_drawer: "false"
+----
+
+.Fridge with Crisper & Filters (e.g. DEC3650RID)
+[source,yaml]
+----
+vars:
+  prefix: "szg"
+  appliance_name: "Fridge"
+  appliance_mac: "00:06:80:XX:XX:XX"
+  appliance_pin: "123456"
+  hide_crisper: "false"
+  hide_air_filter: "false"
+  hide_water_filter: "false"
 ----
 
 .Wine Fridge (dual-zone, no freezer or ice maker)
@@ -270,7 +286,7 @@ TIP: Sub-Zero appliance BLE MAC addresses typically start with `00:06:80`. You c
 |===
 | Sensor | Description
 
-| *Refrigerator Set Temperature* | Current fridge setpoint (°F)
+| *Refrigerator Set Temperature* | Current fridge setpoint (°F). For standalone freezer units, falls back to the freezer setpoint.
 | *Freezer Set Temperature* | Current freezer setpoint (°F) _(optional)_
 | *Refrigerator Door* | Open/closed binary sensor
 | *Freezer Door* | Open/closed binary sensor _(optional)_
@@ -282,6 +298,10 @@ TIP: Sub-Zero appliance BLE MAC addresses typically start with `00:06:80`. You c
 | *Wine Temperature Alert* | Temperature alert binary sensor _(optional)_
 | *Refrigerator Drawer Temperature* | Drawer compartment setpoint (°F) _(optional)_
 | *Refrigerator Drawer Door* | Drawer open/closed binary sensor _(optional)_
+| *Crisper Drawer Temperature* | Crisper drawer setpoint (°F) _(optional)_
+| *Air Filter* | Air filter on/off binary sensor _(optional)_
+| *Air Filter Remaining* | Air filter life remaining (%) _(optional)_
+| *Water Filter Remaining* | Water filter life remaining (%) _(optional)_
 | *Service Required* | Alerts when the appliance flags a service need
 | *Appliance Model* | Model number (e.g. `DEU2450R`, `313`)
 | *Appliance Uptime* | Time since last power cycle
