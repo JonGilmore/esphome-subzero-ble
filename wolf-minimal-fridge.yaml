@@ -1,21 +1,17 @@
-# Minimal ESPHome config for a single Wolf appliance over BLE.
-# This example connects to a Wolf DF36450GSP kitchen range.
-# Edit the substitutions and secrets to match your setup.
-
 substitutions:
-  name: "wolf-range"
-  friendly_name: "Wolf Range"
+  name: "subzero-fridge"
+  friendly_name: "Main Fridge"
 
 packages:
   - url: https://github.com/JonGilmore/esphome-subzero-ble
     ref: v0.8.0
     files:
-      - path: subzero_range.yaml
+      - path: subzero_fridge.yaml
         vars:
-          prefix: "szg"
-          appliance_name: "Kitchen Range"
-          appliance_mac: !secret kitchen_range_mac
-          appliance_pin: !secret kitchen_range_pin
+          prefix: "szg0"
+          appliance_name: "Main Fridge"
+          appliance_mac: !secret main_fridge_mac
+          appliance_pin: !secret main_fridge_pin
 
 esphome:
   name: ${name}

@@ -4,6 +4,7 @@
 
 !.gitignore
 !.github/workflows/ci.yml
+!.github/workflows/release.yml
 !.github/workflows/
 !.github/
 !README.adoc
@@ -13,6 +14,7 @@
 !subzero.yaml
 !cove-minimal-dishwasher.yaml
 !wolf-minimal-range.yaml
+!wolf-minimal-fridge.yaml
 !subzero_fridge.yaml
 !subzero_dishwasher.yaml
 !subzero_range.yaml

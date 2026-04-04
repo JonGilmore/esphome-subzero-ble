@@ -1,0 +1,81 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: "Version bump type"
+        required: true
+        default: "minor"
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get current version
+        id: current
+        run: |
+          CURRENT=$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' | sort -V | tail -1)
+          echo "version=${CURRENT:-v0.0.0}" >> "$GITHUB_OUTPUT"
+          echo "Current version: ${CURRENT:-v0.0.0}"
+
+      - name: Calculate new version
+        id: new
+        run: |
+          VERSION="${{ steps.current.outputs.version }}"
+          VERSION="${VERSION#v}"
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$VERSION"
+
+          case "${{ inputs.bump }}" in
+            major) MAJOR=$((MAJOR + 1)); MINOR=0; PATCH=0 ;;
+            minor) MINOR=$((MINOR + 1)); PATCH=0 ;;
+            patch) PATCH=$((PATCH + 1)) ;;
+          esac
+
+          NEW="v${MAJOR}.${MINOR}.${PATCH}"
+          echo "version=$NEW" >> "$GITHUB_OUTPUT"
+          echo "New version: $NEW"
+
+      - name: Create tag on current HEAD
+        run: |
+          git tag "${{ steps.new.outputs.version }}"
+          git push origin "${{ steps.new.outputs.version }}"
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ steps.new.outputs.version }}" \
+            --generate-notes \
+            --title "${{ steps.new.outputs.version }}"
+
+      - name: Update version references
+        run: |
+          NEW="${{ steps.new.outputs.version }}"
+          sed -i "s/ref: v[0-9]*\.[0-9]*\.[0-9]*/ref: ${NEW}/g" \
+            subzero_base.yaml \
+            wolf-minimal-fridge.yaml \
+            wolf-minimal-range.yaml \
+            cove-minimal-dishwasher.yaml \
+            README.adoc
+
+      - name: Commit and push version bump
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --quiet && exit 0
+          git commit -m "chore: bump version refs to ${{ steps.new.outputs.version }}"
+          git push

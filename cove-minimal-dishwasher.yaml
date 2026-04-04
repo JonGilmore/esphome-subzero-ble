@@ -7,13 +7,15 @@ substitutions:
   friendly_name: "Cove Dishwasher"
 
 packages:
-  right_dishwasher: !include
-    file: subzero_dishwasher.yaml
-    vars:
-      prefix: "szg"
-      appliance_name: "Right Dishwasher"
-      appliance_mac: !secret right_dishwasher_mac
-      appliance_pin: !secret right_dishwasher_pin
+  - url: https://github.com/JonGilmore/esphome-subzero-ble
+    ref: v0.8.0
+    files:
+      - path: subzero_dishwasher.yaml
+        vars:
+          prefix: "szg"
+          appliance_name: "Right Dishwasher"
+          appliance_mac: !secret right_dishwasher_mac
+          appliance_pin: !secret right_dishwasher_pin
 
 esphome:
   name: ${name}
