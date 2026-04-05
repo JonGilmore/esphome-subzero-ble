@@ -50,6 +50,8 @@ sensor:
     unit_of_measurement: "min"
     accuracy_decimals: 0
     device_class: duration
+    lambda: "return 0;"
+    update_interval: never
 
 binary_sensor:
   - platform: template
@@ -108,6 +110,8 @@ text_sensor:
     name: "${appliance_name} Wash Cycle End Time"
     id: ${prefix}_wash_cycle_end_time
     icon: "mdi:clock-end"
+    lambda: 'return {""};'
+    update_interval: never
 
 globals:
   - id: ${prefix}_wash_end_time_str
