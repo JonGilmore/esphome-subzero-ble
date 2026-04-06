@@ -342,6 +342,7 @@ TIP: Sub-Zero appliance BLE MAC addresses typically start with `00:06:80`. You c
 | *Oven Temperature* | Current cavity temperature (°F)
 | *Oven Set Temperature* | Target cavity temperature (°F)
 | *Cook Mode* | Numeric cook mode code
+| *Gourmet Recipe* | Current gourmet recipe number
 | *Probe Temperature* | Meat probe current temperature (°F)
 | *Probe Set Temperature* | Meat probe target temperature (°F)
 | *Door* | Open/closed binary sensor
@@ -354,10 +355,15 @@ TIP: Sub-Zero appliance BLE MAC addresses typically start with `00:06:80`. You c
 | *Probe Within 10°* | Probe is within 10° of set temperature
 | *Gourmet Mode* | Gourmet mode is active
 | *Cook Timer Complete* | Cook timer has finished
+| *Cook Timer Within 1 Min* | Cook timer is within 1 minute of finishing
 | *Kitchen Timer Active* | Kitchen timer 1 is running
 | *Kitchen Timer Complete* | Kitchen timer 1 has finished
+| *Kitchen Timer Within 1 Min* | Kitchen timer 1 is within 1 minute of finishing
+| *Kitchen Timer End Time* | Kitchen timer 1 estimated end time
 | *Kitchen Timer 2 Active* | Kitchen timer 2 is running
 | *Kitchen Timer 2 Complete* | Kitchen timer 2 has finished
+| *Kitchen Timer 2 Within 1 Min* | Kitchen timer 2 is within 1 minute of finishing
+| *Kitchen Timer 2 End Time* | Kitchen timer 2 estimated end time
 | *Oven 2 Temperature* | Second cavity temperature (°F) _(optional)_
 | *Oven 2 Set Temperature* | Second cavity target temperature (°F) _(optional)_
 | *Oven 2 Cook Mode* | Second cavity cook mode code _(optional)_

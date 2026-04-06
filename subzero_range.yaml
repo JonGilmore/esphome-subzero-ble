@@ -56,6 +56,12 @@ sensor:
     accuracy_decimals: 0
 
   - platform: template
+    name: "${appliance_name} Gourmet Recipe"
+    id: ${prefix}_cav_gourmet_recipe
+    icon: "mdi:chef-hat"
+    accuracy_decimals: 0
+
+  - platform: template
     name: "${appliance_name} Probe Temperature"
     id: ${prefix}_probe_temp
     unit_of_measurement: "°F"
@@ -172,6 +178,11 @@ binary_sensor:
     icon: "mdi:timer-alert"
 
   - platform: template
+    name: "${appliance_name} Cook Timer Within 1 Min"
+    id: ${prefix}_cook_timer_near
+    icon: "mdi:timer-alert-outline"
+
+  - platform: template
     name: "${appliance_name} Kitchen Timer Active"
     id: ${prefix}_ktimer_active
     icon: "mdi:timer"
@@ -182,6 +193,11 @@ binary_sensor:
     icon: "mdi:timer-alert"
 
   - platform: template
+    name: "${appliance_name} Kitchen Timer Within 1 Min"
+    id: ${prefix}_ktimer_near
+    icon: "mdi:timer-alert-outline"
+
+  - platform: template
     name: "${appliance_name} Kitchen Timer 2 Active"
     id: ${prefix}_ktimer2_active
     icon: "mdi:timer"
@@ -190,6 +206,11 @@ binary_sensor:
     name: "${appliance_name} Kitchen Timer 2 Complete"
     id: ${prefix}_ktimer2_done
     icon: "mdi:timer-alert"
+
+  - platform: template
+    name: "${appliance_name} Kitchen Timer 2 Within 1 Min"
+    id: ${prefix}_ktimer2_near
+    icon: "mdi:timer-alert-outline"
 
   - platform: template
     name: "${appliance_name} Oven 2"
@@ -250,6 +271,17 @@ binary_sensor:
     id: ${prefix}_cav2_cook_timer_done
     icon: "mdi:timer-alert"
     internal: ${hide_oven2}
+
+text_sensor:
+  - platform: template
+    name: "${appliance_name} Kitchen Timer End Time"
+    id: ${prefix}_ktimer_end_time
+    icon: "mdi:clock-end"
+
+  - platform: template
+    name: "${appliance_name} Kitchen Timer 2 End Time"
+    id: ${prefix}_ktimer2_end_time
+    icon: "mdi:clock-end"
 
 button:
   - platform: template
@@ -341,16 +373,28 @@ script:
               id(${prefix}_cav_probe_near).publish_state(data["cav_probe_within_10deg"].as<bool>());
             if (data["cav_gourmet_mode_on"].is<bool>())
               id(${prefix}_cav_gourmet).publish_state(data["cav_gourmet_mode_on"].as<bool>());
+            if (data["cav_gourmet_recipe"].is<float>())
+              id(${prefix}_cav_gourmet_recipe).publish_state(data["cav_gourmet_recipe"].as<float>());
             if (data["cav_cook_timer_complete"].is<bool>())
               id(${prefix}_cook_timer_done).publish_state(data["cav_cook_timer_complete"].as<bool>());
+            if (data["cav_cook_timer_within_1min"].is<bool>())
+              id(${prefix}_cook_timer_near).publish_state(data["cav_cook_timer_within_1min"].as<bool>());
             if (data["kitchen_timer_active"].is<bool>())
               id(${prefix}_ktimer_active).publish_state(data["kitchen_timer_active"].as<bool>());
             if (data["kitchen_timer_complete"].is<bool>())
               id(${prefix}_ktimer_done).publish_state(data["kitchen_timer_complete"].as<bool>());
+            if (data["kitchen_timer_within_1min"].is<bool>())
+              id(${prefix}_ktimer_near).publish_state(data["kitchen_timer_within_1min"].as<bool>());
+            if (data["kitchen_timer_end_time"].is<const char*>())
+              id(${prefix}_ktimer_end_time).publish_state(data["kitchen_timer_end_time"].as<std::string>());
             if (data["kitchen_timer2_active"].is<bool>())
               id(${prefix}_ktimer2_active).publish_state(data["kitchen_timer2_active"].as<bool>());
             if (data["kitchen_timer2_complete"].is<bool>())
               id(${prefix}_ktimer2_done).publish_state(data["kitchen_timer2_complete"].as<bool>());
+            if (data["kitchen_timer2_within_1min"].is<bool>())
+              id(${prefix}_ktimer2_near).publish_state(data["kitchen_timer2_within_1min"].as<bool>());
+            if (data["kitchen_timer2_end_time"].is<const char*>())
+              id(${prefix}_ktimer2_end_time).publish_state(data["kitchen_timer2_end_time"].as<std::string>());
             if (data["cav_temp"].is<float>())
               id(${prefix}_cav_temp).publish_state(data["cav_temp"].as<float>());
             if (data["cav_set_temp"].is<float>())
