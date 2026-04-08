@@ -45,5 +45,3 @@ wifi:
   password: !secret wifi_password
   fast_connect: true
   power_save_mode: none
-
-esp32_ble_tracker:
