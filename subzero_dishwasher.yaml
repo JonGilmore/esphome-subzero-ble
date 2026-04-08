@@ -30,6 +30,14 @@ substitutions:
 packages:
   base: !include subzero_base.yaml
 
+esphome:
+  on_boot:
+    - priority: -100
+      then:
+        - lambda: |-
+            id(${prefix}_wash_time_remaining).publish_state(0);
+            id(${prefix}_wash_cycle_end_time).publish_state("");
+
 sensor:
   - platform: template
     name: "${appliance_name} Wash Status"
@@ -50,8 +58,6 @@ sensor:
     unit_of_measurement: "min"
     accuracy_decimals: 0
     device_class: duration
-    lambda: "return 0;"
-    update_interval: never
 
 binary_sensor:
   - platform: template
@@ -110,8 +116,6 @@ text_sensor:
     name: "${appliance_name} Wash Cycle End Time"
     id: ${prefix}_wash_cycle_end_time
     icon: "mdi:clock-end"
-    lambda: 'return {""};'
-    update_interval: never
 
 globals:
   - id: ${prefix}_wash_end_time_str
