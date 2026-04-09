@@ -8,7 +8,7 @@ substitutions:
 
 packages:
   - url: https://github.com/JonGilmore/esphome-subzero-ble
-    ref: v0.19.0
+    ref: v0.20.0
     files:
       - path: subzero_range.yaml
         vars:
