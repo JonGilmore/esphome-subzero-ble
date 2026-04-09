@@ -30,6 +30,13 @@ substitutions:
 packages:
   base: !include subzero_base.yaml
 
+esphome:
+  on_boot:
+    - priority: -100
+      then:
+        - lambda: |-
+            id(${prefix}_ktimer_end_time).publish_state("");
+            id(${prefix}_ktimer2_end_time).publish_state("");
 sensor:
   - platform: template
     name: "${appliance_name} Oven Temperature"
