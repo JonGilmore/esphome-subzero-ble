@@ -410,6 +410,8 @@ For ranges with two ovens, enable the second oven sensors using `hide_oven2: "fa
 | Sub-Zero | IW30R | Wine storage (dual-zone) | Fully working
 | Sub-Zero | IT36CIID | Refrigerator/Freezer with Ice Maker | Fully working
 | Sub-Zero | 48SID | Refrigerator/Freezer with Ice Maker | Fully working
+| Sub-Zero | BI36UFDID | Built-in Refrigerator/Freezer with Ice Maker | Fully working
+| Wolf | IR36550ST | Induction Range | Fully working
 |===
 
 Other Sub-Zero, Wolf, and Cove appliances with BLE should work - they all use the same protocol. If you test with a different model, please open an issue or PR to update this table. See link:docs/advanced.adoc#_debug_mode[Debug Mode] for how to capture your appliance's data.
