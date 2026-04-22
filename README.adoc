@@ -174,12 +174,12 @@ vars:
 |===
 | Option | Default | Hides
 
-| `hide_freezer` | `"false"` | Freezer Temperature, Freezer Door
+| `hide_freezer` | `"false"` | Freezer Set Temperature, Freezer Door
 | `hide_ice_maker` | `"false"` | Ice Maker
 | `hide_sabbath` | `"false"` | Sabbath Mode
-| `hide_wine` | `"true"` | Wine Door, Wine Zone Upper Temperature, Wine Zone Lower Temperature, Wine Temperature Alert
-| `hide_ref_drawer` | `"true"` | Refrigerator Drawer Temperature, Refrigerator Drawer Door
-| `hide_crisper` | `"true"` | Crisper Drawer Temperature
+| `hide_wine` | `"true"` | Wine Door, Wine Zone Upper Set Temperature, Wine Zone Lower Set Temperature, Wine Temperature Alert
+| `hide_ref_drawer` | `"true"` | Refrigerator Drawer Set Temperature, Refrigerator Drawer Door
+| `hide_crisper` | `"true"` | Crisper Drawer Set Temperature
 | `hide_air_filter` | `"true"` | Air Filter, Air Filter Remaining
 | `hide_water_filter` | `"true"` | Water Filter Remaining
 | `hide_softener` | `"true"` | Water softener on a dishwasher
@@ -282,6 +282,8 @@ TIP: Sub-Zero appliance BLE MAC addresses typically start with `00:06:80`. You c
 
 === Refrigerator/Freezer
 
+NOTE: Sub-Zero fridge firmware only exposes _set points_ over BLE - actual/measured compartment temperatures are not available. Wolf ranges do expose measured cavity temperatures (see below).
+
 [cols="1,3"]
 |===
 | Sensor | Description
@@ -293,12 +295,12 @@ TIP: Sub-Zero appliance BLE MAC addresses typically start with `00:06:80`. You c
 | *Ice Maker* | On/off binary sensor _(optional)_
 | *Sabbath Mode* | On/off binary sensor _(optional)_
 | *Wine Door* | Open/closed binary sensor _(optional)_
-| *Wine Zone Upper Temperature* | Upper zone setpoint (°F) _(optional)_
-| *Wine Zone Lower Temperature* | Lower zone setpoint (°F) _(optional)_
+| *Wine Zone Upper Set Temperature* | Upper zone setpoint (°F) _(optional)_
+| *Wine Zone Lower Set Temperature* | Lower zone setpoint (°F) _(optional)_
 | *Wine Temperature Alert* | Temperature alert binary sensor _(optional)_
-| *Refrigerator Drawer Temperature* | Drawer compartment setpoint (°F) _(optional)_
+| *Refrigerator Drawer Set Temperature* | Drawer compartment setpoint (°F) _(optional)_
 | *Refrigerator Drawer Door* | Drawer open/closed binary sensor _(optional)_
-| *Crisper Drawer Temperature* | Crisper drawer setpoint (°F) _(optional)_
+| *Crisper Drawer Set Temperature* | Crisper drawer setpoint (°F) _(optional)_
 | *Air Filter* | Air filter on/off binary sensor _(optional)_
 | *Air Filter Remaining* | Air filter life remaining (%) _(optional)_
 | *Water Filter Remaining* | Water filter life remaining (%) _(optional)_
@@ -393,6 +395,26 @@ For ranges with two ovens, enable the second oven sensors using `hide_oven2: "fa
 | Option | Default | Hides
 
 | `hide_oven2` | `"true"` | All Oven 2 sensors (temperature, door, light, probe, cook mode, etc.)
+|===
+
+=== Diagnostics (All Appliances)
+
+These diagnostic text sensors are exposed under HA's Diagnostic section for every supported appliance type. Not every appliance populates every field - missing keys leave the sensor unknown. Useful for troubleshooting firmware-version-specific behavior or sharing context in bug reports.
+
+[cols="1,3"]
+|===
+| Sensor | Description
+
+| *Appliance Serial* | Hardware serial number (trimmed of padding spaces)
+| *Appliance Type* | Product type code (e.g. `17.5.2.0`, `1.1.1.12`)
+| *Diagnostic Status* | Hex bitmask of internal status flags (e.g. `0x00000003111`)
+| *Firmware Version* | Main firmware version (e.g. `2.27`, `8.5`)
+| *API Version* | BLE API protocol version (e.g. `5.5`)
+| *BLE App Version* | BLE application version
+| *OS Version* | Underlying OS version
+| *RTApp Version* | Realtime application version
+| *Appliance Board Version* | Raw composite string of sub-board versions (e.g. `main: 10.11.6877; mcb_ccm_lv: 9.4.4034; uim_typeA: 11.0.13`). Sub-fields vary by appliance - parse in a HA template if you need individual values.
+| *Build Date* | Firmware build timestamp
 |===
 
 === Tested Appliances

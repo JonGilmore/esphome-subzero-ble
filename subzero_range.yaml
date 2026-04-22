@@ -453,6 +453,37 @@ script:
               id(${prefix}_model).publish_state(data["appliance_model"].as<std::string>());
             if (data["uptime"].is<const char*>())
               id(${prefix}_uptime).publish_state(data["uptime"].as<std::string>());
+            if (data["appliance_serial"].is<const char*>()) {
+              std::string s = data["appliance_serial"].as<std::string>();
+              size_t start = s.find_first_not_of(" \t");
+              size_t end = s.find_last_not_of(" \t");
+              if (start != std::string::npos)
+                id(${prefix}_serial).publish_state(s.substr(start, end - start + 1));
+            }
+            if (data["appliance_type"].is<const char*>())
+              id(${prefix}_appliance_type).publish_state(data["appliance_type"].as<std::string>());
+            if (data["diagnostic_status"].is<const char*>())
+              id(${prefix}_diag_status).publish_state(data["diagnostic_status"].as<std::string>());
+            if (data["version"].is<JsonObject>()) {
+              JsonObject v = data["version"].as<JsonObject>();
+              if (v["fw"].is<const char*>())
+                id(${prefix}_fw_version).publish_state(v["fw"].as<std::string>());
+              if (v["api"].is<const char*>())
+                id(${prefix}_api_version).publish_state(v["api"].as<std::string>());
+              if (v["bleapp"].is<const char*>())
+                id(${prefix}_bleapp_version).publish_state(v["bleapp"].as<std::string>());
+              if (v["os"].is<const char*>())
+                id(${prefix}_os_version).publish_state(v["os"].as<std::string>());
+              if (v["rtapp"].is<const char*>())
+                id(${prefix}_rtapp_version).publish_state(v["rtapp"].as<std::string>());
+              if (v["appliance"].is<const char*>())
+                id(${prefix}_board_version).publish_state(v["appliance"].as<std::string>());
+            }
+            if (data["build_info"].is<JsonObject>()) {
+              JsonObject b = data["build_info"].as<JsonObject>();
+              if (b["build_date"].is<const char*>())
+                id(${prefix}_build_date).publish_state(b["build_date"].as<std::string>());
+            }
             // Debug: log all keys in the response
             if (id(${prefix}_debug_mode)) {
               for (JsonPair kv : data) {

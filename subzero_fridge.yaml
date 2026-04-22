@@ -107,8 +107,8 @@ sensor:
     icon: "mdi:thermometer"
 
   - platform: template
-    name: "${appliance_name} Freezer Temperature"
-    id: ${prefix}_frz_temp
+    name: "${appliance_name} Freezer Set Temperature"
+    id: ${prefix}_frz_set_temp
     unit_of_measurement: "°F"
     device_class: temperature
     state_class: measurement
@@ -117,8 +117,8 @@ sensor:
     internal: ${hide_freezer}
 
   - platform: template
-    name: "${appliance_name} Wine Zone Upper Temperature"
-    id: ${prefix}_wine_temp
+    name: "${appliance_name} Wine Zone Upper Set Temperature"
+    id: ${prefix}_wine_set_temp
     unit_of_measurement: "°F"
     device_class: temperature
     state_class: measurement
@@ -127,8 +127,8 @@ sensor:
     internal: ${hide_wine}
 
   - platform: template
-    name: "${appliance_name} Wine Zone Lower Temperature"
-    id: ${prefix}_wine2_temp
+    name: "${appliance_name} Wine Zone Lower Set Temperature"
+    id: ${prefix}_wine2_set_temp
     unit_of_measurement: "°F"
     device_class: temperature
     state_class: measurement
@@ -137,8 +137,8 @@ sensor:
     internal: ${hide_wine}
 
   - platform: template
-    name: "${appliance_name} Refrigerator Drawer Temperature"
-    id: ${prefix}_ref2_temp
+    name: "${appliance_name} Refrigerator Drawer Set Temperature"
+    id: ${prefix}_ref2_set_temp
     unit_of_measurement: "°F"
     device_class: temperature
     state_class: measurement
@@ -147,8 +147,8 @@ sensor:
     internal: ${hide_ref_drawer}
 
   - platform: template
-    name: "${appliance_name} Crisper Drawer Temperature"
-    id: ${prefix}_crisp_temp
+    name: "${appliance_name} Crisper Drawer Set Temperature"
+    id: ${prefix}_crisp_set_temp
     unit_of_measurement: "°F"
     device_class: temperature
     state_class: measurement
@@ -299,28 +299,28 @@ script:
               id(${prefix}_door_ajar).publish_state(data["door_ajar"].as<bool>());
             // --- Freezer sensors ---
             if (data["frz_set_temp"].is<float>())
-              id(${prefix}_frz_temp).publish_state(data["frz_set_temp"].as<float>());
+              id(${prefix}_frz_set_temp).publish_state(data["frz_set_temp"].as<float>());
             if (data["frz_door_ajar"].is<bool>())
               id(${prefix}_frz_door_ajar).publish_state(data["frz_door_ajar"].as<bool>());
             if (data["ice_maker_on"].is<bool>())
               id(${prefix}_ice_maker).publish_state(data["ice_maker_on"].as<bool>());
             // --- Refrigerator drawer sensors ---
             if (data["ref2_set_temp"].is<float>())
-              id(${prefix}_ref2_temp).publish_state(data["ref2_set_temp"].as<float>());
+              id(${prefix}_ref2_set_temp).publish_state(data["ref2_set_temp"].as<float>());
             if (data["ref2_door_ajar"].is<bool>())
               id(${prefix}_ref2_door_ajar).publish_state(data["ref2_door_ajar"].as<bool>());
             // --- Wine sensors ---
             if (data["wine_door_ajar"].is<bool>())
               id(${prefix}_wine_door_ajar).publish_state(data["wine_door_ajar"].as<bool>());
             if (data["wine_set_temp"].is<float>())
-              id(${prefix}_wine_temp).publish_state(data["wine_set_temp"].as<float>());
+              id(${prefix}_wine_set_temp).publish_state(data["wine_set_temp"].as<float>());
             if (data["wine2_set_temp"].is<float>())
-              id(${prefix}_wine2_temp).publish_state(data["wine2_set_temp"].as<float>());
+              id(${prefix}_wine2_set_temp).publish_state(data["wine2_set_temp"].as<float>());
             if (data["wine_temp_alert_on"].is<bool>())
               id(${prefix}_wine_temp_alert).publish_state(data["wine_temp_alert_on"].as<bool>());
             // --- Crisper drawer sensors ---
             if (data["crisp_set_temp"].is<float>())
-              id(${prefix}_crisp_temp).publish_state(data["crisp_set_temp"].as<float>());
+              id(${prefix}_crisp_set_temp).publish_state(data["crisp_set_temp"].as<float>());
             // --- Filter sensors ---
             if (data["air_filter_on"].is<bool>())
               id(${prefix}_air_filter_on).publish_state(data["air_filter_on"].as<bool>());
@@ -338,6 +338,37 @@ script:
               id(${prefix}_model).publish_state(data["appliance_model"].as<std::string>());
             if (data["uptime"].is<const char*>())
               id(${prefix}_uptime).publish_state(data["uptime"].as<std::string>());
+            if (data["appliance_serial"].is<const char*>()) {
+              std::string s = data["appliance_serial"].as<std::string>();
+              size_t start = s.find_first_not_of(" \t");
+              size_t end = s.find_last_not_of(" \t");
+              if (start != std::string::npos)
+                id(${prefix}_serial).publish_state(s.substr(start, end - start + 1));
+            }
+            if (data["appliance_type"].is<const char*>())
+              id(${prefix}_appliance_type).publish_state(data["appliance_type"].as<std::string>());
+            if (data["diagnostic_status"].is<const char*>())
+              id(${prefix}_diag_status).publish_state(data["diagnostic_status"].as<std::string>());
+            if (data["version"].is<JsonObject>()) {
+              JsonObject v = data["version"].as<JsonObject>();
+              if (v["fw"].is<const char*>())
+                id(${prefix}_fw_version).publish_state(v["fw"].as<std::string>());
+              if (v["api"].is<const char*>())
+                id(${prefix}_api_version).publish_state(v["api"].as<std::string>());
+              if (v["bleapp"].is<const char*>())
+                id(${prefix}_bleapp_version).publish_state(v["bleapp"].as<std::string>());
+              if (v["os"].is<const char*>())
+                id(${prefix}_os_version).publish_state(v["os"].as<std::string>());
+              if (v["rtapp"].is<const char*>())
+                id(${prefix}_rtapp_version).publish_state(v["rtapp"].as<std::string>());
+              if (v["appliance"].is<const char*>())
+                id(${prefix}_board_version).publish_state(v["appliance"].as<std::string>());
+            }
+            if (data["build_info"].is<JsonObject>()) {
+              JsonObject b = data["build_info"].as<JsonObject>();
+              if (b["build_date"].is<const char*>())
+                id(${prefix}_build_date).publish_state(b["build_date"].as<std::string>());
+            }
             // Debug: log all keys in the response
             if (id(${prefix}_debug_mode)) {
               for (JsonPair kv : data) {
