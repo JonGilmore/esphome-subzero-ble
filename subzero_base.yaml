@@ -461,7 +461,9 @@ script:
   # cache refresh. ble_client.ble_write would fail to find D5 on fridges.
   #
   # Also includes "zombie detection": poll_ok is set by any D5 notification (push or
-  # poll response). If 15 poll intervals pass with no data, we force reconnect.
+  # poll response), and by any D4 notification on fridges (which subscribe to both
+  # channels). If 15 poll intervals pass with no data on either channel, we force
+  # reconnect.
   - id: ${prefix}_periodic_poll
     mode: single
     then:
