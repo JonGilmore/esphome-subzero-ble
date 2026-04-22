@@ -305,6 +305,8 @@ Sensor data from fridges arrives as push notifications on D5. Each push contains
 
 The combined set of keys observed across D4 polls and D5 push notifications for fridge/freezer units includes: `ref_door_ajar`, `frz_door_ajar`, `ref_set_temp`, `frz_set_temp`, `ice_maker_on`, `max_ice_on`, `night_ice_on`, `sabbath_on`, `service_required`, `water_filter_gal_remaining`, `water_filter_pct_remaining`, `air_filter_pct_remaining`, `air_filter_on`, `appliance_model`, `uptime`, and others. Refrigerator-only units (no freezer) will not have `frz_*` or `ice_maker_*` keys. Wine storage units include `wine_door_ajar`, `wine_set_temp`, `wine2_set_temp`, and `wine_temp_alert_on`.
 
+IMPORTANT: Fridge firmware exposes only setpoints (`*_set_temp`) - no actual/measured compartment temperatures are published over BLE. This was confirmed empirically against an IW30R (fw 2.27) by capturing full `get_async` responses across a setpoint change that would drive the compressor; no `*_cur_temp`, `*_actual_temp`, or plain `*_temp` keys appeared in any response. The derived boolean `wine_temp_alert_on` shows the firmware tracks the real value internally, but it is not published. (Wolf ranges, by contrast, do expose `cav_temp` and `cav_probe_temp` as actual measurements distinct from their `*_set_temp` counterparts.)
+
 === D5 `get_async` Response (Wine Fridge)
 
 Wine fridges respond to `get_async` on D5 after a successful `unlock_channel` with their full state, similar to dishwashers and ranges.

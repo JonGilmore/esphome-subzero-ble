@@ -94,6 +94,7 @@ ble_client:
         - lambda: |-
             // Request large MTU - fridge firmware sends 40-byte chunks at default MTU,
             // but may use larger chunks if we negotiate higher (dishwasher/range use 244).
+            // Custom call required: ESPHome does not expose MTU negotiation.
             auto *cl = id(${prefix}_appliance);
             esp_ble_gattc_send_mtu_req(cl->get_gattc_if(), cl->get_conn_id());
             // Fast path: handles cached from previous connection (bonded)
@@ -222,6 +223,66 @@ text_sensor:
     name: "${appliance_name} Uptime"
     id: ${prefix}_uptime
     icon: "mdi:timer-outline"
+    entity_category: diagnostic
+
+  - platform: template
+    name: "${appliance_name} Appliance Serial"
+    id: ${prefix}_serial
+    icon: "mdi:identifier"
+    entity_category: diagnostic
+
+  - platform: template
+    name: "${appliance_name} Appliance Type"
+    id: ${prefix}_appliance_type
+    icon: "mdi:shape"
+    entity_category: diagnostic
+
+  - platform: template
+    name: "${appliance_name} Diagnostic Status"
+    id: ${prefix}_diag_status
+    icon: "mdi:stethoscope"
+    entity_category: diagnostic
+
+  - platform: template
+    name: "${appliance_name} Firmware Version"
+    id: ${prefix}_fw_version
+    icon: "mdi:chip"
+    entity_category: diagnostic
+
+  - platform: template
+    name: "${appliance_name} API Version"
+    id: ${prefix}_api_version
+    icon: "mdi:api"
+    entity_category: diagnostic
+
+  - platform: template
+    name: "${appliance_name} BLE App Version"
+    id: ${prefix}_bleapp_version
+    icon: "mdi:bluetooth"
+    entity_category: diagnostic
+
+  - platform: template
+    name: "${appliance_name} OS Version"
+    id: ${prefix}_os_version
+    icon: "mdi:memory"
+    entity_category: diagnostic
+
+  - platform: template
+    name: "${appliance_name} RTApp Version"
+    id: ${prefix}_rtapp_version
+    icon: "mdi:application-cog"
+    entity_category: diagnostic
+
+  - platform: template
+    name: "${appliance_name} Appliance Board Version"
+    id: ${prefix}_board_version
+    icon: "mdi:developer-board"
+    entity_category: diagnostic
+
+  - platform: template
+    name: "${appliance_name} Build Date"
+    id: ${prefix}_build_date
+    icon: "mdi:calendar-clock"
     entity_category: diagnostic
 
 text:
@@ -392,6 +453,17 @@ interval:
 
 script:
   # === Periodic poll - staggered to avoid concurrent BLE transfers ===
+  #
+  # All BLE command writes (here and in buttons/subscribe) use esp_ble_gattc_write_char
+  # directly by HANDLE rather than ESPHome's ble_client.ble_write action (which looks
+  # up by UUID). Reason: on fridges, D5 is not visible in the initial service discovery
+  # that populates ESPHome's characteristic database - it only appears after bonding +
+  # cache refresh. ble_client.ble_write would fail to find D5 on fridges.
+  #
+  # Also includes "zombie detection": poll_ok is set by any D5 notification (push or
+  # poll response), and by any D4 notification on fridges (which subscribe to both
+  # channels). If 15 poll intervals pass with no data on either channel, we force
+  # reconnect.
   - id: ${prefix}_periodic_poll
     mode: single
     then:
@@ -436,6 +508,11 @@ script:
           ESP_LOGI("szg", "[${appliance_name}] Periodic poll (miss=%d, retries=%d)",
             id(${prefix}_poll_miss), id(${prefix}_fast_retries));
 
+  # Post-bond discovery sequence - custom because:
+  # 1. On fridges, D5 is not visible in GATT until after bonding + cache refresh.
+  #    ESPHome's ble_client performs discovery once at connect and doesn't re-run it.
+  # 2. We need to match D4/D5/D6/D7/D8 by UUID suffix and cache handles for fast reconnect.
+  # 3. ESPHome does not expose GATT cache management (cache_refresh, cache_clean).
   - id: ${prefix}_post_bond
     mode: restart
     then:
@@ -627,8 +704,11 @@ script:
               client->get_gattc_if(), client->get_remote_bda(), d4);
             ESP_LOGI("ble", "[${appliance_name}] Subscribe D4 (h=%d) for diagnostics", d4);
           }
-          // Manually write CCCD enable value (0x0002 = indications on)
-          // CCCD descriptor is at char_value_handle + 2 (standard BLE layout)
+          // Manually write CCCD enable value (0x0002 = indications on).
+          // CCCD descriptor is at char_value_handle + 2 (standard BLE layout).
+          // Custom write required: ESPHome's `notify: true` auto-writes 0x01 or 0x02
+          // based on characteristic properties (NOTIFY bit → 0x01). Sub-Zero requires
+          // 0x02 regardless; relying on ESPHome's auto-detection is unsafe.
           uint8_t cccd_on[2] = {0x02, 0x00};
           esp_ble_gattc_write_char(
             client->get_gattc_if(), client->get_conn_id(),
