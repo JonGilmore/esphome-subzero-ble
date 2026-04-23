@@ -53,7 +53,7 @@ Choose the package file for your appliance type:
 ----
 packages:
   - url: https://github.com/JonGilmore/esphome-subzero-ble
-    ref: v0.21.0 # use latest tag, or main
+    ref: v1.0.0 # use latest tag, or main
     files:
       - path: subzero_fridge.yaml
         vars:
@@ -105,7 +105,7 @@ esp32_ble_tracker:
 ----
 packages:
   - url: https://github.com/JonGilmore/esphome-subzero-ble
-    ref: v0.21.0 # use latest tag, or main
+    ref: v1.0.0 # use latest tag, or main
     files:
       - path: subzero_dishwasher.yaml
         vars:
@@ -120,7 +120,7 @@ packages:
 ----
 packages:
   - url: https://github.com/JonGilmore/esphome-subzero-ble
-    ref: v0.21.0 # use latest tag, or main
+    ref: v1.0.0 # use latest tag, or main
     files:
       - path: subzero_range.yaml
         vars:
@@ -135,7 +135,7 @@ packages:
 ----
 packages:
   - url: https://github.com/JonGilmore/esphome-subzero-ble
-    ref: v0.21.0 # use latest tag, or main
+    ref: v1.0.0 # use latest tag, or main
     files:
       - path: subzero_fridge.yaml
         vars:
@@ -153,7 +153,7 @@ packages:
 
 NOTE: Use a unique `prefix` for each appliance (e.g. `szg`, `szg2`, `szg3`). The base package sets `max_connections: 5` in `esp32_ble`, which supports up to 5 appliances on one ESP32. If you need more, add `esp32_ble: max_connections: 6` (or higher) to your device YAML. See link:docs/advanced.adoc#ble-stack-tuning[BLE Stack Tuning] for additional `sdkconfig_options` when running 2+ concurrent connections.
 
-TIP: Pin to a release tag (e.g. `ref: v0.21.0`) for stability, or use `ref: main` to track the latest changes
+TIP: Pin to a release tag (e.g. `ref: v1.0.0`) for stability, or use `ref: main` to track the latest changes
 
 ==== Fridge-Only Options
 

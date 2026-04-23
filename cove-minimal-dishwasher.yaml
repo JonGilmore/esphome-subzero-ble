@@ -8,7 +8,7 @@ substitutions:
 
 packages:
   - url: https://github.com/JonGilmore/esphome-subzero-ble
-    ref: v0.21.0
+    ref: v1.0.0
     files:
       - path: subzero_dishwasher.yaml
         vars:
