@@ -94,6 +94,9 @@ sensor:
         if (prev_depth != 0) {
           ESP_LOGW("szg", "[${appliance_name}] ACL corruption on D4: discarding %d bytes of partial data", (int)buf.size());
           buf.clear();
+          // Session IS alive - see D5 notify handler in subzero_base.yaml.
+          id(${prefix}_poll_in_flight) = false;
+          id(${prefix}_poll_no_response) = 0;
         }
       }
       buf.append((char*)x.data(), x.size());
@@ -293,15 +296,20 @@ script:
           }
           bool dbg = id(${prefix}_debug_mode);
           ESP_LOGI("szg", "[${appliance_name}] Parsing JSON (%d bytes)", (int)msg.size());
+          // Parse FIRST - if invalid (nested object from ACL-corrupted poll,
+          // malformed JSON, status!=0), don't publish garbage to raw_json.
+          // HA's protobuf decoder would accept it but it's misleading to users,
+          // and on fw 8.5 appliances that frequently hit ACL corruption it would
+          // spam the text sensor with notif fragments.
+          auto s = esphome::subzero_protocol::parse_fridge(msg);
+          if (!s.valid) {
+            ESP_LOGW("szg", "[${appliance_name}] Parse failed or status!=0, skipping (%.80s...)", msg.c_str());
+            return;
+          }
           if (dbg || msg.size() < 255) {
             id(${prefix}_raw_json).publish_state(msg);
           } else {
             ESP_LOGI("szg", "[${appliance_name}] Response: %.200s...", msg.c_str());
-          }
-          auto s = esphome::subzero_protocol::parse_fridge(msg);
-          if (!s.valid) {
-            ESP_LOGW("szg", "[${appliance_name}] Parse failed or status!=0, skipping");
-            return;
           }
           // A full poll response proves the unlock session is still alive - clear
           // expiry tracking. Pushes do NOT clear it (see periodic_poll comments).

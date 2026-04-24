@@ -349,15 +349,16 @@ script:
           }
           bool dbg = id(${prefix}_debug_mode);
           ESP_LOGI("szg", "[${appliance_name}] Parsing JSON (%d bytes)", (int)msg.size());
+          // Parse FIRST - if invalid, don't publish garbage to raw_json.
+          auto s = esphome::subzero_protocol::parse_range(msg);
+          if (!s.valid) {
+            ESP_LOGW("szg", "[${appliance_name}] Parse failed or status!=0, skipping (%.80s...)", msg.c_str());
+            return;
+          }
           if (dbg || msg.size() < 255) {
             id(${prefix}_raw_json).publish_state(msg);
           } else {
             ESP_LOGI("szg", "[${appliance_name}] Response: %.200s...", msg.c_str());
-          }
-          auto s = esphome::subzero_protocol::parse_range(msg);
-          if (!s.valid) {
-            ESP_LOGW("szg", "[${appliance_name}] Parse failed or status!=0, skipping");
-            return;
           }
           if (s.is_poll) {
             id(${prefix}_poll_in_flight) = false;

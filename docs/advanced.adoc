@@ -143,6 +143,8 @@ Push notifications *do not* clear `poll_in_flight` - they only flip `poll_ok`. T
 
 Hooking `post_bond`'s get_async into the same detector means init failures (appliance bonded but initial state never arrived) get caught in ~2 minutes instead of waiting for the zombie threshold.
 
+*One exception:* when the BLE notify handlers detect ACL fragment-drop corruption (`ACL corruption: discarding N bytes of partial data`), they also clear `poll_in_flight` and `poll_no_response`. The appliance did respond (data was flowing, we just couldn't reassemble it), so counting this as "unanswered" would trigger a pointless reconnect loop on fw 8.5 appliances whose full-state response reliably hits the ACL bug. See link:ble-protocol.adoc#_key_protocol_details[ACL Fragment Drops] for details.
+
 === Log Format
 
 The periodic poll log line shows both counters at once:

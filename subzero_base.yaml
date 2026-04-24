@@ -203,6 +203,11 @@ sensor:
         if (prev_depth != 0) {
           ESP_LOGW("szg", "[${appliance_name}] ACL corruption: discarding %d bytes of partial data", (int)buf.size());
           buf.clear();
+          // Session IS alive - data is flowing, just can't reassemble it.
+          // Don't count as an unanswered poll, or fw 8.5 appliances whose full
+          // response reliably hits the ACL bug get stuck in a reconnect loop.
+          id(${prefix}_poll_in_flight) = false;
+          id(${prefix}_poll_no_response) = 0;
         }
       }
       buf.append((char*)x.data(), x.size());
