@@ -1,0 +1,32 @@
+{
+  "valid": true,
+  "door_ajar": true,
+  "wash_cycle_on": false,
+  "heated_dry_on": true,
+  "extended_dry_on": true,
+  "high_temp_wash_on": true,
+  "sani_rinse_on": true,
+  "rinse_aid_low": false,
+  "light_on": false,
+  "remote_ready": false,
+  "delay_start_timer_active": false,
+  "wash_status": 1,
+  "wash_cycle": 2,
+  "common": {
+    "service_required": false,
+    "appliance_model": "DW2450",
+    "uptime": "797:58:1",
+    "appliance_serial": "20156136",
+    "appliance_type": "17.6.1.0",
+    "diagnostic_status": "0x00000003111",
+    "build_date": "2024-11-26T16:04:29",
+    "version": {
+      "fw": "2.27",
+      "api": "5.5",
+      "bleapp": "3.4",
+      "os": "25.10",
+      "rtapp": "2.27",
+      "appliance": "uim: 21.2.31; uim_slave: 7.1.0; main: 17.6.0; wash_pump: 12.1.0; rs485: 10.3.0"
+    }
+  }
+}

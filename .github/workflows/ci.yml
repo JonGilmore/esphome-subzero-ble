@@ -2,11 +2,32 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [ main ]
   pull_request:
-    branches: [main]
+    branches: [ main ]
 
 jobs:
+  protocol-tests:
+    name: Parser unit tests (host)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache CMake deps
+        uses: actions/cache@v4
+        with:
+          path: tests/cpp/build/_deps
+          key: ${{ runner.os }}-cmake-deps-${{ hashFiles('tests/cpp/CMakeLists.txt') }}
+
+      - name: Configure
+        run: cmake -S tests/cpp -B tests/cpp/build
+
+      - name: Build
+        run: cmake --build tests/cpp/build -j
+
+      - name: Run tests
+        run: ctest --test-dir tests/cpp/build --output-on-failure
+
   validate:
     name: Validate ESPHome configs
     runs-on: ubuntu-latest

@@ -1,0 +1,19 @@
+{
+  "valid": true,
+  "door_ajar": false,
+  "frz_door_ajar": false,
+  "common": {
+    "appliance_model": "2028",
+    "uptime": "627:09:2",
+    "appliance_type": "17.2.1.3",
+    "diagnostic_status": "0x00000003111",
+    "version": {
+      "fw": "2.27",
+      "api": "5.5",
+      "bleapp": "3.4",
+      "os": "25.10",
+      "rtapp": "2.27",
+      "appliance": "main: 10.12.15430; conf: 99.10.96; mcb_ccm_lv: 9.4.4034; uim_typeA: 10.1.16"
+    }
+  }
+}

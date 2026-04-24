@@ -22,3 +22,19 @@
 !components/
 !components/patch_acl_reassembly/
 !components/patch_acl_reassembly/**
+!components/subzero_protocol/
+!components/subzero_protocol/**
+!tests/
+!tests/README.md
+!tests/fixtures/
+!tests/fixtures/**
+!tests/cpp/
+!tests/cpp/CMakeLists.txt
+!tests/cpp/*.cpp
+!tests/cpp/*.h
+
+# Re-ignore caches/artifacts that the broad ** allows would otherwise let through.
+# Last-matching-rule wins in gitignore, so these override the negations above.
+__pycache__/
+*.pyc
+.DS_Store

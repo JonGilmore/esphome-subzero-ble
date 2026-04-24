@@ -1,0 +1,24 @@
+{
+  "status": 0,
+  "resp": {
+    "diagnostic_status": "0x00000003111",
+    "ref_door_ajar": false,
+    "wine_door_ajar": false,
+    "appliance_model": "IW30R",
+    "appliance_name": "Sub-Zero Connected Appliance",
+    "appliance_type": "17.5.2.0",
+    "device_wlan_id": "00068024b9c7",
+    "service": {},
+    "smart_grid_on": true,
+    "uptime": "99:49:49",
+    "version": {
+      "appliance": "main: 10.11.6877; mcb_ccm_lv: 9.4.4034; uim_typeA: 11.0.13",
+      "architecture": "",
+      "fw": "2.27",
+      "rtapp": "2.27",
+      "os": "25.10",
+      "bleapp": "3.4",
+      "api": "5.5"
+    }
+  }
+}

@@ -12,7 +12,7 @@ toc::[]
 
 == Overview
 
-Sub-Zero Group (SZG) appliances include a BLE radio that the official _Sub-Zero Group Owner_ mobile app (Android/iOS) uses for configuration and monitoring. This project reverse-engineers that BLE protocol and reimplements the connection, pairing, and polling logic entirely in ESPHome YAML + inline C++ lambdas - no custom components or external libraries required. See <<Supported Sensors>> for a list of supported appliance sensors.
+Sub-Zero Group (SZG) appliances include a BLE radio that the official _Sub-Zero Group Owner_ mobile app (Android/iOS) uses for configuration and monitoring. This project reverse-engineers that BLE protocol and reimplements the connection, pairing, and polling logic in ESPHome. The connection state machine lives in YAML + inline C++ lambdas; JSON parsing is factored into a small external C++ component (`subzero_protocol`) that ships with the repo and has host-compiled unit tests (see link:docs/advanced.adoc#parser-component[Parser Component]). See <<Supported Sensors>> for a list of supported appliance sensors.
 
 == Requirements
 
@@ -51,6 +51,13 @@ Choose the package file for your appliance type:
 .Sub-Zero Refrigerator (complete example)
 [source,yaml]
 ----
+external_components:                          # <1>
+  - source:
+      type: git
+      url: https://github.com/JonGilmore/esphome-subzero-ble
+      ref: v1.0.0
+    components: [patch_acl_reassembly, subzero_protocol]
+
 packages:
   - url: https://github.com/JonGilmore/esphome-subzero-ble
     ref: v1.0.0 # use latest tag, or main
@@ -59,8 +66,8 @@ packages:
         vars:
           prefix: "szg"
           appliance_name: "Kitchen Fridge"
-          appliance_mac: "00:06:80:XX:XX:XX"  # <1>
-          appliance_pin: "123456"             # <2>
+          appliance_mac: "00:06:80:XX:XX:XX"  # <2>
+          appliance_pin: "123456"             # <3>
 
 esphome:
   name: my-subzero
@@ -97,12 +104,20 @@ wifi:
 
 esp32_ble_tracker:
 ----
-<1> Your appliance's BLE MAC address (Sub-Zero MACs typically start with `00:06:80`)
-<2> The 6-digit PIN from your appliance (see <<pairing>> below)
+<1> Pulls the C++ parser and ACL-reassembly patch components. Keep the `ref:` matching the one in `packages:` below so the components and YAML come from the same release.
+<2> Your appliance's BLE MAC address (Sub-Zero MACs typically start with `00:06:80`)
+<3> The 6-digit PIN from your appliance (see <<pairing>> below)
 
-.Cove Dishwasher (packages block only)
+.Cove Dishwasher (external_components + packages blocks)
 [source,yaml]
 ----
+external_components:
+  - source:
+      type: git
+      url: https://github.com/JonGilmore/esphome-subzero-ble
+      ref: v1.0.0
+    components: [patch_acl_reassembly, subzero_protocol]
+
 packages:
   - url: https://github.com/JonGilmore/esphome-subzero-ble
     ref: v1.0.0 # use latest tag, or main
@@ -115,9 +130,16 @@ packages:
           appliance_pin: "123456"
 ----
 
-.Wolf Range (packages block only)
+.Wolf Range (external_components + packages blocks)
 [source,yaml]
 ----
+external_components:
+  - source:
+      type: git
+      url: https://github.com/JonGilmore/esphome-subzero-ble
+      ref: v1.0.0
+    components: [patch_acl_reassembly, subzero_protocol]
+
 packages:
   - url: https://github.com/JonGilmore/esphome-subzero-ble
     ref: v1.0.0 # use latest tag, or main
@@ -133,6 +155,13 @@ packages:
 .Multiple Appliances
 [source,yaml]
 ----
+external_components:
+  - source:
+      type: git
+      url: https://github.com/JonGilmore/esphome-subzero-ble
+      ref: v1.0.0
+    components: [patch_acl_reassembly, subzero_protocol]
+
 packages:
   - url: https://github.com/JonGilmore/esphome-subzero-ble
     ref: v1.0.0 # use latest tag, or main
@@ -268,6 +297,9 @@ TIP: Sub-Zero appliance BLE MAC addresses typically start with `00:06:80`. You c
 | *Auth failures overnight (auth fail reason=102)*
 | The BLE bond went stale. The integration automatically detects this after 3 consecutive failures, clears the old bond, and re-pairs. No action needed.
 
+| *Sensors stop updating on a fridge or wall oven after ~20-25 min*
+| The BLE unlock session has expired. The integration detects this: if two consecutive poll commands go unanswered (while pushes may still arrive), it forces a reconnect. Typical recovery is under ~2 minutes from the moment polls stop getting responses. Look for `polls unanswered (unlock session likely expired)` in the logs, or monitor the `no_resp` counter in the periodic poll log line. See link:docs/advanced.adoc#reconnect-logic[Reconnect Logic] for details and tuning.
+
 | *Dishwasher disconnects after ~10 seconds*
 | Normal for Cove dishwashers. The integration uses a fast reconnect path with cached GATT handles to complete polling within the connection window.
 
@@ -276,6 +308,9 @@ TIP: Sub-Zero appliance BLE MAC addresses typically start with `00:06:80`. You c
 
 | *"ACL packet too short" / first push notification lost*
 | Known ESP-IDF Bluedroid HCI bug on ESP32-S3. When an appliance sends a rapid burst of push notifications (e.g. activating gourmet mode on a wall oven), the first message may be dropped due to ACL fragment reassembly failure. The integration detects this and recovers for subsequent messages, but the first state change in the burst is lost. This seems to primarily affect appliances using 40-byte indication fragments (fw 8.5); appliances using 244-byte fragments (fw 2.27) are unaffected since their push notifications fit in a single indication.
+
+| *Home Assistant keeps restarting with `DecodeError: Error parsing message with type 'TextSensorStateResponse'`*
+| This is the ACL corruption (above) leaking non-UTF-8 bytes into a text sensor state, which HA caches and then fails to decode on every reconnect. If you see this on an older firmware, **reboot the ESP** (unplug/replug or `esphome run <config> --device <ip>`) to clear the cached bad state, then flash the latest version - the parse_json scripts now trim to exact JSON extent before publishing, and the notify handlers discard corrupt partial buffers when a new `{` arrives. See link:docs/ble-protocol.adoc#_key_protocol_details[ACL Fragment Drops] for details.
 |===
 
 == Supported Sensors
