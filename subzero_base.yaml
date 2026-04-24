@@ -75,6 +75,15 @@ globals:
   - id: ${prefix}_poll_no_response
     type: int
     initial_value: "0"
+  # Sticky flag: once ACL corruption is ever observed on this device, disable
+  # the unlock-expiry reconnect. Reconnecting never recovers the poll path on
+  # fw 8.5 appliances - the ACL bug hits every new session the same way - so
+  # the reconnect loop is pure waste. Pushes still work regardless. Zombie
+  # detection (15 min of total silence) still fires if the connection truly
+  # dies. Cleared only on ESP reboot.
+  - id: ${prefix}_acl_corruption_seen
+    type: bool
+    initial_value: "false"
   - id: ${prefix}_debug_mode
     type: bool
     initial_value: "false"
@@ -208,6 +217,10 @@ sensor:
           // response reliably hits the ACL bug get stuck in a reconnect loop.
           id(${prefix}_poll_in_flight) = false;
           id(${prefix}_poll_no_response) = 0;
+          // Sticky: also disable future unlock-expiry reconnects on this device.
+          // Reconnects never recover the poll path for fw 8.5 appliances where
+          // the ACL bug repeats on every fresh session.
+          id(${prefix}_acl_corruption_seen) = true;
         }
       }
       buf.append((char*)x.data(), x.size());
@@ -503,6 +516,10 @@ script:
   #       detection, well under the ~20-25 min unlock window, and still requires one
   #       completed cycle between "start" and "no response" so single glitches don't
   #       trigger spurious reconnects.
+  #       EXCEPTION: if acl_corruption_seen is set (ever fired on this device), we
+  #       skip (b) entirely. Reconnecting never recovers the poll path on fw 8.5
+  #       appliances - the ACL bug hits every new session the same way. Better to
+  #       stay connected and rely on pushes than to churn reconnects.
   - id: ${prefix}_periodic_poll
     mode: single
     then:
@@ -532,8 +549,12 @@ script:
               return;
             }
           }
-          // (b) Unlock-session expiry - previous poll never got a response
-          if (id(${prefix}_poll_in_flight)) {
+          // (b) Unlock-session expiry - previous poll never got a response.
+          // If ACL corruption has ever been seen on this device, skip the
+          // unlock-expiry reconnect - reconnecting won't recover the poll path
+          // (same ACL bug on every new session). Keep the connection alive so
+          // pushes still work. Zombie detection still fires if silence persists.
+          if (id(${prefix}_poll_in_flight) && !id(${prefix}_acl_corruption_seen)) {
             id(${prefix}_poll_no_response) += 1;
             if (id(${prefix}_poll_no_response) >= 2) {
               ESP_LOGW("szg", "[${appliance_name}] %d polls unanswered (unlock session likely expired), forcing reconnect",
@@ -545,6 +566,9 @@ script:
               client->disconnect();
               return;
             }
+          } else if (id(${prefix}_poll_in_flight) && id(${prefix}_acl_corruption_seen)) {
+            // Keep counter at 0 so log stays clean
+            id(${prefix}_poll_no_response) = 0;
           }
           id(${prefix}_poll_ok) = false;
           // Clear any stale partial JSON from interrupted previous transfer

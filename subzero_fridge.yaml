@@ -97,6 +97,7 @@ sensor:
           // Session IS alive - see D5 notify handler in subzero_base.yaml.
           id(${prefix}_poll_in_flight) = false;
           id(${prefix}_poll_no_response) = 0;
+          id(${prefix}_acl_corruption_seen) = true;
         }
       }
       buf.append((char*)x.data(), x.size());
