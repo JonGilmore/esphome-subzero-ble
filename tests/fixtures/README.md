@@ -2,7 +2,7 @@
 
 Captured from real appliances via debug-mode ESPHome logs. Each `*.json` is a raw BLE payload; the paired `*.expected.json` is the expected output of `subzero_protocol::parse_*` for that input.
 
-To regenerate an expected file: enable debug mode on the appliance, copy the raw JSON from the ESPHome logs (`Response: ...` line), save it here, and record the entity publish log lines that follow. Expected fields use the internal names used by the C++ parser (not the sensor display names).
+To regenerate an expected file: enable debug mode on the appliance, concatenate the `Response[N/M]:` lines from the ESPHome logs (the payload is chunked at ~600 bytes to fit the task log buffer), save the reassembled JSON here, and record the entity publish log lines that follow. Expected fields use the internal names used by the C++ parser (not the sensor display names).
 
 ## Layout
 

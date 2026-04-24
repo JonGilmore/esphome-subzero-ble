@@ -355,7 +355,16 @@ script:
             return;
           }
           if (dbg || msg.size() >= 255) {
-            ESP_LOGI("szg", "[${appliance_name}] Response: %.200s...", msg.c_str());
+            // Chunked so the full payload survives the 768-byte task log buffer.
+            // Grep `Response\[` and concatenate to reassemble - used by fixture capture.
+            const size_t CHUNK = 600;
+            size_t total = (msg.size() + CHUNK - 1) / CHUNK;
+            for (size_t i = 0; i < total; i++) {
+              size_t off = i * CHUNK;
+              size_t len = std::min(CHUNK, msg.size() - off);
+              ESP_LOGI("szg", "[${appliance_name}] Response[%d/%d]: %.*s",
+                       (int)(i + 1), (int)total, (int)len, msg.c_str() + off);
+            }
           }
           if (s.is_poll) {
             id(${prefix}_poll_in_flight) = false;
