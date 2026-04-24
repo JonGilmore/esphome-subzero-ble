@@ -190,12 +190,15 @@ ctest --test-dir build --output-on-failure
 
 First run fetches ArduinoJson, GoogleTest, and nlohmann/json via CMake's `FetchContent` (~20 seconds). Subsequent runs compile in under a second and tests complete in milliseconds. The CI workflow runs the same commands on every push and PR (cached).
 
-To add a fixture for a new appliance variant: turn on *Debug Mode*, copy the raw JSON from the ESPHome logs into `tests/fixtures/<name>.json`, then record the expected parser output in `tests/fixtures/<name>.expected.json`. The test discovery picks up new pairs automatically.
+To add a fixture for a new appliance variant: turn on *Debug Mode*, concatenate the `Response[N/M]:` lines from the ESPHome logs (grep `Response\[` and stitch in order) into `tests/fixtures/<name>.json`, then record the expected parser output in `tests/fixtures/<name>.expected.json`. The test discovery picks up new pairs automatically.
 
 == Debug Mode
 
 Each appliance exposes a *Debug Mode* switch and a *Log Debug Info* button in Home Assistant (both under diagnostic entities).
-When debug mode is enabled, the full response payload is logged at `INFO` level on every poll or push notification, and all response keys are logged under the `szg-debug` tag - making it easy to identify what data an untested appliance sends.
+When debug mode is enabled, the full response payload is logged at `INFO` level in chunked `Response[N/M]:` lines (chunked at 400 bytes to fit the per-line log budget) and all top-level response keys are logged under the `szg-debug` tag - making it easy to identify what data an untested appliance sends.
+Grep for `Response\[` and concatenate the payloads in order to reassemble the full JSON.
+
+IMPORTANT: Debug-mode payload logging is intentionally gated behind the switch. Normal operation never logs raw BLE bytes, because any non-UTF-8 byte in a log message crashes Home Assistant's protobuf decoder (`LogEntryResponse` requires valid UTF-8) and HA caches the bad event into a restart loop. When debug mode IS on, bytes outside the printable-ASCII range are replaced with `?` as a safety net.
 
 The *Log Debug Info* button is a one-press shortcut: it turns on debug mode and immediately polls the appliance using the correct channel for that appliance type.
 
@@ -204,7 +207,7 @@ The *Log Debug Info* button is a one-press shortcut: it turns on debug mode and 
 Dishwashers and ranges respond to polls on the D5 (encrypted) channel with their full state - all sensor keys in a single response.
 
 . Press *Log Debug Info* (or turn on *Debug Mode* and press *Poll*).
-. The full JSON appears in the ESPHome logs and all keys are logged.
+. Grep `Response\[` in the ESPHome logs, concatenate the chunks in order to get the full JSON.
 . Turn *Debug Mode* off when done.
 
 === Refrigerators / Freezers
