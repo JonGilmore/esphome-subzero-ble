@@ -65,25 +65,6 @@ globals:
   - id: ${prefix}_poll_miss
     type: int
     initial_value: "0"
-  # Unlock-session expiry detection: set true after writing a poll command,
-  # cleared only when a full poll response (is_poll=true) arrives. Pushes do
-  # NOT clear it - that's the whole point, since pushes keep flowing past
-  # unlock expiry while poll responses stop.
-  - id: ${prefix}_poll_in_flight
-    type: bool
-    initial_value: "false"
-  - id: ${prefix}_poll_no_response
-    type: int
-    initial_value: "0"
-  # Sticky flag: once ACL corruption is ever observed on this device, disable
-  # the unlock-expiry reconnect. Reconnecting never recovers the poll path on
-  # fw 8.5 appliances - the ACL bug hits every new session the same way - so
-  # the reconnect loop is pure waste. Pushes still work regardless. Zombie
-  # detection (15 min of total silence) still fires if the connection truly
-  # dies. Cleared only on ESP reboot.
-  - id: ${prefix}_acl_corruption_seen
-    type: bool
-    initial_value: "false"
   - id: ${prefix}_debug_mode
     type: bool
     initial_value: "false"
@@ -147,8 +128,6 @@ ble_client:
       then:
         - lambda: |-
             id(${prefix}_json_buf).clear();
-            id(${prefix}_poll_in_flight) = false;
-            id(${prefix}_poll_no_response) = 0;
             id(${prefix}_post_bond).stop();
             id(${prefix}_subscribe).stop();
             id(${prefix}_fast_reconnect).stop();
@@ -198,31 +177,6 @@ sensor:
       auto &buf = id(${prefix}_json_buf);
       if (buf.capacity() < 2048) buf.reserve(2048);
       if (buf.size() > 4096) { buf.clear(); return {}; }
-      // ACL fragment-drop workaround: if a new chunk starts with '{' while the
-      // current buffer has an unbalanced previous message, the previous one got
-      // truncated by ESP-IDF's Bluedroid ACL reassembly bug (fw 8.5 appliances).
-      // Discard the corrupt buffer before appending, so garbage doesn't reach
-      // the parser or text sensors.
-      if (!buf.empty() && x.size() > 0 && x.data()[0] == '{') {
-        int prev_depth = 0;
-        for (char c : buf) {
-          if (c == '{') prev_depth++;
-          else if (c == '}') prev_depth--;
-        }
-        if (prev_depth != 0) {
-          ESP_LOGW("szg", "[${appliance_name}] ACL corruption: discarding %d bytes of partial data", (int)buf.size());
-          buf.clear();
-          // Session IS alive - data is flowing, just can't reassemble it.
-          // Don't count as an unanswered poll, or fw 8.5 appliances whose full
-          // response reliably hits the ACL bug get stuck in a reconnect loop.
-          id(${prefix}_poll_in_flight) = false;
-          id(${prefix}_poll_no_response) = 0;
-          // Sticky: also disable future unlock-expiry reconnects on this device.
-          // Reconnects never recover the poll path for fw 8.5 appliances where
-          // the ACL bug repeats on every fresh session.
-          id(${prefix}_acl_corruption_seen) = true;
-        }
-      }
       buf.append((char*)x.data(), x.size());
       // Any notification = connection alive (resets zombie detection)
       id(${prefix}_poll_ok) = true;
@@ -500,21 +454,10 @@ script:
   # that populates ESPHome's characteristic database - it only appears after bonding +
   # cache refresh. ble_client.ble_write would fail to find D5 on fridges.
   #
-  # Two separate reconnect triggers:
-  #   (a) Zombie detection: poll_ok is set by ANY D5/D4 indication (push or poll response).
-  #       If 15 intervals pass with zero activity, connection is dead - reconnect.
-  #       At 60s intervals that's 15 min of total silence.
-  #   (b) Unlock-session expiry / init failure: poll_in_flight is set when we write a
-  #       get_async (both here and in post_bond) and cleared only by a full poll response
-  #       (is_poll=true). Pushes do not clear it. If 2 consecutive polls go unanswered
-  #       (while pushes may still arrive), we reconnect. Threshold of 2 at 60s = ~2 min
-  #       detection, well under the ~20-25 min unlock window, and still requires one
-  #       completed cycle between "start" and "no response" so single glitches don't
-  #       trigger spurious reconnects.
-  #       EXCEPTION: if acl_corruption_seen is set (ever fired on this device), we
-  #       skip (b) entirely. Reconnecting never recovers the poll path on fw 8.5
-  #       appliances - the ACL bug hits every new session the same way. Better to
-  #       stay connected and rely on pushes than to churn reconnects.
+  # Zombie detection: poll_ok is set by ANY D5/D4 indication (push or poll response).
+  # If 15 intervals pass with zero activity, the connection is dead - reconnect.
+  # At 60s intervals that's 15 min of total silence. Polls that complete - or pushes
+  # that arrive between polls - keep the counter at 0 indefinitely.
   - id: ${prefix}_periodic_poll
     mode: single
     then:
@@ -527,7 +470,6 @@ script:
           if (handle == 0) return;
           auto *client = id(${prefix}_appliance);
           if (!client->connected()) return;
-          // (a) Zombie detection - no D5 activity at all
           if (id(${prefix}_poll_ok)) {
             id(${prefix}_poll_miss) = 0;
           } else {
@@ -536,34 +478,11 @@ script:
               ESP_LOGW("szg", "[${appliance_name}] Connection stale (%d intervals, no data), forcing reconnect",
                 id(${prefix}_poll_miss));
               id(${prefix}_poll_miss) = 0;
-              id(${prefix}_poll_in_flight) = false;
-              id(${prefix}_poll_no_response) = 0;
               id(${prefix}_json_buf).clear();
               id(${prefix}_debug).publish_state("Connection stale, reconnecting...");
               client->disconnect();
               return;
             }
-          }
-          // (b) Unlock-session expiry - previous poll never got a response.
-          // If ACL corruption has ever been seen on this device, skip the
-          // unlock-expiry reconnect - reconnecting won't recover the poll path
-          // (same ACL bug on every new session). Keep the connection alive so
-          // pushes still work. Zombie detection still fires if silence persists.
-          if (id(${prefix}_poll_in_flight) && !id(${prefix}_acl_corruption_seen)) {
-            id(${prefix}_poll_no_response) += 1;
-            if (id(${prefix}_poll_no_response) >= 2) {
-              ESP_LOGW("szg", "[${appliance_name}] %d polls unanswered (unlock session likely expired), forcing reconnect",
-                id(${prefix}_poll_no_response));
-              id(${prefix}_poll_no_response) = 0;
-              id(${prefix}_poll_in_flight) = false;
-              id(${prefix}_json_buf).clear();
-              id(${prefix}_debug).publish_state("Polls unresponsive, reconnecting...");
-              client->disconnect();
-              return;
-            }
-          } else if (id(${prefix}_poll_in_flight) && id(${prefix}_acl_corruption_seen)) {
-            // Keep counter at 0 so log stays clean
-            id(${prefix}_poll_no_response) = 0;
           }
           id(${prefix}_poll_ok) = false;
           // Clear any stale partial JSON from interrupted previous transfer
@@ -579,10 +498,8 @@ script:
             client->disconnect();
             return;
           }
-          // Write succeeded - mark poll as in flight for expiry detection.
-          id(${prefix}_poll_in_flight) = true;
-          ESP_LOGI("szg", "[${appliance_name}] Periodic poll (miss=%d, no_resp=%d, retries=%d)",
-            id(${prefix}_poll_miss), id(${prefix}_poll_no_response), id(${prefix}_fast_retries));
+          ESP_LOGI("szg", "[${appliance_name}] Periodic poll (miss=%d, retries=%d)",
+            id(${prefix}_poll_miss), id(${prefix}_fast_retries));
 
   # Post-bond discovery sequence - custom because:
   # 1. On fridges, D5 is not visible in GATT until after bonding + cache refresh.
@@ -827,43 +744,5 @@ script:
             client->get_gattc_if(), client->get_conn_id(),
             d5, cmd.size(), (uint8_t*)cmd.data(),
             ESP_GATT_WRITE_TYPE_RSP, ESP_GATT_AUTH_REQ_NONE);
-          ESP_LOGI("ble", "[${appliance_name}] get_async #1 err=%d", err);
-          // Mark poll as in flight so unlock-expiry detection catches a silent
-          // post-bond init failure one interval sooner. Parser clears this
-          // on any {"status":0,"resp":...} response (including unlock_channel
-          // and this get_async).
-          if (err == ESP_OK) id(${prefix}_poll_in_flight) = true;
+          ESP_LOGI("ble", "[${appliance_name}] get_async err=%d", err);
           id(${prefix}_debug).publish_state("Connected and polling.");
-      # ACL-mitigation: fire two extra polls 3s apart. On fw 8.5 appliances the
-      # full poll response (1946 bytes for ovens) loses one or more ACL fragments
-      # stochastically, so any individual attempt has a high failure rate. 3s
-      # spacing gives a successful response time to fully arrive and be parsed
-      # (which clears the buffer) before the next attempt fires. If #1 succeeds,
-      # #2 and #3 refresh with identical state (harmless). If #1 failed, the ACL
-      # corruption handler already cleared the buffer, so #2 starts fresh.
-      - delay: 3s
-      - lambda: |-
-          if (!id(${prefix}_pin_confirmed)) return;
-          auto *client = id(${prefix}_appliance);
-          if (!client->connected()) return;
-          uint16_t d5 = id(${prefix}_d5_handle);
-          if (d5 == 0) return;
-          std::string cmd = "{\"cmd\":\"get_async\"}\n";
-          esp_ble_gattc_write_char(
-            client->get_gattc_if(), client->get_conn_id(),
-            d5, cmd.size(), (uint8_t*)cmd.data(),
-            ESP_GATT_WRITE_TYPE_RSP, ESP_GATT_AUTH_REQ_NONE);
-          ESP_LOGI("ble", "[${appliance_name}] get_async #2 (ACL-mitigation retry)");
-      - delay: 3s
-      - lambda: |-
-          if (!id(${prefix}_pin_confirmed)) return;
-          auto *client = id(${prefix}_appliance);
-          if (!client->connected()) return;
-          uint16_t d5 = id(${prefix}_d5_handle);
-          if (d5 == 0) return;
-          std::string cmd = "{\"cmd\":\"get_async\"}\n";
-          esp_ble_gattc_write_char(
-            client->get_gattc_if(), client->get_conn_id(),
-            d5, cmd.size(), (uint8_t*)cmd.data(),
-            ESP_GATT_WRITE_TYPE_RSP, ESP_GATT_AUTH_REQ_NONE);
-          ESP_LOGI("ble", "[${appliance_name}] get_async #3 (ACL-mitigation retry)");

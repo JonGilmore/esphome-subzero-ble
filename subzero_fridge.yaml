@@ -84,22 +84,6 @@ sensor:
       auto &buf = id(${prefix}_json_buf);
       if (buf.capacity() < 2048) buf.reserve(2048);
       if (buf.size() > 4096) { buf.clear(); return {}; }
-      // ACL fragment-drop workaround (see D5 notify handler in subzero_base.yaml).
-      if (!buf.empty() && x.size() > 0 && x.data()[0] == '{') {
-        int prev_depth = 0;
-        for (char c : buf) {
-          if (c == '{') prev_depth++;
-          else if (c == '}') prev_depth--;
-        }
-        if (prev_depth != 0) {
-          ESP_LOGW("szg", "[${appliance_name}] ACL corruption on D4: discarding %d bytes of partial data", (int)buf.size());
-          buf.clear();
-          // Session IS alive - see D5 notify handler in subzero_base.yaml.
-          id(${prefix}_poll_in_flight) = false;
-          id(${prefix}_poll_no_response) = 0;
-          id(${prefix}_acl_corruption_seen) = true;
-        }
-      }
       buf.append((char*)x.data(), x.size());
       id(${prefix}_poll_ok) = true;
       int depth = 0;
@@ -268,57 +252,25 @@ script:
           size_t start = buf.find('{');
           if (start == std::string::npos) { buf.clear(); return; }
           if (start > 0) buf.erase(0, start);
-          // Find matching close brace to determine exact JSON extent. Trailing
-          // garbage (ACL fragment corruption on fw 8.5) must not reach text
-          // sensors - non-UTF-8 bytes crash HA's protobuf decoder.
-          int depth = 0;
-          size_t end = 0;
-          for (size_t i = 0; i < buf.size(); i++) {
-            if (buf[i] == '{') depth++;
-            else if (buf[i] == '}') { depth--; if (depth == 0) { end = i + 1; break; } }
-          }
-          if (end == 0) { buf.clear(); return; }
-          // Extract clean JSON; preserve trailing only if it looks like the
-          // start of a next message (first byte '{'). Otherwise discard.
-          std::string msg = buf.substr(0, end);
-          // Skip trailing whitespace (appliances terminate messages with \n).
-          size_t next = end;
-          while (next < buf.size() && (buf[next] == '\n' || buf[next] == '\r' || buf[next] == ' ' || buf[next] == '\t' || buf[next] == '\0')) {
-            next++;
-          }
-          if (next < buf.size() && buf[next] == '{') {
-            // Start of next message - preserve it
-            buf.erase(0, next);
-          } else {
-            if (next < buf.size()) {
-              ESP_LOGW("szg", "[${appliance_name}] Discarding %d bytes of trailing non-JSON data", (int)(buf.size() - next));
-            }
-            buf.clear();
-          }
           bool dbg = id(${prefix}_debug_mode);
-          ESP_LOGI("szg", "[${appliance_name}] Parsing JSON (%d bytes)", (int)msg.size());
-          auto s = esphome::subzero_protocol::parse_fridge(msg);
-          if (!s.valid) {
-            ESP_LOGW("szg", "[${appliance_name}] Parse failed or status!=0, skipping (%.80s...)", msg.c_str());
-            return;
-          }
-          if (dbg || msg.size() >= 255) {
+          ESP_LOGI("szg", "[${appliance_name}] Parsing JSON (%d bytes)", (int)buf.size());
+          if (dbg || buf.size() >= 255) {
             // Chunked so the full payload survives the 768-byte task log buffer.
             // Grep `Response\[` and concatenate to reassemble - used by fixture capture.
             const size_t CHUNK = 600;
-            size_t total = (msg.size() + CHUNK - 1) / CHUNK;
+            size_t total = (buf.size() + CHUNK - 1) / CHUNK;
             for (size_t i = 0; i < total; i++) {
               size_t off = i * CHUNK;
-              size_t len = std::min(CHUNK, msg.size() - off);
+              size_t len = std::min(CHUNK, buf.size() - off);
               ESP_LOGI("szg", "[${appliance_name}] Response[%d/%d]: %.*s",
-                       (int)(i + 1), (int)total, (int)len, msg.c_str() + off);
+                       (int)(i + 1), (int)total, (int)len, buf.c_str() + off);
             }
           }
-          // A full poll response proves the unlock session is still alive - clear
-          // expiry tracking. Pushes do NOT clear it (see periodic_poll comments).
-          if (s.is_poll) {
-            id(${prefix}_poll_in_flight) = false;
-            id(${prefix}_poll_no_response) = 0;
+          auto s = esphome::subzero_protocol::parse_fridge(buf);
+          if (!s.valid) {
+            ESP_LOGW("szg", "[${appliance_name}] Parse failed or status!=0, skipping (%.80s...)", buf.c_str());
+            buf.clear();
+            return;
           }
           if (dbg) {
             for (const auto &k : s.data_keys)
@@ -371,4 +323,4 @@ script:
           if (s.common.version.appliance) id(${prefix}_board_version).publish_state(*s.common.version.appliance);
           id(${prefix}_poll_ok) = true;
           id(${prefix}_fast_retries) = 0;
-          // buf was already trimmed at the top - no clear needed here.
+          buf.clear();

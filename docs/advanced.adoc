@@ -120,42 +120,22 @@ If you experience crashes (typically `__cxa_allocate_exception` -> `operator new
 [[reconnect-logic]]
 == Reconnect Logic
 
-The integration runs a periodic poll every 60 seconds against each bonded appliance, and uses two independent signals to decide when to force a reconnect. Detection fires roughly 2-3 minutes after the connection goes bad.
+The integration runs a periodic poll every 60 seconds against each bonded appliance, and uses one signal - total BLE silence - to decide when to force a reconnect.
 
-=== Zombie Detection (connection is dead)
+=== Zombie Detection
 
-`poll_ok` is set to `true` by *any* D5 indication - poll response or push notification. At each poll interval, if `poll_ok` is still `false` from the previous interval, `poll_miss` increments. When `poll_miss` reaches 15 (= 15 minutes of total silence at the 60s interval), the integration calls `client->disconnect()` to force a fresh connection.
+`poll_ok` is set to `true` by *any* D5 or D4 indication - poll response or push notification. At each poll interval, if `poll_ok` is still `false` from the previous interval, `poll_miss` increments. When `poll_miss` reaches 15 (= 15 minutes of total silence at the 60s interval), the integration calls `client->disconnect()` to force a fresh connection.
 
-This catches cases where the BLE link has died entirely - no polls, no pushes, no activity.
-
-=== Unlock-Session Expiry / Init-Failure Detection
-
-Sub-Zero fridges and wall ovens running fw 8.5 / API 5.4 run an *unlock session* that expires roughly 20-25 minutes after `unlock_channel`. After expiry, `get_async` writes to D5 are accepted at the BLE layer (GATT status 0) but produce no indication response. Push notifications continue because they're CCCD-based, not session-based - so the zombie detector doesn't fire. The same detector also catches the case where `post_bond`'s initial `get_async` silently fails, which can leave an appliance in a half-initialized state.
-
-To catch both, the integration tracks *poll responses specifically*:
-
-* When a `get_async` command is written (both in `post_bond` and in `periodic_poll`), `poll_in_flight` is set to `true`.
-* When a full poll response arrives (parser sets `is_poll = true` for `{"status":0,"resp":{...}}`), `poll_in_flight` is cleared and `poll_no_response` is reset to 0.
-* When the *next* poll interval fires and `poll_in_flight` is still `true`, that means the previous poll went unanswered - `poll_no_response` increments.
-* After 2 consecutive unanswered polls (= 2 minutes at 60s, well under the 20-min unlock window), the integration forces a reconnect.
-
-Push notifications *do not* clear `poll_in_flight` - they only flip `poll_ok`. That's the whole point: pushes keep flowing past unlock expiry, so they can't be trusted to prove the unlock session is still alive.
-
-Hooking `post_bond`'s get_async into the same detector means init failures (appliance bonded but initial state never arrived) get caught in ~2 minutes instead of waiting for the zombie threshold.
-
-*One exception:* when the BLE notify handlers detect ACL fragment-drop corruption (`ACL corruption: discarding N bytes of partial data`), they also clear `poll_in_flight` and `poll_no_response`. The appliance did respond (data was flowing, we just couldn't reassemble it), so counting this as "unanswered" would trigger a pointless reconnect loop on fw 8.5 appliances whose full-state response reliably hits the ACL bug. See link:ble-protocol.adoc#_key_protocol_details[ACL Fragment Drops] for details.
+This catches cases where the BLE link has died entirely. It intentionally does *not* try to distinguish "poll silently unanswered" from "appliance is quiet" - past attempts at a tighter signal caused pointless reconnect loops on fw 8.5 appliances whose polls sometimes fail to reassemble (see link:ble-protocol.adoc#_key_protocol_details[ACL Fragment Drops]) while pushes keep flowing.
 
 === Log Format
 
-The periodic poll log line shows both counters at once:
-
 [source]
 ----
-[I][szg:XXX]: [Left Dishwasher] Periodic poll (miss=2, no_resp=0, retries=0)
+[I][szg:XXX]: [Left Dishwasher] Periodic poll (miss=2, retries=0)
 ----
 
 * `miss` - zombie counter (0-15, reconnect at 15 = 15 min of total silence)
-* `no_resp` - unlock/init-failure counter (0-2, reconnect at 2 = 2 min of unanswered polls)
 * `retries` - fast-reconnect retry counter (0-3, bond clear at 3; see below)
 
 === Fast Reconnect + Bond Clear
@@ -167,7 +147,6 @@ Separately, when the BLE connection drops and `auto_connect: true` reconnects, t
 Both knobs are in `subzero_base.yaml`:
 
 * `interval: 60s` (line with `interval:`) - poll cadence. Shortening to 30s halves detection time and doubles radio utilization (still single-digit percent for typical configs).
-* `poll_no_response >= 2` - reconnect threshold. Dropping to 1 would reconnect on the very first unanswered poll (aggressive, not recommended - single transient blips would trigger); raising to 3+ gives more tolerance at the cost of slower recovery.
 * `poll_miss >= 15` - zombie threshold. Scales with the interval: at 60s that's 15 min.
 
 [[parser-component]]
@@ -190,12 +169,12 @@ namespace esphome::subzero_protocol {
 Each state struct has:
 
 * `bool valid` - `false` on malformed JSON, unknown message format, or `status != 0`
-* `bool is_poll` - `true` for `{"status":0,"resp":{...}}` poll responses, `false` for `{"seq":N,"props":{...}}` pushes. Used by the lambdas to drive unlock-session expiry detection.
+* `bool is_poll` - `true` for `{"status":0,"resp":{...}}` poll responses, `false` for `{"seq":N,"props":{...}}` pushes. Exposed on the parse result for callers that want to distinguish the two; current YAMLs don't read it.
 * `std::vector<std::string> data_keys` - top-level keys in the data object, in order. The YAML lambdas log these when debug mode is on.
 * `CommonFields common` - shared appliance metadata (model, uptime, diagnostic_status, version struct, etc.)
 * Appliance-specific `std::optional<T>` fields for each sensor key
 
-The lambdas check `s.is_poll`, `s.valid`, `s.<field>.has_value()` and publish to entities - no `json::parse_json` calls, no `is<T>()` / `as<T>()` key fishing.
+The lambdas check `s.valid`, `s.<field>.has_value()` and publish to entities - no `json::parse_json` calls, no `is<T>()` / `as<T>()` key fishing.
 
 === Running the Host Tests
 
