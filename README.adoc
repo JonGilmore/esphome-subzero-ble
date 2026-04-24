@@ -298,7 +298,7 @@ TIP: Sub-Zero appliance BLE MAC addresses typically start with `00:06:80`. You c
 | The BLE bond went stale. The integration automatically detects this after 3 consecutive failures, clears the old bond, and re-pairs. No action needed.
 
 | *Sensors stop updating on a fridge or wall oven after ~20-25 min*
-| The BLE unlock session has expired. The integration detects this: if two consecutive poll commands go unanswered (while pushes may still arrive), it forces a reconnect. Typical recovery is under ~2 minutes from the moment polls stop getting responses. Look for `polls unanswered (unlock session likely expired)` in the logs, or monitor the `no_resp` counter in the periodic poll log line. See link:docs/advanced.adoc#reconnect-logic[Reconnect Logic] for details and tuning.
+| The BLE unlock session on fw 8.5 appliances expires after ~20-25 min. Poll responses stop, but push notifications continue. Zombie detection kicks in after 15 minutes of total silence (no polls AND no pushes) and forces a reconnect. If only polls fall silent while pushes keep arriving, the integration waits for the next state change to land, then catches up on the following reconnect cycle. See link:docs/advanced.adoc#reconnect-logic[Reconnect Logic].
 
 | *Dishwasher disconnects after ~10 seconds*
 | Normal for Cove dishwashers. The integration uses a fast reconnect path with cached GATT handles to complete polling within the connection window.
@@ -306,11 +306,8 @@ TIP: Sub-Zero appliance BLE MAC addresses typically start with `00:06:80`. You c
 | *Range disconnects before data arrives*
 | Wolf ranges have tight BLE windows. Add `fast_connect: true` and `power_save_mode: none` to your WiFi config.
 
-| *"ACL packet too short" / first push notification lost*
-| Known ESP-IDF Bluedroid HCI bug on ESP32-S3. When an appliance sends a rapid burst of push notifications (e.g. activating gourmet mode on a wall oven), the first message may be dropped due to ACL fragment reassembly failure. The integration detects this and recovers for subsequent messages, but the first state change in the burst is lost. This seems to primarily affect appliances using 40-byte indication fragments (fw 8.5); appliances using 244-byte fragments (fw 2.27) are unaffected since their push notifications fit in a single indication.
-
-| *Home Assistant keeps restarting with `DecodeError: Error parsing message with type 'TextSensorStateResponse'`*
-| This is the ACL corruption (above) leaking non-UTF-8 bytes into a text sensor state, which HA caches and then fails to decode on every reconnect. If you see this on an older firmware, **reboot the ESP** (unplug/replug or `esphome run <config> --device <ip>`) to clear the cached bad state, then flash the latest version - the parse_json scripts now trim to exact JSON extent before publishing, and the notify handlers discard corrupt partial buffers when a new `{` arrives. See link:docs/ble-protocol.adoc#_key_protocol_details[ACL Fragment Drops] for details.
+| *"ACL packet too short" / first push notification lost / occasional Unknown on a fw 8.5 sensor*
+| Known ESP-IDF Bluedroid HCI bug on ESP32-S3. During a long indication burst (e.g. the ~2 KB full-state poll response on a Wall Oven or 313 fridge) the stack sometimes delivers a truncated ACL packet, leaving the JSON reassembly buffer unbalanced and unparseable. The integration simply lets the 60s periodic poll take another shot - a clean response usually lands within one or two cycles. Push-driven sensors (door, light, setpoint changes) are fine since each push fits in a single indication. Appliances running fw 2.27 (244-byte fragments) are unaffected. See link:docs/ble-protocol.adoc#_key_protocol_details[ACL Fragment Drops] for details.
 |===
 
 == Supported Sensors
