@@ -1,6 +1,7 @@
 {
   "status": 0,
   "resp": {
+    "_comment_diagnostic_status": "Intentional edge-case: odd nibble count (13 chars after '0x'), captured from actual device",
     "diagnostic_status": "0x00000003111",
     "frz_door_ajar": false,
     "ref_door_ajar": false,
@@ -10,6 +11,7 @@
     "device_wlan_id": "00068013b5d2",
     "service": {},
     "smart_grid_on": true,
+    "_comment_uptime": "Intentional edge-case: unpadded seconds field (H:MM:S format), captured from actual device",
     "uptime": "627:09:2",
     "version": {
       "appliance": "main: 10.12.15430; conf: 99.10.96; mcb_ccm_lv: 9.4.4034; uim_typeA: 10.1.16",

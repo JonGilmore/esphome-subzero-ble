@@ -240,6 +240,9 @@ script:
           // --- Common ---
           if (s.common.service_required)  id(${prefix}_svc_required).publish_state(*s.common.service_required);
           if (s.common.appliance_model)   id(${prefix}_model).publish_state(*s.common.appliance_model);
+          // Uptime format: H:MM:S or HH:MM:S with potentially unpadded seconds field.
+          // Example: "797:58:1" (see tests/fixtures/dishwasher_dw2450_d5_full.expected.json).
+          // Consumers parsing this field must handle single-digit seconds (or zero-pad as needed).
           if (s.common.uptime)            id(${prefix}_uptime).publish_state(*s.common.uptime);
           if (s.common.appliance_serial)  id(${prefix}_serial).publish_state(*s.common.appliance_serial);
           if (s.common.appliance_type)    id(${prefix}_appliance_type).publish_state(*s.common.appliance_type);

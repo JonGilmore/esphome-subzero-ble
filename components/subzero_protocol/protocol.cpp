@@ -117,9 +117,8 @@ namespace esphome
       }
 
       // Minutes between two ISO-8601 timestamps ("YYYY-MM-DDTHH:MM[:SS...]").
-      // Returns nullopt if either string can't be parsed. Uses day-of-month math,
-      // which matches the legacy lambda behavior (adequate for wash cycles under
-      // a month). Same-month assumption.
+      // Returns nullopt if either string can't be parsed. Computes absolute minute
+      // difference accounting for month boundaries (e.g., now=2026-04-30, end=2026-05-01).
       std::optional<int> minutes_between(const char *now_iso, const std::string &end_iso)
       {
         if (end_iso.size() < 16)
@@ -134,10 +133,21 @@ namespace esphome
         {
           return std::nullopt;
         }
-        int end_mins = (ed * 24 * 60) + (eh * 60) + emi;
-        int cur_mins = (cd * 24 * 60) + (ch * 60) + cmi;
-        int remaining = end_mins - cur_mins;
-        return remaining < 0 ? 0 : remaining;
+        // Convert to total minutes from a common epoch (simplified day calculation).
+        // Days in each month (non-leap year adequate for wash cycle deltas).
+        static const int days_in_month[] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
+        auto to_minutes = [&](int y, int mo, int d, int h, int mi) -> long long {
+          long long total_days = (y - 2000) * 365;  // baseline from year 2000
+          for (int m = 1; m < mo; ++m) {
+            total_days += days_in_month[m - 1];
+          }
+          total_days += d;
+          return total_days * 24LL * 60LL + h * 60LL + mi;
+        };
+        long long end_total = to_minutes(ey, emo, ed, eh, emi);
+        long long cur_total = to_minutes(cy, cmo, cd, ch, cmi);
+        long long diff = end_total - cur_total;
+        return diff < 0 ? 0 : static_cast<int>(diff);
       }
 
     } // namespace

@@ -24,6 +24,26 @@ Sub-Zero Group (SZG) appliances include a BLE radio that the official _Sub-Zero 
 [[getting-started]]
 == Getting Started
 
+[WARNING]
+.v0.21.0 Breaking Change
+====
+**If you are upgrading from v0.20.x or earlier**, you must now declare `external_components` in your entry-point YAML file. Previous versions bundled this declaration in `subzero_base.yaml`, but ESPHome package resolution requires it at the top level.
+
+Add this block to your device config (above or below the `packages:` block):
+
+[source,yaml]
+----
+external_components:
+  - source:
+      type: git
+      url: https://github.com/JonGilmore/esphome-subzero-ble
+      ref: v0.21.0
+    components: [patch_acl_reassembly, subzero_protocol]
+----
+
+Keep the `ref:` matching the one in your `packages:` block so components and YAML come from the same release.
+====
+
 === 1. Install ESPHome
 
 [source,bash]
