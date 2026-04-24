@@ -159,12 +159,21 @@ script:
           ESP_LOGI("szg", "[${appliance_name}] Parsing JSON (%d bytes)", (int)buf.size());
           // Raw buf may contain non-UTF-8 bytes from ACL fragment corruption.
           // Anything we log from buf MUST be sanitized first: the log message
-          // is sent to HA as a protobuf `string` (UTF-8 required) and non-UTF-8
-          // bytes crash HA's protobuf decoder, which caches the bad event and
-          // loops. Replace non-printable-ASCII with '?'.
+          // is sent to HA as a protobuf `string` (UTF-8 required) and a
+          // high-bit byte (0x80-0xFF) that isn't part of a valid multi-byte
+          // sequence crashes HA's protobuf decoder, which caches the bad
+          // event and loops. Allow printable ASCII plus \t \n \r (all valid
+          // UTF-8 and harmless in protobuf); everything else becomes '?'.
+          // Keeping \n unsanitized means the normal protocol terminator at
+          // the end of every response no longer triggers a nuisance '?' -
+          // so any '?' that now appears is a real signal of corruption.
           auto sanitize = [](const std::string &s, size_t off, size_t len) {
             std::string out(s, off, len);
-            for (char &c : out) if ((unsigned char)c < 0x20 || (unsigned char)c > 0x7E) c = '?';
+            for (char &c : out) {
+              unsigned char u = c;
+              bool ok = (u >= 0x20 && u <= 0x7E) || u == 0x09 || u == 0x0A || u == 0x0D;
+              if (!ok) c = '?';
+            }
             return out;
           };
           if (dbg) {
