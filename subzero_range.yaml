@@ -325,21 +325,43 @@ script:
           if (start > 0) buf.erase(0, start);
           bool dbg = id(${prefix}_debug_mode);
           ESP_LOGI("szg", "[${appliance_name}] Parsing JSON (%d bytes)", (int)buf.size());
-          if (dbg || buf.size() >= 255) {
-            // Chunked so the full payload survives the 768-byte task log buffer.
-            // Grep `Response\[` and concatenate to reassemble - used by fixture capture.
-            const size_t CHUNK = 600;
+          // Raw buf may contain non-UTF-8 bytes from ACL fragment corruption.
+          // Anything we log from buf MUST be sanitized first: the log message
+          // is sent to HA as a protobuf `string` (UTF-8 required) and a
+          // high-bit byte (0x80-0xFF) that isn't part of a valid multi-byte
+          // sequence crashes HA's protobuf decoder, which caches the bad
+          // event and loops. Allow printable ASCII plus \t \n \r (all valid
+          // UTF-8 and harmless in protobuf); everything else becomes '?'.
+          // Keeping \n unsanitized means the normal protocol terminator at
+          // the end of every response no longer triggers a nuisance '?' -
+          // so any '?' that now appears is a real signal of corruption.
+          auto sanitize = [](const std::string &s, size_t off, size_t len) {
+            std::string out(s, off, len);
+            for (char &c : out) {
+              unsigned char u = c;
+              bool ok = (u >= 0x20 && u <= 0x7E) || u == 0x09 || u == 0x0A || u == 0x0D;
+              if (!ok) c = '?';
+            }
+            return out;
+          };
+          if (dbg) {
+            // Chunked so the full payload survives the per-line log budget.
+            // Grep `Response\[` and concatenate to reassemble - used for fixture
+            // capture. Gated on debug mode so normal operation never logs raw
+            // buf contents.
+            const size_t CHUNK = 400;
             size_t total = (buf.size() + CHUNK - 1) / CHUNK;
             for (size_t i = 0; i < total; i++) {
               size_t off = i * CHUNK;
               size_t len = std::min(CHUNK, buf.size() - off);
-              ESP_LOGI("szg", "[${appliance_name}] Response[%d/%d]: %.*s",
-                       (int)(i + 1), (int)total, (int)len, buf.c_str() + off);
+              ESP_LOGI("szg", "[${appliance_name}] Response[%d/%d]: %s",
+                       (int)(i + 1), (int)total, sanitize(buf, off, len).c_str());
             }
           }
           auto s = esphome::subzero_protocol::parse_range(buf);
           if (!s.valid) {
-            ESP_LOGW("szg", "[${appliance_name}] Parse failed or status!=0, skipping (%.80s...)", buf.c_str());
+            ESP_LOGW("szg", "[${appliance_name}] Parse failed or status!=0, skipping (%s...)",
+                     sanitize(buf, 0, std::min<size_t>(80, buf.size())).c_str());
             buf.clear();
             return;
           }

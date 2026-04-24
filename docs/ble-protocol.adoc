@@ -149,6 +149,8 @@ The integration accepts that some payloads will be unreadable and relies on the 
 Earlier revisions tried to actively *detect* fragment drops by discarding the buffer whenever a new chunk's leading `{` appeared while brace depth was non-zero. That heuristic misfired whenever a short push notification arrived during a long poll response (common on fw 8.5 wall ovens whose full state is ~1.9 KB across 48 fragments), throwing away an almost-complete legitimate poll. The current code prefers the quieter v0.21.0-era behavior: let the buffer accumulate, and trust that the 60s periodic poll plus natural push traffic will produce a clean parse within a cycle or two.
 +
 On appliances whose full-state response reliably hits the ACL bug (wall ovens, 313 fridge), the "poll-only" sensors (model, uptime, serial, sabbath_on, version tree) may still take several cycles to populate, but they will eventually land whenever one full response arrives intact. Push-driven sensors (door, light, setpoint changes) work regardless.
++
+Any raw-buffer content that reaches ESPHome's logger (the debug-mode `Response[N/M]:` chunks, the `Parse failed...` preview) is pre-sanitized: bytes outside the printable-ASCII range `0x20..0x7E` are replaced with `?`. Non-UTF-8 bytes in an API log message crash Home Assistant's protobuf decoder the same way they used to crash it via the retired `Raw JSON` text sensor, and HA caches the bad event. Sanitization keeps the log channel safe without touching what the parser actually sees.
 
 == Command Reference
 
