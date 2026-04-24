@@ -254,11 +254,6 @@ text_sensor:
     id: ${prefix}_debug
 
   - platform: template
-    name: "${appliance_name} Raw JSON"
-    id: ${prefix}_raw_json
-    entity_category: diagnostic
-
-  - platform: template
     name: "${appliance_name} Model"
     id: ${prefix}_model
     icon: "mdi:devices"
@@ -832,10 +827,43 @@ script:
             client->get_gattc_if(), client->get_conn_id(),
             d5, cmd.size(), (uint8_t*)cmd.data(),
             ESP_GATT_WRITE_TYPE_RSP, ESP_GATT_AUTH_REQ_NONE);
-          ESP_LOGI("ble", "[${appliance_name}] get_async err=%d", err);
+          ESP_LOGI("ble", "[${appliance_name}] get_async #1 err=%d", err);
           // Mark poll as in flight so unlock-expiry detection catches a silent
           // post-bond init failure one interval sooner. Parser clears this
           // on any {"status":0,"resp":...} response (including unlock_channel
           // and this get_async).
           if (err == ESP_OK) id(${prefix}_poll_in_flight) = true;
           id(${prefix}_debug).publish_state("Connected and polling.");
+      # ACL-mitigation: fire two extra polls 3s apart. On fw 8.5 appliances the
+      # full poll response (1946 bytes for ovens) loses one or more ACL fragments
+      # stochastically, so any individual attempt has a high failure rate. 3s
+      # spacing gives a successful response time to fully arrive and be parsed
+      # (which clears the buffer) before the next attempt fires. If #1 succeeds,
+      # #2 and #3 refresh with identical state (harmless). If #1 failed, the ACL
+      # corruption handler already cleared the buffer, so #2 starts fresh.
+      - delay: 3s
+      - lambda: |-
+          if (!id(${prefix}_pin_confirmed)) return;
+          auto *client = id(${prefix}_appliance);
+          if (!client->connected()) return;
+          uint16_t d5 = id(${prefix}_d5_handle);
+          if (d5 == 0) return;
+          std::string cmd = "{\"cmd\":\"get_async\"}\n";
+          esp_ble_gattc_write_char(
+            client->get_gattc_if(), client->get_conn_id(),
+            d5, cmd.size(), (uint8_t*)cmd.data(),
+            ESP_GATT_WRITE_TYPE_RSP, ESP_GATT_AUTH_REQ_NONE);
+          ESP_LOGI("ble", "[${appliance_name}] get_async #2 (ACL-mitigation retry)");
+      - delay: 3s
+      - lambda: |-
+          if (!id(${prefix}_pin_confirmed)) return;
+          auto *client = id(${prefix}_appliance);
+          if (!client->connected()) return;
+          uint16_t d5 = id(${prefix}_d5_handle);
+          if (d5 == 0) return;
+          std::string cmd = "{\"cmd\":\"get_async\"}\n";
+          esp_ble_gattc_write_char(
+            client->get_gattc_if(), client->get_conn_id(),
+            d5, cmd.size(), (uint8_t*)cmd.data(),
+            ESP_GATT_WRITE_TYPE_RSP, ESP_GATT_AUTH_REQ_NONE);
+          ESP_LOGI("ble", "[${appliance_name}] get_async #3 (ACL-mitigation retry)");
