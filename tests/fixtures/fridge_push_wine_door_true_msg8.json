@@ -1,0 +1,8 @@
+{
+  "seq": 87,
+  "timestamp": "2000-01-05T03:50:11.386",
+  "props": {
+    "wine_door_ajar": true
+  },
+  "msg_types": 8
+}

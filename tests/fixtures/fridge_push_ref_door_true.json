@@ -1,0 +1,8 @@
+{
+  "msg_types": 2,
+  "seq": 29,
+  "timestamp": "2025-01-24T04:26:01.005",
+  "props": {
+    "ref_door_ajar": true
+  }
+}

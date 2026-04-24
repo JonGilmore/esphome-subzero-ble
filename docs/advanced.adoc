@@ -115,7 +115,101 @@ If you experience crashes (typically `__cxa_allocate_exception` -> `operator new
 
 . Reducing the number of Home Assistant API connections to the device
 . Setting `ble_client: WARN` in the logger config
-. Reducing poll interval from `120s` to `300s`
+. Lengthening the poll interval (default `60s` in `subzero_base.yaml`) to `120s` or `300s`
+
+[[reconnect-logic]]
+== Reconnect Logic
+
+The integration runs a periodic poll every 60 seconds against each bonded appliance, and uses two independent signals to decide when to force a reconnect. Detection fires roughly 2-3 minutes after the connection goes bad.
+
+=== Zombie Detection (connection is dead)
+
+`poll_ok` is set to `true` by *any* D5 indication - poll response or push notification. At each poll interval, if `poll_ok` is still `false` from the previous interval, `poll_miss` increments. When `poll_miss` reaches 15 (= 15 minutes of total silence at the 60s interval), the integration calls `client->disconnect()` to force a fresh connection.
+
+This catches cases where the BLE link has died entirely - no polls, no pushes, no activity.
+
+=== Unlock-Session Expiry / Init-Failure Detection
+
+Sub-Zero fridges and wall ovens running fw 8.5 / API 5.4 run an *unlock session* that expires roughly 20-25 minutes after `unlock_channel`. After expiry, `get_async` writes to D5 are accepted at the BLE layer (GATT status 0) but produce no indication response. Push notifications continue because they're CCCD-based, not session-based - so the zombie detector doesn't fire. The same detector also catches the case where `post_bond`'s initial `get_async` silently fails, which can leave an appliance in a half-initialized state.
+
+To catch both, the integration tracks *poll responses specifically*:
+
+* When a `get_async` command is written (both in `post_bond` and in `periodic_poll`), `poll_in_flight` is set to `true`.
+* When a full poll response arrives (parser sets `is_poll = true` for `{"status":0,"resp":{...}}`), `poll_in_flight` is cleared and `poll_no_response` is reset to 0.
+* When the *next* poll interval fires and `poll_in_flight` is still `true`, that means the previous poll went unanswered - `poll_no_response` increments.
+* After 2 consecutive unanswered polls (= 2 minutes at 60s, well under the 20-min unlock window), the integration forces a reconnect.
+
+Push notifications *do not* clear `poll_in_flight` - they only flip `poll_ok`. That's the whole point: pushes keep flowing past unlock expiry, so they can't be trusted to prove the unlock session is still alive.
+
+Hooking `post_bond`'s get_async into the same detector means init failures (appliance bonded but initial state never arrived) get caught in ~2 minutes instead of waiting for the zombie threshold.
+
+=== Log Format
+
+The periodic poll log line shows both counters at once:
+
+[source]
+----
+[I][szg:XXX]: [Left Dishwasher] Periodic poll (miss=2, no_resp=0, retries=0)
+----
+
+* `miss` - zombie counter (0-15, reconnect at 15 = 15 min of total silence)
+* `no_resp` - unlock/init-failure counter (0-2, reconnect at 2 = 2 min of unanswered polls)
+* `retries` - fast-reconnect retry counter (0-3, bond clear at 3; see below)
+
+=== Fast Reconnect + Bond Clear
+
+Separately, when the BLE connection drops and `auto_connect: true` reconnects, the integration tracks `fast_retries`. If the reconnect fails three times in a row (common symptom: stale bond after an overnight timeout), the integration calls `esp_ble_remove_bond_device()`, clears all cached characteristic handles, and re-pairs from scratch on the next connect.
+
+=== Tuning
+
+Both knobs are in `subzero_base.yaml`:
+
+* `interval: 60s` (line with `interval:`) - poll cadence. Shortening to 30s halves detection time and doubles radio utilization (still single-digit percent for typical configs).
+* `poll_no_response >= 2` - reconnect threshold. Dropping to 1 would reconnect on the very first unanswered poll (aggressive, not recommended - single transient blips would trigger); raising to 3+ gives more tolerance at the cost of slower recovery.
+* `poll_miss >= 15` - zombie threshold. Scales with the interval: at 60s that's 15 min.
+
+[[parser-component]]
+== Parser Component
+
+The JSON parsing logic (poll responses + push notifications from all three appliance types) lives in a small external C++ component at `components/subzero_protocol/`, rather than inside the YAML lambdas. This keeps the lambdas thin and - more importantly - makes the parser testable on a host machine without needing an ESP32 or a real appliance.
+
+=== Interface
+
+.components/subzero_protocol/protocol.h (elided)
+[source,cpp]
+----
+namespace esphome::subzero_protocol {
+  FridgeState     parse_fridge(const std::string &json);
+  DishwasherState parse_dishwasher(const std::string &json);
+  RangeState      parse_range(const std::string &json);
+}
+----
+
+Each state struct has:
+
+* `bool valid` - `false` on malformed JSON, unknown message format, or `status != 0`
+* `bool is_poll` - `true` for `{"status":0,"resp":{...}}` poll responses, `false` for `{"seq":N,"props":{...}}` pushes. Used by the lambdas to drive unlock-session expiry detection.
+* `std::vector<std::string> data_keys` - top-level keys in the data object, in order. The YAML lambdas log these when debug mode is on.
+* `CommonFields common` - shared appliance metadata (model, uptime, diagnostic_status, version struct, etc.)
+* Appliance-specific `std::optional<T>` fields for each sensor key
+
+The lambdas check `s.is_poll`, `s.valid`, `s.<field>.has_value()` and publish to entities - no `json::parse_json` calls, no `is<T>()` / `as<T>()` key fishing.
+
+=== Running the Host Tests
+
+A CMake + GoogleTest harness at `tests/cpp/` compiles the parser on the host and runs ~35 tests (22 fixture-based + a dozen targeted behavior tests). Fixtures live at `tests/fixtures/` - one `.json` + one `.expected.json` per captured BLE payload.
+
+[source,bash]
+----
+cd tests/cpp
+cmake -S . -B build
+cmake --build build -j
+ctest --test-dir build --output-on-failure
+----
+
+First run fetches ArduinoJson, GoogleTest, and nlohmann/json via CMake's `FetchContent` (~20 seconds). Subsequent runs compile in under a second and tests complete in milliseconds. The CI workflow runs the same commands on every push and PR (cached).
+
+To add a fixture for a new appliance variant: turn on *Debug Mode*, copy the raw JSON from the `Raw JSON` text sensor into `tests/fixtures/<name>.json`, then record the expected parser output in `tests/fixtures/<name>.expected.json`. The test discovery picks up new pairs automatically.
 
 == Debug Mode
 

@@ -155,149 +155,102 @@ script:
           size_t start = buf.find('{');
           if (start == std::string::npos) { buf.clear(); return; }
           if (start > 0) buf.erase(0, start);
-          bool dbg = id(${prefix}_debug_mode);
-          ESP_LOGI("szg", "[${appliance_name}] Parsing JSON (%d bytes)", buf.size());
-          if (dbg || buf.size() < 255) {
-            id(${prefix}_raw_json).publish_state(buf);
-          } else {
-            ESP_LOGI("szg", "[${appliance_name}] Response: %.200s...", buf.c_str());
+          // Find matching close brace to determine exact JSON extent. Trailing
+          // garbage (ACL fragment corruption on fw 8.5) must not reach text
+          // sensors - non-UTF-8 bytes crash HA's protobuf decoder.
+          int depth = 0;
+          size_t end = 0;
+          for (size_t i = 0; i < buf.size(); i++) {
+            if (buf[i] == '{') depth++;
+            else if (buf[i] == '}') { depth--; if (depth == 0) { end = i + 1; break; } }
           }
-          json::parse_json(buf, [](JsonObject root) -> bool {
-            // Determine data source: full poll ("resp") or push notification ("props")
-            JsonObject data;
-            if (root["status"].is<int>()) {
-              if (root["status"].as<int>() != 0) {
-                ESP_LOGW("szg", "[${appliance_name}] status=%d, skipping", root["status"].as<int>());
-                return false;
-              }
-              data = root["resp"].as<JsonObject>();
-            } else if (root["props"].is<JsonObject>()) {
-              data = root["props"].as<JsonObject>();
-              ESP_LOGD("szg", "[${appliance_name}] Push update (seq %d)", root["seq"].as<int>());
-            } else {
-              ESP_LOGW("szg", "[${appliance_name}] Unknown JSON format, skipping");
-              return false;
+          if (end == 0) { buf.clear(); return; }
+          std::string msg = buf.substr(0, end);
+          // Skip trailing whitespace (appliances terminate messages with \n).
+          size_t next = end;
+          while (next < buf.size() && (buf[next] == '\n' || buf[next] == '\r' || buf[next] == ' ' || buf[next] == '\t' || buf[next] == '\0')) {
+            next++;
+          }
+          if (next < buf.size() && buf[next] == '{') {
+            buf.erase(0, next);
+          } else {
+            if (next < buf.size()) {
+              ESP_LOGW("szg", "[${appliance_name}] Discarding %d bytes of trailing non-JSON data", (int)(buf.size() - next));
             }
-            if (data.isNull()) return false;
-            // PIN confirmation (unlock_channel response)
-            if (data["pin"].is<const char*>()) {
-              const char *pin = data["pin"].as<const char*>();
-              if (pin && strlen(pin) <= 10) {
-                id(${prefix}_stored_pin) = pin;
-                id(${prefix}_pin_confirmed) = true;
-                id(${prefix}_pin_input).publish_state(pin);
-                ESP_LOGI("szg", "[${appliance_name}] PIN confirmed: %s", pin);
-                id(${prefix}_debug).publish_state("PIN confirmed! Channel unlocked.");
-              }
-            }
-            // Door (fallback: door_ajar)
-            if (data["door_ajar"].is<bool>())
-              id(${prefix}_door_ajar).publish_state(data["door_ajar"].as<bool>());
-            // --- Dishwasher sensors ---
-            if (data["wash_cycle_on"].is<bool>())
-              id(${prefix}_wash_cycle_on).publish_state(data["wash_cycle_on"].as<bool>());
-            if (data["heated_dry_on"].is<bool>())
-              id(${prefix}_heated_dry).publish_state(data["heated_dry_on"].as<bool>());
-            if (data["extended_dry_on"].is<bool>())
-              id(${prefix}_extended_dry).publish_state(data["extended_dry_on"].as<bool>());
-            if (data["high_temp_wash_on"].is<bool>())
-              id(${prefix}_high_temp_wash).publish_state(data["high_temp_wash_on"].as<bool>());
-            if (data["sani_rinse_on"].is<bool>())
-              id(${prefix}_sani_rinse).publish_state(data["sani_rinse_on"].as<bool>());
-            if (data["rinse_aid_low"].is<bool>())
-              id(${prefix}_rinse_aid_low).publish_state(data["rinse_aid_low"].as<bool>());
-            if (data["softener_low"].is<bool>())
-              id(${prefix}_softener_low).publish_state(data["softener_low"].as<bool>());
-            if (data["light_on"].is<bool>())
-              id(${prefix}_light_on).publish_state(data["light_on"].as<bool>());
-            if (data["remote_ready"].is<bool>())
-              id(${prefix}_remote_ready).publish_state(data["remote_ready"].as<bool>());
-            if (data["delay_start_timer_active"].is<bool>())
-              id(${prefix}_delay_start).publish_state(data["delay_start_timer_active"].as<bool>());
-            if (data["wash_status"].is<float>())
-              id(${prefix}_wash_status).publish_state(data["wash_status"].as<float>());
-            if (data["wash_cycle"].is<float>())
-              id(${prefix}_wash_cycle).publish_state(data["wash_cycle"].as<float>());
-            if (data["wash_cycle_end_time"].is<const char*>()) {
-              std::string end_str = data["wash_cycle_end_time"].as<std::string>();
-              id(${prefix}_wash_end_time_str) = end_str;
-              id(${prefix}_wash_cycle_end_time).publish_state(end_str);
-              // Compute remaining minutes from message timestamp
-              const char *ts = nullptr;
-              if (root["timestamp"].is<const char*>())
-                ts = root["timestamp"].as<const char*>();
-              else if (root["resp"].is<JsonObject>() && root["resp"]["time"].is<const char*>())
-                ts = root["resp"]["time"].as<const char*>();
-              if (ts && end_str.size() >= 16) {
-                // Parse end time "YYYY-MM-DDTHH:MM"
-                int ey, emo, ed, eh, emi;
-                if (sscanf(end_str.c_str(), "%d-%d-%dT%d:%d", &ey, &emo, &ed, &eh, &emi) == 5) {
-                  // Parse current timestamp "YYYY-MM-DDTHH:MM:SS..."
-                  int cy, cmo, cd, ch, cmi, cs = 0;
-                  if (sscanf(ts, "%d-%d-%dT%d:%d:%d", &cy, &cmo, &cd, &ch, &cmi, &cs) >= 5) {
-                    // Simple minute difference (same month assumption for wash cycles)
-                    int end_mins = (ed * 24 * 60) + (eh * 60) + emi;
-                    int cur_mins = (cd * 24 * 60) + (ch * 60) + cmi;
-                    int remaining = end_mins - cur_mins;
-                    if (remaining < 0) remaining = 0;
-                    id(${prefix}_wash_time_remaining).publish_state(remaining);
-                    ESP_LOGI("szg", "[${appliance_name}] Wash ends %s, ~%d min remaining", end_str.c_str(), remaining);
-                  }
-                }
-              }
-            }
-            // Clear remaining time when cycle ends
-            if (data["wash_cycle_on"].is<bool>() && !data["wash_cycle_on"].as<bool>()) {
-              if (id(${prefix}_wash_time_remaining).state > 0)
-                id(${prefix}_wash_time_remaining).publish_state(0);
-            }
-            // --- Common sensors ---
-            if (data["service_required"].is<bool>())
-              id(${prefix}_svc_required).publish_state(data["service_required"].as<bool>());
-            // --- Text sensors ---
-            if (data["appliance_model"].is<const char*>())
-              id(${prefix}_model).publish_state(data["appliance_model"].as<std::string>());
-            if (data["uptime"].is<const char*>())
-              id(${prefix}_uptime).publish_state(data["uptime"].as<std::string>());
-            if (data["appliance_serial"].is<const char*>()) {
-              std::string s = data["appliance_serial"].as<std::string>();
-              size_t start = s.find_first_not_of(" \t");
-              size_t end = s.find_last_not_of(" \t");
-              if (start != std::string::npos)
-                id(${prefix}_serial).publish_state(s.substr(start, end - start + 1));
-            }
-            if (data["appliance_type"].is<const char*>())
-              id(${prefix}_appliance_type).publish_state(data["appliance_type"].as<std::string>());
-            if (data["diagnostic_status"].is<const char*>())
-              id(${prefix}_diag_status).publish_state(data["diagnostic_status"].as<std::string>());
-            if (data["version"].is<JsonObject>()) {
-              JsonObject v = data["version"].as<JsonObject>();
-              if (v["fw"].is<const char*>())
-                id(${prefix}_fw_version).publish_state(v["fw"].as<std::string>());
-              if (v["api"].is<const char*>())
-                id(${prefix}_api_version).publish_state(v["api"].as<std::string>());
-              if (v["bleapp"].is<const char*>())
-                id(${prefix}_bleapp_version).publish_state(v["bleapp"].as<std::string>());
-              if (v["os"].is<const char*>())
-                id(${prefix}_os_version).publish_state(v["os"].as<std::string>());
-              if (v["rtapp"].is<const char*>())
-                id(${prefix}_rtapp_version).publish_state(v["rtapp"].as<std::string>());
-              if (v["appliance"].is<const char*>())
-                id(${prefix}_board_version).publish_state(v["appliance"].as<std::string>());
-            }
-            if (data["build_info"].is<JsonObject>()) {
-              JsonObject b = data["build_info"].as<JsonObject>();
-              if (b["build_date"].is<const char*>())
-                id(${prefix}_build_date).publish_state(b["build_date"].as<std::string>());
-            }
-            // Debug: log all keys in the response
-            if (id(${prefix}_debug_mode)) {
-              for (JsonPair kv : data) {
-                ESP_LOGI("szg-debug", "[${appliance_name}] key=%s", kv.key().c_str());
-              }
-            }
-            return true;
-          });
+            buf.clear();
+          }
+          bool dbg = id(${prefix}_debug_mode);
+          ESP_LOGI("szg", "[${appliance_name}] Parsing JSON (%d bytes)", (int)msg.size());
+          if (dbg || msg.size() < 255) {
+            id(${prefix}_raw_json).publish_state(msg);
+          } else {
+            ESP_LOGI("szg", "[${appliance_name}] Response: %.200s...", msg.c_str());
+          }
+          auto s = esphome::subzero_protocol::parse_dishwasher(msg);
+          if (!s.valid) {
+            ESP_LOGW("szg", "[${appliance_name}] Parse failed or status!=0, skipping");
+            return;
+          }
+          if (s.is_poll) {
+            id(${prefix}_poll_in_flight) = false;
+            id(${prefix}_poll_no_response) = 0;
+          }
+          if (dbg) {
+            for (const auto &k : s.data_keys)
+              ESP_LOGI("szg-debug", "[${appliance_name}] key=%s", k.c_str());
+          }
+          // PIN confirmation (unlock_channel response)
+          if (s.common.pin_confirmed) {
+            const std::string &pin = *s.common.pin_confirmed;
+            id(${prefix}_stored_pin) = pin;
+            id(${prefix}_pin_confirmed) = true;
+            id(${prefix}_pin_input).publish_state(pin);
+            ESP_LOGI("szg", "[${appliance_name}] PIN confirmed: %s", pin.c_str());
+            id(${prefix}_debug).publish_state("PIN confirmed! Channel unlocked.");
+          }
+          // --- Dishwasher sensors ---
+          if (s.door_ajar)                id(${prefix}_door_ajar).publish_state(*s.door_ajar);
+          if (s.wash_cycle_on)            id(${prefix}_wash_cycle_on).publish_state(*s.wash_cycle_on);
+          if (s.heated_dry_on)            id(${prefix}_heated_dry).publish_state(*s.heated_dry_on);
+          if (s.extended_dry_on)          id(${prefix}_extended_dry).publish_state(*s.extended_dry_on);
+          if (s.high_temp_wash_on)        id(${prefix}_high_temp_wash).publish_state(*s.high_temp_wash_on);
+          if (s.sani_rinse_on)            id(${prefix}_sani_rinse).publish_state(*s.sani_rinse_on);
+          if (s.rinse_aid_low)            id(${prefix}_rinse_aid_low).publish_state(*s.rinse_aid_low);
+          if (s.softener_low)             id(${prefix}_softener_low).publish_state(*s.softener_low);
+          if (s.light_on)                 id(${prefix}_light_on).publish_state(*s.light_on);
+          if (s.remote_ready)             id(${prefix}_remote_ready).publish_state(*s.remote_ready);
+          if (s.delay_start_timer_active) id(${prefix}_delay_start).publish_state(*s.delay_start_timer_active);
+          if (s.wash_status)              id(${prefix}_wash_status).publish_state(*s.wash_status);
+          if (s.wash_cycle)               id(${prefix}_wash_cycle).publish_state(*s.wash_cycle);
+          if (s.wash_cycle_end_time) {
+            id(${prefix}_wash_end_time_str) = *s.wash_cycle_end_time;
+            id(${prefix}_wash_cycle_end_time).publish_state(*s.wash_cycle_end_time);
+          }
+          if (s.wash_time_remaining_min) {
+            id(${prefix}_wash_time_remaining).publish_state(*s.wash_time_remaining_min);
+            ESP_LOGI("szg", "[${appliance_name}] Wash ends %s, ~%d min remaining",
+                     s.wash_cycle_end_time ? s.wash_cycle_end_time->c_str() : "?",
+                     *s.wash_time_remaining_min);
+          }
+          // Clear remaining time when cycle ends (stateful - stays in lambda)
+          if (s.wash_cycle_on && !*s.wash_cycle_on) {
+            if (id(${prefix}_wash_time_remaining).state > 0)
+              id(${prefix}_wash_time_remaining).publish_state(0);
+          }
+          // --- Common ---
+          if (s.common.service_required)  id(${prefix}_svc_required).publish_state(*s.common.service_required);
+          if (s.common.appliance_model)   id(${prefix}_model).publish_state(*s.common.appliance_model);
+          if (s.common.uptime)            id(${prefix}_uptime).publish_state(*s.common.uptime);
+          if (s.common.appliance_serial)  id(${prefix}_serial).publish_state(*s.common.appliance_serial);
+          if (s.common.appliance_type)    id(${prefix}_appliance_type).publish_state(*s.common.appliance_type);
+          if (s.common.diagnostic_status) id(${prefix}_diag_status).publish_state(*s.common.diagnostic_status);
+          if (s.common.build_date)        id(${prefix}_build_date).publish_state(*s.common.build_date);
+          if (s.common.version.fw)        id(${prefix}_fw_version).publish_state(*s.common.version.fw);
+          if (s.common.version.api)       id(${prefix}_api_version).publish_state(*s.common.version.api);
+          if (s.common.version.bleapp)    id(${prefix}_bleapp_version).publish_state(*s.common.version.bleapp);
+          if (s.common.version.os)        id(${prefix}_os_version).publish_state(*s.common.version.os);
+          if (s.common.version.rtapp)     id(${prefix}_rtapp_version).publish_state(*s.common.version.rtapp);
+          if (s.common.version.appliance) id(${prefix}_board_version).publish_state(*s.common.version.appliance);
           id(${prefix}_poll_ok) = true;
           id(${prefix}_fast_retries) = 0;
-          buf.clear();
+          // buf was already trimmed at the top - no clear needed here.

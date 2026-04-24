@@ -1,0 +1,19 @@
+{
+  "valid": true,
+  "door_ajar": false,
+  "wine_door_ajar": false,
+  "common": {
+    "appliance_model": "IW30R",
+    "uptime": "99:49:49",
+    "appliance_type": "17.5.2.0",
+    "diagnostic_status": "0x00000003111",
+    "version": {
+      "fw": "2.27",
+      "api": "5.5",
+      "bleapp": "3.4",
+      "os": "25.10",
+      "rtapp": "2.27",
+      "appliance": "main: 10.11.6877; mcb_ccm_lv: 9.4.4034; uim_typeA: 11.0.13"
+    }
+  }
+}

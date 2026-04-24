@@ -1,0 +1,114 @@
+{
+  "status": 0,
+  "resp": {
+    "notifs": [
+      {
+        "notif_seq": 41,
+        "timestamp": "2026-04-22T07:25:00.754",
+        "notif_type": 302
+      },
+      {
+        "notif_seq": 40,
+        "timestamp": "2026-04-22T03:06:21.047",
+        "notif_type": 301
+      },
+      {
+        "notif_seq": 39,
+        "timestamp": "2026-04-20T07:56:24.242",
+        "notif_type": 302
+      },
+      {
+        "notif_seq": 38,
+        "timestamp": "2026-04-20T03:35:30.786",
+        "notif_type": 301
+      },
+      {
+        "notif_seq": 37,
+        "timestamp": "2026-04-19T07:48:09.642",
+        "notif_type": 302
+      },
+      {
+        "notif_seq": 36,
+        "timestamp": "2026-04-19T03:43:14.868",
+        "notif_type": 301
+      },
+      {
+        "notif_seq": 35,
+        "timestamp": "2026-04-17T07:13:43.414",
+        "notif_type": 302
+      },
+      {
+        "notif_seq": 34,
+        "timestamp": "2026-04-17T03:09:57.983",
+        "notif_type": 301
+      },
+      {
+        "notif_seq": 33,
+        "timestamp": "2026-04-17T03:09:29.959",
+        "notif_type": 306
+      },
+      {
+        "notif_seq": 32,
+        "timestamp": "2026-04-17T03:09:21.840",
+        "notif_type": 301
+      }
+    ],
+    "diagnostic_status": "0x00000003111",
+    "pin_window_open": true,
+    "delay_start_timer_active": false,
+    "delay_start_timer_duration": 0,
+    "delay_start_timer_end_time": null,
+    "delay_start_timer_start_time": null,
+    "door_ajar": true,
+    "extended_dry_on": true,
+    "heated_dry_on": true,
+    "high_temp_wash_on": true,
+    "light_on": false,
+    "mode": 0,
+    "remote_ready": false,
+    "rinse_aid_low": false,
+    "sani_rinse_on": true,
+    "service_required": false,
+    "showroom_on": false,
+    "top_rack_only_on": false,
+    "wash_cycle": 2,
+    "wash_cycle_end_time": null,
+    "wash_cycle_on": false,
+    "wash_status": 1,
+    "ap_chan": 0,
+    "ap_enc": -1,
+    "ap_rssi": 0,
+    "ap_ssid": null,
+    "appliance_model": "DW2450",
+    "appliance_name": "Sub-Zero Connected Appliance",
+    "appliance_serial": "20156136",
+    "appliance_type": "17.6.1.0",
+    "build_info": {
+      "desc": "2.27",
+      "build_date": "2024-11-26T16:04:29"
+    },
+    "defer_application_updates": 0,
+    "defer_os_updates": 0,
+    "device_wlan_id": "0006802e61d1",
+    "door_ajar_timeout": 5,
+    "ipv4_addr": "0.0.0.0",
+    "log_level": "error",
+    "_os_update_time": null,
+    "realtime_debug": false,
+    "remote_svc_reg_token": null,
+    "service": {},
+    "service_mode": 0,
+    "smart_grid_on": null,
+    "time": "2026-04-24T02:31:11",
+    "uptime": "797:58:1",
+    "version": {
+      "appliance": "uim: 21.2.31; uim_slave: 7.1.0; main: 17.6.0; wash_pump: 12.1.0; rs485: 10.3.0",
+      "architecture": "",
+      "fw": "2.27",
+      "rtapp": "2.27",
+      "os": "25.10",
+      "bleapp": "3.4",
+      "api": "5.5"
+    }
+  }
+}

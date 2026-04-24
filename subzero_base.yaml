@@ -8,15 +8,14 @@ substitutions:
   poll_offset: "0s"
   poll_via_d4: "false"
 
-external_components:
-  - source:
-      type: git
-      url: https://github.com/JonGilmore/esphome-subzero-ble
-      ref: v1.0.0
-    components: [patch_acl_reassembly]
+# NOTE: external_components is declared by the entry-point yaml, not here.
+# Minimal examples use `type: git` with a released ref; personal dev yamls
+# use `type: local` pointing at the repo's components/ directory. Both must
+# list `patch_acl_reassembly` and `subzero_protocol` so the activations below
+# resolve.
 
 patch_acl_reassembly:
-
+subzero_protocol:
 json:
 
 esp32_ble:
@@ -64,6 +63,16 @@ globals:
     type: int
     initial_value: "0"
   - id: ${prefix}_poll_miss
+    type: int
+    initial_value: "0"
+  # Unlock-session expiry detection: set true after writing a poll command,
+  # cleared only when a full poll response (is_poll=true) arrives. Pushes do
+  # NOT clear it - that's the whole point, since pushes keep flowing past
+  # unlock expiry while poll responses stop.
+  - id: ${prefix}_poll_in_flight
+    type: bool
+    initial_value: "false"
+  - id: ${prefix}_poll_no_response
     type: int
     initial_value: "0"
   - id: ${prefix}_debug_mode
@@ -129,6 +138,8 @@ ble_client:
       then:
         - lambda: |-
             id(${prefix}_json_buf).clear();
+            id(${prefix}_poll_in_flight) = false;
+            id(${prefix}_poll_no_response) = 0;
             id(${prefix}_post_bond).stop();
             id(${prefix}_subscribe).stop();
             id(${prefix}_fast_reconnect).stop();
@@ -178,6 +189,22 @@ sensor:
       auto &buf = id(${prefix}_json_buf);
       if (buf.capacity() < 2048) buf.reserve(2048);
       if (buf.size() > 4096) { buf.clear(); return {}; }
+      // ACL fragment-drop workaround: if a new chunk starts with '{' while the
+      // current buffer has an unbalanced previous message, the previous one got
+      // truncated by ESP-IDF's Bluedroid ACL reassembly bug (fw 8.5 appliances).
+      // Discard the corrupt buffer before appending, so garbage doesn't reach
+      // the parser or text sensors.
+      if (!buf.empty() && x.size() > 0 && x.data()[0] == '{') {
+        int prev_depth = 0;
+        for (char c : buf) {
+          if (c == '{') prev_depth++;
+          else if (c == '}') prev_depth--;
+        }
+        if (prev_depth != 0) {
+          ESP_LOGW("szg", "[${appliance_name}] ACL corruption: discarding %d bytes of partial data", (int)buf.size());
+          buf.clear();
+        }
+      }
       buf.append((char*)x.data(), x.size());
       // Any notification = connection alive (resets zombie detection)
       id(${prefix}_poll_ok) = true;
@@ -447,7 +474,7 @@ button:
           id(${prefix}_debug).publish_state("Pairing fully reset. Power-cycle appliance, then press Connect.");
 
 interval:
-  - interval: 120s
+  - interval: 60s
     then:
       - script.execute: ${prefix}_periodic_poll
 
@@ -460,10 +487,17 @@ script:
   # that populates ESPHome's characteristic database - it only appears after bonding +
   # cache refresh. ble_client.ble_write would fail to find D5 on fridges.
   #
-  # Also includes "zombie detection": poll_ok is set by any D5 notification (push or
-  # poll response), and by any D4 notification on fridges (which subscribe to both
-  # channels). If 15 poll intervals pass with no data on either channel, we force
-  # reconnect.
+  # Two separate reconnect triggers:
+  #   (a) Zombie detection: poll_ok is set by ANY D5/D4 indication (push or poll response).
+  #       If 15 intervals pass with zero activity, connection is dead - reconnect.
+  #       At 60s intervals that's 15 min of total silence.
+  #   (b) Unlock-session expiry / init failure: poll_in_flight is set when we write a
+  #       get_async (both here and in post_bond) and cleared only by a full poll response
+  #       (is_poll=true). Pushes do not clear it. If 2 consecutive polls go unanswered
+  #       (while pushes may still arrive), we reconnect. Threshold of 2 at 60s = ~2 min
+  #       detection, well under the ~20-25 min unlock window, and still requires one
+  #       completed cycle between "start" and "no response" so single glitches don't
+  #       trigger spurious reconnects.
   - id: ${prefix}_periodic_poll
     mode: single
     then:
@@ -476,7 +510,7 @@ script:
           if (handle == 0) return;
           auto *client = id(${prefix}_appliance);
           if (!client->connected()) return;
-          // Zombie detection: no notifications since last poll interval
+          // (a) Zombie detection - no D5 activity at all
           if (id(${prefix}_poll_ok)) {
             id(${prefix}_poll_miss) = 0;
           } else {
@@ -485,8 +519,24 @@ script:
               ESP_LOGW("szg", "[${appliance_name}] Connection stale (%d intervals, no data), forcing reconnect",
                 id(${prefix}_poll_miss));
               id(${prefix}_poll_miss) = 0;
+              id(${prefix}_poll_in_flight) = false;
+              id(${prefix}_poll_no_response) = 0;
               id(${prefix}_json_buf).clear();
               id(${prefix}_debug).publish_state("Connection stale, reconnecting...");
+              client->disconnect();
+              return;
+            }
+          }
+          // (b) Unlock-session expiry - previous poll never got a response
+          if (id(${prefix}_poll_in_flight)) {
+            id(${prefix}_poll_no_response) += 1;
+            if (id(${prefix}_poll_no_response) >= 2) {
+              ESP_LOGW("szg", "[${appliance_name}] %d polls unanswered (unlock session likely expired), forcing reconnect",
+                id(${prefix}_poll_no_response));
+              id(${prefix}_poll_no_response) = 0;
+              id(${prefix}_poll_in_flight) = false;
+              id(${prefix}_json_buf).clear();
+              id(${prefix}_debug).publish_state("Polls unresponsive, reconnecting...");
               client->disconnect();
               return;
             }
@@ -505,8 +555,10 @@ script:
             client->disconnect();
             return;
           }
-          ESP_LOGI("szg", "[${appliance_name}] Periodic poll (miss=%d, retries=%d)",
-            id(${prefix}_poll_miss), id(${prefix}_fast_retries));
+          // Write succeeded - mark poll as in flight for expiry detection.
+          id(${prefix}_poll_in_flight) = true;
+          ESP_LOGI("szg", "[${appliance_name}] Periodic poll (miss=%d, no_resp=%d, retries=%d)",
+            id(${prefix}_poll_miss), id(${prefix}_poll_no_response), id(${prefix}_fast_retries));
 
   # Post-bond discovery sequence - custom because:
   # 1. On fridges, D5 is not visible in GATT until after bonding + cache refresh.
@@ -752,4 +804,9 @@ script:
             d5, cmd.size(), (uint8_t*)cmd.data(),
             ESP_GATT_WRITE_TYPE_RSP, ESP_GATT_AUTH_REQ_NONE);
           ESP_LOGI("ble", "[${appliance_name}] get_async err=%d", err);
+          // Mark poll as in flight so unlock-expiry detection catches a silent
+          // post-bond init failure one interval sooner. Parser clears this
+          // on any {"status":0,"resp":...} response (including unlock_channel
+          // and this get_async).
+          if (err == ESP_OK) id(${prefix}_poll_in_flight) = true;
           id(${prefix}_debug).publish_state("Connected and polling.");

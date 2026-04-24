@@ -1,0 +1,85 @@
+{
+  "status": 0,
+  "resp": {
+    "notifs": [
+      {
+        "notif_seq": 5,
+        "timestamp": "2000-01-03T14:05:11.154",
+        "notif_type": 104
+      },
+      {
+        "notif_seq": 4,
+        "timestamp": "2000-01-03T13:52:42.117",
+        "notif_type": 104
+      },
+      {
+        "notif_seq": 3,
+        "timestamp": "2000-01-03T13:46:46.593",
+        "notif_type": 104
+      },
+      {
+        "notif_seq": 2,
+        "timestamp": "2000-01-03T13:45:02.637",
+        "notif_type": 104
+      },
+      {
+        "notif_seq": 1,
+        "timestamp": "2000-01-03T13:36:18.565",
+        "notif_type": 104
+      },
+      {
+        "notif_seq": 0,
+        "timestamp": "2000-01-03T13:35:54.566",
+        "notif_type": 104
+      }
+    ],
+    "diagnostic_status": "0x00000003111",
+    "active_faults": [],
+    "pin_window_open": true,
+    "accent_light_level": 0,
+    "ref_door_ajar": false,
+    "ref_set_temp": 38,
+    "sabbath_on": false,
+    "service_required": false,
+    "unit_on": true,
+    "wine_door_ajar": false,
+    "wine_set_temp": 58,
+    "wine_temp_alert_on": false,
+    "wine2_set_temp": 48,
+    "ap_chan": 0,
+    "ap_enc": -1,
+    "ap_rssi": 0,
+    "ap_ssid": null,
+    "appliance_model": "IW30R",
+    "appliance_name": "Sub-Zero Connected Appliance",
+    "appliance_serial": "  5935702",
+    "appliance_type": "17.5.2.0",
+    "build_info": {
+      "desc": "2.27",
+      "build_date": "2024-11-26T16:04:29"
+    },
+    "defer_application_updates": 0,
+    "defer_os_updates": 0,
+    "device_wlan_id": "00068024b9c7",
+    "door_ajar_timeout": 5,
+    "ipv4_addr": "0.0.0.0",
+    "log_level": "error",
+    "_os_update_time": null,
+    "realtime_debug": false,
+    "remote_svc_reg_token": null,
+    "service": {},
+    "service_mode": 0,
+    "smart_grid_on": true,
+    "time": "2000-01-05T03:50:10",
+    "uptime": "99:50:08",
+    "version": {
+      "appliance": "main: 10.11.6877; mcb_ccm_lv: 9.4.4034; uim_typeA: 11.0.13",
+      "architecture": "",
+      "fw": "2.27",
+      "rtapp": "2.27",
+      "os": "25.10",
+      "bleapp": "3.4",
+      "api": "5.5"
+    }
+  }
+}

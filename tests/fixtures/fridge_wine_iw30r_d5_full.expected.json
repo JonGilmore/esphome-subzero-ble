@@ -1,0 +1,27 @@
+{
+  "valid": true,
+  "ref_set_temp": 38,
+  "door_ajar": false,
+  "wine_door_ajar": false,
+  "wine_set_temp": 58,
+  "wine2_set_temp": 48,
+  "wine_temp_alert_on": false,
+  "common": {
+    "sabbath_on": false,
+    "service_required": false,
+    "appliance_model": "IW30R",
+    "uptime": "99:50:08",
+    "appliance_serial": "5935702",
+    "appliance_type": "17.5.2.0",
+    "diagnostic_status": "0x00000003111",
+    "build_date": "2024-11-26T16:04:29",
+    "version": {
+      "fw": "2.27",
+      "api": "5.5",
+      "bleapp": "3.4",
+      "os": "25.10",
+      "rtapp": "2.27",
+      "appliance": "main: 10.11.6877; mcb_ccm_lv: 9.4.4034; uim_typeA: 11.0.13"
+    }
+  }
+}

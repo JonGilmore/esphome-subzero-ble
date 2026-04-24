@@ -1,0 +1,8 @@
+{
+  "msg_types": 2,
+  "seq": 61,
+  "timestamp": "2025-01-31T10:02:50.460",
+  "props": {
+    "cav_set_temp": 350
+  }
+}

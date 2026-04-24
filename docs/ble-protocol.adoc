@@ -99,7 +99,7 @@ The full handshake follows these steps (shown for dishwashers/ranges where D5 is
 Fridges follow the same connection and bonding flow, but command/response routing differs:
 
 * *D4 polling:* `get_async` on *D4* works without an unlock and returns basic diagnostic data (model, door status, uptime) but not the full sensor state.
-* *D5 polling:* `get_async` on *D5* returns the full sensor state (set temperatures, ice maker status, sabbath mode, wine zones, etc.) *after a successful `unlock_channel`*. However, the unlock session appears to expire after some time (possibly hours). After expiry, writes to D5 are still accepted (GATT write status 0) but produce no indication response - a fresh `unlock_channel` restores command functionality.
+* *D5 polling:* `get_async` on *D5* returns the full sensor state (set temperatures, ice maker status, sabbath mode, wine zones, etc.) *after a successful `unlock_channel`*. However, the unlock session expires roughly 20-25 minutes after unlock. After expiry, writes to D5 are still accepted (GATT write status 0) but produce no indication response. Re-sending `unlock_channel` does *not* restore the session on some appliances (wall ovens, fridges with fw 8.5) - a full BLE reconnect is required. The integration detects this by tracking poll-response timeouts independently from push activity; see link:advanced.adoc#reconnect-logic[Reconnect Logic] for details.
 * *Push notifications:* Full sensor data also arrives via *D5 push notifications* triggered by state changes on the appliance. Push notifications continue even after the unlock session expires (they are CCCD-based, not session-based).
 * *Push mirroring:* Fridges send each push notification on *both* D4 (`msg_types: 8`) and D5 (`msg_types: 2`) simultaneously with identical `props` content.
 
@@ -137,11 +137,16 @@ MTU:: Negotiated to 517 bytes, though the appliance still fragments at ~40 bytes
 
 ACL Fragment Drops (ESP32-S3):: A bug in the ESP-IDF Bluedroid HCI layer causes ACL fragment reassembly failures during rapid bursts of indications.
 This manifests as `BT_HCI: ACL packet too short` and `reassemble_and_dispatch found unfinished packet` errors.
-When a fragment is dropped, the JSON reassembly buffer is left with incomplete data.
-The integration detects this (a new `{` arriving while the buffer is non-empty) and discards the corrupt buffer, allowing subsequent messages to parse normally.
-However, the *first push notification in a burst* is typically lost - for example, `cav_gourmet_mode_on` during gourmet mode activation.
-This seems to only affect appliances using 40-byte indication fragments (API 5.4 / fw 8.5, e.g. SO3050PESP wall oven, 313 fridge, possibly others).
-Appliances using 244-byte fragments (API 5.5 / fw 2.27, e.g. DF36450GSP range, DW2450 dishwasher) are unaffected since their push notifications fit in a single indication.
+When a fragment is dropped, the JSON reassembly buffer is left with incomplete data, and in some cases trailing non-UTF-8 bytes (stale memory) leak into the buffer.
+This seems to only affect appliances using 40-byte indication fragments (API 5.4 / fw 8.5, e.g. SO3050PESP wall oven, 313 fridge, DEU2450R under-counter fridge, possibly others).
+Appliances using 244-byte fragments (API 5.5 / fw 2.27, e.g. DF36450GSP range, DW2450 dishwasher, IW30R wine storage) are unaffected since their push notifications fit in a single indication.
++
+The integration mitigates the corruption in two layers:
++
+. **BLE notify handlers:** when a new chunk starts with `{` while the buffer has an unbalanced previous message (brace depth != 0), the previous message was truncated - discard the buffer before appending the new data. Logs `ACL corruption: discarding N bytes of partial data`.
+. **parse_json scripts:** before publishing the reassembly buffer to the `Raw JSON` text sensor or feeding it to the parser, trim to exact JSON extent (first `{` through matching `}`). Any trailing bytes after the JSON are either preserved (if they start with `{` - likely the beginning of the next message) or discarded (non-JSON garbage). This is required because ESPHome text sensors serialize as protobuf `string`, which must be valid UTF-8 - raw binary crashes Home Assistant's protobuf decoder and, because HA caches the bad state, causes a restart loop.
++
+Even with both layers, the *first push notification in a burst* is typically lost at the appliance side - for example, `cav_gourmet_mode_on` during gourmet mode activation. That fragment truly never arrives; no amount of buffer handling can recover it. Subsequent state changes in the same session are received correctly.
 
 == Command Reference
 
@@ -174,7 +179,7 @@ Fridges use different channels for different operations:
 | `display_pin` | D5 | `{"cmd":"display_pin","params":{"duration": 30}}\n` | Displays PIN on appliance display
 |===
 
-NOTE: D5 command responses require an active unlock session. After the session expires (possibly hours), `get_async` writes to D5 are accepted but produce no response. A fresh `unlock_channel` restores functionality. Push notifications on D5 continue regardless of session state.
+NOTE: D5 command responses require an active unlock session. After the session expires (~20-25 minutes), `get_async` writes to D5 are accepted but produce no response. On fridges/wall ovens with fw 8.5, re-sending `unlock_channel` does not restore the session - a full BLE reconnect is required. Push notifications on D5 continue regardless of session state, which is why expiry detection has to track poll responses specifically rather than relying on "any D5 activity". See link:advanced.adoc#reconnect-logic[Reconnect Logic].
 
 [[example-responses]]
 == Example Responses

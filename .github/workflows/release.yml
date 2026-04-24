@@ -66,7 +66,6 @@ jobs:
         run: |
           NEW="${{ steps.new.outputs.version }}"
           sed -i "s/ref: v[0-9]*\.[0-9]*\.[0-9]*/ref: ${NEW}/g" \
-            subzero_base.yaml \
             wolf-minimal-fridge.yaml \
             wolf-minimal-range.yaml \
             cove-minimal-dishwasher.yaml \
