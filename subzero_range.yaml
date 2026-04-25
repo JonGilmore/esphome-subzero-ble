@@ -437,12 +437,17 @@ script:
           // Clear poll_in_flight + reset unanswered_polls only on a real
           // poll response, not on pushes. Pushes prove the connection is
           // alive but don't prove the command channel is responding.
-          // first_poll_done is the one-shot used by push_only_after_first_poll
-          // to gate further periodic_poll writes; once any poll lands we stop.
+          // first_poll_done gates push_only_after_first_poll's early-return.
+          // fw_85_detected drives "auto" mode - lets push-only enable
+          // itself on Sub-Zero 313, Wolf SO3050PESP, etc. without
+          // per-appliance config.
           if (s.is_poll) {
             id(${prefix}_poll_in_flight) = false;
             id(${prefix}_unanswered_polls) = 0;
             id(${prefix}_first_poll_done) = true;
+            if (s.common.version.fw && *s.common.version.fw == "8.5") {
+              id(${prefix}_fw_85_detected) = true;
+            }
           }
           id(${prefix}_fast_retries) = 0;
           buf.clear();

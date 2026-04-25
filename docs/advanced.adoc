@@ -152,22 +152,25 @@ The `Log Debug Info` button on each appliance also calls `_subscribe.execute()` 
 
 === Push-Only Mode for fw 8.5 Appliances
 
-`push_only_after_first_poll` (substitution, default `"false"`) opts out of periodic polling after the first successful response. Recommended for Sub-Zero 313 fridges, Wolf SO3050PESP wall ovens, and any other fw 8.5 / API 5.4 appliance whose unlock session expires within ~1 minute.
+`push_only_after_first_poll` (substitution) controls whether the integration stops polling after the first successful response on each connect, relying on push notifications for live state. Three values:
 
-When set to `"true"`:
+* `"auto"` *(default)* - decide at runtime from the firmware version reported in the first poll response. If the appliance reports `version.fw == "8.5"` (API 5.4), enable push-only mode for that connection. Otherwise leave it off. Sub-Zero 313 fridges, Wolf SO3050PESP wall ovens, and similar fw 8.5 / API 5.4 appliances are auto-detected and run in push-only mode without any per-appliance config. fw 2.27 / API 5.5 appliances stay on the standard 60s polling cadence.
+* `"true"` - always enable push-only after the first successful poll, regardless of detected firmware. Useful if you want the behavior on a fw 2.27 appliance to minimize BLE airtime.
+* `"false"` - never enable push-only. Use this to override the auto detection on a fw 8.5 appliance where you really want fresh `uptime` and `diagnostic_status` at the cost of the ~4 minute reconnect cycle the recovery ladder produces.
 
-* `periodic_poll` fires once after each (re)connect to land an initial full state, then sets `first_poll_done`.
-* On every subsequent tick, `periodic_poll` returns early without writing `get_async`.
-* The connection stays alive via push notifications (CCCD-based, not session-based), which keep `poll_ok` set so zombie detection doesn't fire spuriously.
-* If 15 minutes of total silence (no polls AND no pushes) ever happens, zombie detection still triggers a reconnect, which lands a fresh poll.
+When push-only is active, `periodic_poll` fires exactly once after each (re)connect to land an initial full state (sets `first_poll_done`), then returns early on every subsequent tick - no `get_async` writes, no subscribe-retry ladder. Push notifications carry live state and keep `poll_ok` set in the notify handler so zombie detection stays at zero unless 15 min of total silence happens. Poll-only fields (`appliance_model`, `appliance_serial`, version tree, `uptime`, `diagnostic_status`) refresh only on the next reconnect.
 
 This matches the strategy of the official Sub-Zero Android app (poll briefly, stop polling once async indications flow, rely on pushes thereafter - see link:ble-protocol.adoc#_unlock_session_research_fw_8_5[Unlock Session Research]).
 
-The trade-off: poll-only sensors (model, uptime, version tree, sabbath_on, setpoints) refresh only when a fresh connect happens. They don't drift because they don't change much - the appliance model never changes, the version doesn't change without a firmware update. Setpoints and live state changes arrive via pushes (`cav_temp`, `cav_door_ajar`, `cav_light_on`, `cav_set_temp`, etc.).
+==== Trade-offs
 
-For fw 2.27 / API 5.5 appliances (most dishwashers, most ranges, most wine fridges), keep the default `"false"` - their unlock session lasts long enough for the standard 60s polling cadence to work. Likewise keep the default for fridge configurations using `poll_via_d4: "true"` since D4 polls don't need an unlock at all.
+* **fw 8.5 with default `"auto"`**: connection stays up indefinitely if pushes are flowing (door opens, setpoint changes, light toggles, etc.), or until 15 min of total silence triggers zombie reconnect. No 4-min reconnect cycle. `uptime` only updates on reconnects - could be hours if the appliance is busy.
+* **fw 8.5 with `"false"`**: the recovery ladder kicks in (subscribe-retry × 3 → forced reconnect after 3 unanswered polls), so reconnects fire roughly every 4 minutes regardless of activity. `uptime` and `diagnostic_status` refresh on every cycle.
+* **fw 2.27 with default `"auto"`**: stays on the bare-poll fast path forever, just like before. Polls land every 60s, all sensors refresh every cycle.
 
-Per-appliance configuration in your entry-point YAML:
+For fridge configurations using `poll_via_d4: "true"`, push-only is mostly moot since D4 polls don't need an unlock at all and never fail with the unlock-expiry symptom.
+
+Per-appliance override in your entry-point YAML:
 
 [source,yaml]
 ----
@@ -179,7 +182,7 @@ packages:
       appliance_name: "Main Fridge"
       appliance_mac: !secret main_fridge_mac
       appliance_pin: !secret main_fridge_pin
-      push_only_after_first_poll: "true"   # fw 8.5 fridge
+      push_only_after_first_poll: "false"   # override auto, keep polling
 ----
 
 === Log Format

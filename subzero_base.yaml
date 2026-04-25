@@ -7,23 +7,40 @@
 substitutions:
   poll_offset: "0s"
   poll_via_d4: "false"
-  # Set to "true" for fw 8.5 / API 5.4 appliances (Sub-Zero 313 fridge,
-  # Wolf SO3050PESP wall oven, etc.) where the unlock session expires within
-  # ~1 minute. With this on, periodic_poll fires exactly once after each
-  # (re)connect and then goes silent - the integration relies entirely on
-  # push notifications for live state. Push-driven sensors (door, light,
-  # setpoints, cook mode) keep updating; poll-only sensors (model, uptime,
-  # version, sabbath_on) refresh only on the next zombie reconnect (15 min
-  # of total silence).
+  # Three values:
+  #   "auto"  (default) - decide at runtime based on the firmware version
+  #                       reported in the first poll response. If the
+  #                       appliance reports `fw: 8.5` (API 5.4), enable
+  #                       push-only mode for this connection. Otherwise
+  #                       leave it off. Reverts to off on disconnect, so
+  #                       the next connect re-evaluates from the fresh
+  #                       version response.
+  #   "true"  - always enable push-only after the first successful poll,
+  #             regardless of detected firmware. Use this if you want the
+  #             behavior on a fw 2.27 appliance for some reason.
+  #   "false" - never enable push-only. Use this to override the auto
+  #             detection (e.g. on a fw 8.5 appliance where you really
+  #             want fresh uptime/diagnostic_status at the cost of the
+  #             ~4 minute reconnect cycle).
   #
-  # This matches what the official Sub-Zero Android app does: poll briefly
-  # on connect until indications start flowing, then stop polling and rely
-  # on pushes. See docs/ble-protocol.adoc "Unlock Session Research".
+  # When push-only is active, periodic_poll fires exactly once after each
+  # (re)connect (to land an initial full state) and then returns early
+  # on every subsequent tick - no get_async writes, no subscribe-retry
+  # ladder. Push notifications carry live state (door, light, setpoints,
+  # cook mode, etc.) and keep poll_ok set so zombie detection stays at
+  # zero unless 15 min of total silence happens. Poll-only fields
+  # (model, serial, version, uptime, diagnostic_status) refresh only on
+  # the next reconnect.
   #
-  # Default "false" keeps the standard 60s polling cadence with subscribe-
-  # retry escalation, appropriate for fw 2.27 / API 5.5 appliances and
-  # fridge configurations using poll_via_d4.
-  push_only_after_first_poll: "false"
+  # Why this exists: fw 8.5 / API 5.4 appliances (Sub-Zero 313 fridge,
+  # Wolf SO3050PESP wall oven) silently invalidate the unlock session
+  # within ~1 minute. Without push-only mode, the periodic_poll write
+  # gets no response, the subscribe-retry ladder fires, and the session
+  # eventually escalates to a forced reconnect every ~4 min. Push-only
+  # avoids that churn entirely. Matches what the official Sub-Zero
+  # Android app does - see docs/ble-protocol.adoc "Unlock Session
+  # Research".
+  push_only_after_first_poll: "auto"
 
 # NOTE: external_components is declared by the entry-point yaml, not here.
 # Minimal examples use `type: git` with a released ref; personal dev yamls
@@ -104,10 +121,18 @@ globals:
     type: int
     initial_value: "0"
   # One-shot: set true on first valid is_poll parse after (re)connect.
-  # Reset on disconnect. Only used when push_only_after_first_poll is "true"
-  # to gate the periodic_poll write path - once the initial poll has
-  # completed we stop polling entirely and rely on pushes.
+  # Reset on disconnect. Only used when push_only_after_first_poll is
+  # "true" or "auto" (with fw_85_detected) to gate the periodic_poll
+  # write path - once the initial poll has completed we stop polling
+  # entirely and rely on pushes.
   - id: ${prefix}_first_poll_done
+    type: bool
+    initial_value: "false"
+  # Set true when parse_json sees `version.fw == "8.5"` in a poll response.
+  # Reset on disconnect. Used by `push_only_after_first_poll: "auto"` to
+  # auto-enable push-only mode on appliances whose unlock session expires
+  # within ~1 minute, without requiring per-appliance configuration.
+  - id: ${prefix}_fw_85_detected
     type: bool
     initial_value: "false"
   - id: ${prefix}_debug_mode
@@ -176,6 +201,7 @@ ble_client:
             id(${prefix}_poll_in_flight) = false;
             id(${prefix}_unanswered_polls) = 0;
             id(${prefix}_first_poll_done) = false;
+            id(${prefix}_fw_85_detected) = false;
             id(${prefix}_post_bond).stop();
             id(${prefix}_subscribe).stop();
             id(${prefix}_fast_reconnect).stop();
@@ -543,8 +569,18 @@ script:
           // docs/ble-protocol.adoc). Pushes still set poll_ok in the notify
           // handler so zombie detection above keeps working; if 15 min of
           // total silence ever happens, we'll reconnect normally.
-          if (${push_only_after_first_poll} && id(${prefix}_first_poll_done)) {
-            return;
+          //
+          // Three modes: "true" forces it on, "false" forces it off,
+          // "auto" (default) enables it whenever the parser sees
+          // `version.fw == "8.5"` in the first poll response.
+          {
+            const char *mode = "${push_only_after_first_poll}";
+            bool push_only =
+              (mode[0] == 't') ||  // "true"
+              (mode[0] == 'a' && id(${prefix}_fw_85_detected));  // "auto" + fw 8.5
+            if (push_only && id(${prefix}_first_poll_done)) {
+              return;
+            }
           }
           // Recovery ladder when poll_in_flight is still set from the
           // previous tick (the previous get_async went unanswered):
