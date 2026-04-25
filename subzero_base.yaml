@@ -255,6 +255,27 @@ sensor:
       }
       return {};
 
+  # D6 Notify - the official Sub-Zero app polls get_async on D6 (not D5) and
+  # receives push notifications here. D6 needs its own unlock_channel write
+  # (see subscribe script). Confirmed via HCI snoop log of official app on
+  # both fw 8.5 (Wolf SO3050PESP) and fw 2.27 (Wolf DF36450GSP).
+  - platform: ble_client
+    type: characteristic
+    ble_client_id: ${prefix}_appliance
+    name: "${appliance_name} D6 Notify"
+    id: ${prefix}_d6_notify
+    internal: true
+    service_uuid: "E20A39F4-73F5-4BC4-A12F-17D1AD07A961"
+    characteristic_uuid: "08590F7E-DB05-467E-8757-72F6FAEB13D6"
+    notify: true
+    update_interval: never
+    lambda: |-
+      id(${prefix}_poll_ok) = true;
+      if (id(${prefix}_json_buf).feed(x.data(), x.size())) {
+        id(${prefix}_parse_json).execute();
+      }
+      return {};
+
 binary_sensor:
   - platform: template
     name: "${appliance_name} Door"
@@ -463,6 +484,29 @@ button:
             ESP_GATT_WRITE_TYPE_RSP, ESP_GATT_AUTH_REQ_NONE);
           ESP_LOGI("ble", "[${appliance_name}] POLL: get_async");
           id(${prefix}_debug).publish_state("Polling...");
+
+  # Diagnostic: poll D6 (the actual data channel per the official app).
+  # Phase 1 of the D6 refactor - verify D6 returns full state before
+  # switching the periodic poll over.
+  - platform: template
+    name: "Poll ${appliance_name} D6"
+    icon: "mdi:refresh-circle"
+    entity_category: diagnostic
+    on_press:
+      - lambda: |-
+          uint16_t d6 = id(${prefix}_d6_handle);
+          if (d6 == 0) {
+            id(${prefix}_debug).publish_state("ERROR: D6 handle not set");
+            return;
+          }
+          auto *client = id(${prefix}_appliance);
+          std::string cmd = "{\"cmd\":\"get_async\"}\n";
+          esp_err_t err = esp_ble_gattc_write_char(
+            client->get_gattc_if(), client->get_conn_id(),
+            d6, cmd.size(), (uint8_t*)cmd.data(),
+            ESP_GATT_WRITE_TYPE_RSP, ESP_GATT_AUTH_REQ_NONE);
+          ESP_LOGI("ble", "[${appliance_name}] POLL D6: get_async (h=%d) err=%d", d6, err);
+          id(${prefix}_debug).publish_state("Polling D6...");
 
   - platform: template
     name: "Disconnect ${appliance_name}"
@@ -803,8 +847,10 @@ script:
   - id: ${prefix}_subscribe
     mode: restart
     then:
-      # Subscribe D5, then auto-unlock if PIN is saved
-      # All commands MUST end with \n - the appliance's serial parser requires it!
+      # Subscribe D5 (control) + D6 (data), then auto-unlock both if PIN is
+      # saved. The official Sub-Zero app unlocks both channels separately and
+      # polls get_async on D6 (D5 is control-only). All commands MUST end with
+      # \n - the appliance's serial parser requires it!
       - lambda: |-
           auto *client = id(${prefix}_appliance);
           uint16_t d5 = id(${prefix}_d5_handle);
@@ -816,12 +862,22 @@ script:
           id(${prefix}_d5_notify)->handle = d5;
           ESP_LOGI("ble", "[${appliance_name}] Injected D5 handle %d", d5);
           uint16_t d4 = id(${prefix}_d4_handle);
+          uint16_t d6 = id(${prefix}_d6_handle);
+          if (d6 > 0) {
+            id(${prefix}_d6_notify)->handle = d6;
+            ESP_LOGI("ble", "[${appliance_name}] Injected D6 handle %d", d6);
+          }
           // register_for_notify for local callback, then manual CCCD write
           // (fast reconnect GATT cache may be incomplete → register_for_notify
           //  fails to find CCCD handle internally, so we write it directly)
           esp_ble_gattc_register_for_notify(
             client->get_gattc_if(), client->get_remote_bda(), d5);
           ESP_LOGI("ble", "[${appliance_name}] Subscribe D5 (h=%d)", d5);
+          if (d6 > 0) {
+            esp_ble_gattc_register_for_notify(
+              client->get_gattc_if(), client->get_remote_bda(), d6);
+            ESP_LOGI("ble", "[${appliance_name}] Subscribe D6 (h=%d) for data + pushes", d6);
+          }
           if (d4 > 0) {
             esp_ble_gattc_register_for_notify(
               client->get_gattc_if(), client->get_remote_bda(), d4);
@@ -838,6 +894,13 @@ script:
             d5 + 2, sizeof(cccd_on), cccd_on,
             ESP_GATT_WRITE_TYPE_RSP, ESP_GATT_AUTH_REQ_NONE);
           ESP_LOGI("ble", "[${appliance_name}] CCCD write D5 (h=%d)", d5 + 2);
+          if (d6 > 0) {
+            esp_ble_gattc_write_char(
+              client->get_gattc_if(), client->get_conn_id(),
+              d6 + 2, sizeof(cccd_on), cccd_on,
+              ESP_GATT_WRITE_TYPE_RSP, ESP_GATT_AUTH_REQ_NONE);
+            ESP_LOGI("ble", "[${appliance_name}] CCCD write D6 (h=%d)", d6 + 2);
+          }
           if (d4 > 0) {
             esp_ble_gattc_write_char(
               client->get_gattc_if(), client->get_conn_id(),
@@ -850,6 +913,7 @@ script:
       - lambda: |-
           auto *client = id(${prefix}_appliance);
           uint16_t d5 = id(${prefix}_d5_handle);
+          uint16_t d6 = id(${prefix}_d6_handle);
           std::string pin = id(${prefix}_stored_pin);
           if (pin.empty() || !id(${prefix}_pin_confirmed)) {
             ESP_LOGI("ble", "[${appliance_name}] No saved PIN. Waiting for user to pair.");
@@ -857,11 +921,21 @@ script:
             return;
           }
           std::string cmd = "{\"cmd\":\"unlock_channel\",\"params\":{\"pin\":\"" + pin + "\"}}\n";
-          esp_err_t err = esp_ble_gattc_write_char(
+          // Unlock D5 (control channel) - the only channel we use today
+          esp_err_t err5 = esp_ble_gattc_write_char(
             client->get_gattc_if(), client->get_conn_id(),
             d5, cmd.size(), (uint8_t*)cmd.data(),
             ESP_GATT_WRITE_TYPE_RSP, ESP_GATT_AUTH_REQ_NONE);
-          ESP_LOGI("ble", "[${appliance_name}] Auto-unlock (PIN=%s) err=%d", pin.c_str(), err);
+          ESP_LOGI("ble", "[${appliance_name}] Auto-unlock D5 (PIN=%s) err=%d", pin.c_str(), err5);
+          // Unlock D6 (data channel) - needs its own separate unlock per the
+          // official app's protocol. Phase 1: parallel to D5 unlock.
+          if (d6 > 0) {
+            esp_err_t err6 = esp_ble_gattc_write_char(
+              client->get_gattc_if(), client->get_conn_id(),
+              d6, cmd.size(), (uint8_t*)cmd.data(),
+              ESP_GATT_WRITE_TYPE_RSP, ESP_GATT_AUTH_REQ_NONE);
+            ESP_LOGI("ble", "[${appliance_name}] Auto-unlock D6 err=%d", err6);
+          }
           id(${prefix}_debug).publish_state("Auto-unlocking...");
       - delay: 1s
       - lambda: |-
