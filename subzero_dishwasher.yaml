@@ -254,5 +254,6 @@ script:
           if (s.common.version.rtapp)     id(${prefix}_rtapp_version).publish_state(*s.common.version.rtapp);
           if (s.common.version.appliance) id(${prefix}_board_version).publish_state(*s.common.version.appliance);
           id(${prefix}_poll_ok) = true;
+          id(${prefix}_first_poll_seen) = true;
           id(${prefix}_fast_retries) = 0;
           buf.clear();

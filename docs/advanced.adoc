@@ -120,7 +120,7 @@ If you experience crashes (typically `__cxa_allocate_exception` -> `operator new
 [[reconnect-logic]]
 == Reconnect Logic
 
-The integration runs a periodic poll every 60 seconds against each bonded appliance, and uses one signal - total BLE silence - to decide when to force a reconnect.
+The integration runs a periodic poll every 60 seconds against each bonded appliance and uses two complementary mechanisms to keep things alive: zombie detection (catches a fully dead link) and a subscribe-retry safety net (catches a half-initialized session where the unlock_channel got dropped).
 
 === Zombie Detection
 
@@ -128,15 +128,29 @@ The integration runs a periodic poll every 60 seconds against each bonded applia
 
 This catches cases where the BLE link has died entirely. It intentionally does *not* try to distinguish "poll silently unanswered" from "appliance is quiet" - past attempts at a tighter signal caused pointless reconnect loops on fw 8.5 appliances whose polls sometimes fail to reassemble (see link:ble-protocol.adoc#_key_protocol_details[ACL Fragment Drops]) while pushes keep flowing.
 
+=== Subscribe Retry on Stuck Connection
+
+When multiple appliances all reconnect simultaneously at boot, the ESP-IDF Bluedroid stack occasionally drops one peer's `unlock_channel` write under the concurrent traffic. That appliance ends up bonded, with CCCDs subscribed and the `get_async` written successfully at the BLE layer (status 0), but the appliance never responds because its session was never unlocked. The connection looks alive at every layer below the protocol.
+
+`first_poll_seen` is a per-appliance bool, cleared on disconnect, set to `true` whenever any parse succeeds (poll OR push). When `periodic_poll` fires and finds it still `false`, instead of writing a bare `get_async` it re-runs the full `_subscribe` script - which re-writes the CCCDs and re-issues `unlock_channel` followed by `get_async`. CCCD writes are idempotent and `unlock_channel` is re-doable, so this is safe to repeat. As soon as one parse lands, `first_poll_seen` flips and the periodic poll resumes its normal write cadence.
+
+This is bounded retry, not a reconnect loop: it keeps the connection (the underlying GATT bond is fine), it just nudges the protocol-layer handshake until the appliance responds. Worst case it runs once every 60s on a permanently-stuck appliance until the 15-minute zombie threshold gives up and forces a full reconnect.
+
+=== Boot Stagger via `poll_offset`
+
+`poll_offset` (substitution, default `0s`) is applied at the top of `periodic_poll`, `post_bond`, and `fast_reconnect`. Setting per-appliance values like `0s / 5s / 10s` on a multi-appliance ESP32 spreads the bonding chains in time so the concurrent-bonding race doesn't trigger in the first place. The subscribe-retry path above remains as a safety net.
+
 === Log Format
 
 [source]
 ----
 [I][szg:XXX]: [Left Dishwasher] Periodic poll (miss=2, retries=0)
+[W][szg:XXX]: [Kitchen Range] No parse since connect - re-running subscribe
 ----
 
 * `miss` - zombie counter (0-15, reconnect at 15 = 15 min of total silence)
 * `retries` - fast-reconnect retry counter (0-3, bond clear at 3; see below)
+* `No parse since connect` - subscribe-retry path firing (Option B); will keep firing once per poll until the appliance responds or zombie kicks in
 
 === Fast Reconnect + Bond Clear
 
@@ -144,10 +158,9 @@ Separately, when the BLE connection drops and `auto_connect: true` reconnects, t
 
 === Tuning
 
-Both knobs are in `subzero_base.yaml`:
-
-* `interval: 60s` (line with `interval:`) - poll cadence. Shortening to 30s halves detection time and doubles radio utilization (still single-digit percent for typical configs).
+* `interval: 60s` in `subzero_base.yaml` - poll cadence. Shortening to 30s halves detection time and doubles radio utilization (still single-digit percent for typical configs).
 * `poll_miss >= 15` - zombie threshold. Scales with the interval: at 60s that's 15 min.
+* `poll_offset` substitution per-appliance - boot stagger. `0s` for first, `5s` or `10s` for subsequent appliances on the same ESP32.
 
 [[parser-component]]
 == Parser Component

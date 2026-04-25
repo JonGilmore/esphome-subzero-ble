@@ -65,6 +65,14 @@ globals:
   - id: ${prefix}_poll_miss
     type: int
     initial_value: "0"
+  # Set to true the first time a parse succeeds on the current connection
+  # cycle (poll response OR push notification). Cleared on disconnect.
+  # When false, periodic_poll re-runs the full _subscribe chain instead of
+  # just writing get_async, which recovers from boot-time races where the
+  # initial unlock_channel write got dropped under concurrent BLE traffic.
+  - id: ${prefix}_first_poll_seen
+    type: bool
+    initial_value: "false"
   - id: ${prefix}_debug_mode
     type: bool
     initial_value: "false"
@@ -128,6 +136,7 @@ ble_client:
       then:
         - lambda: |-
             id(${prefix}_json_buf).clear();
+            id(${prefix}_first_poll_seen) = false;
             id(${prefix}_post_bond).stop();
             id(${prefix}_subscribe).stop();
             id(${prefix}_fast_reconnect).stop();
@@ -487,6 +496,17 @@ script:
           id(${prefix}_poll_ok) = false;
           // Clear any stale partial JSON from interrupted previous transfer
           id(${prefix}_json_buf).clear();
+          // Recovery path: if we've never seen a parse on this connection
+          // cycle, the initial subscribe chain probably lost its
+          // unlock_channel write to a concurrent-bonding race at boot.
+          // Re-run subscribe (CCCD writes are idempotent, unlock is
+          // re-doable). Once any parse lands, first_poll_seen flips and
+          // we resume normal get_async writes.
+          if (!id(${prefix}_first_poll_seen)) {
+            ESP_LOGW("szg", "[${appliance_name}] No parse since connect - re-running subscribe");
+            id(${prefix}_subscribe).execute();
+            return;
+          }
           std::string cmd = "{\"cmd\":\"get_async\"}\n";
           esp_err_t err = esp_ble_gattc_write_char(
             client->get_gattc_if(), client->get_conn_id(),
@@ -506,9 +526,19 @@ script:
   #    ESPHome's ble_client performs discovery once at connect and doesn't re-run it.
   # 2. We need to match D4/D5/D6/D7/D8 by UUID suffix and cache handles for fast reconnect.
   # 3. ESPHome does not expose GATT cache management (cache_refresh, cache_clean).
+  #
+  # The leading poll_offset delay staggers the bonding chain across multiple
+  # appliances on the same ESP32. Without it, three concurrent unlock_channel
+  # writes through the ESP-IDF Bluedroid stack at boot occasionally drop one,
+  # leaving that appliance with an unconfirmed unlock and silent get_async
+  # responses. Setting per-appliance poll_offset values like 0s/5s/10s
+  # serializes the bonding chains. periodic_poll has the same delay applied
+  # at its top, so the same stagger keeps the periodic polls themselves from
+  # colliding too.
   - id: ${prefix}_post_bond
     mode: restart
     then:
+      - delay: ${poll_offset}
       - delay: 500ms
       - lambda: |-
           auto *client = id(${prefix}_appliance);
@@ -660,6 +690,9 @@ script:
     mode: restart
     then:
       # Fast path: skip GATT dump, just encrypt + subscribe + unlock (no auto-poll)
+      # poll_offset stagger applies here too - simultaneous reconnects after a
+      # transient drop run into the same Bluedroid race as a fresh bond.
+      - delay: ${poll_offset}
       - lambda: |-
           auto *client = id(${prefix}_appliance);
           uint8_t addr[6];
