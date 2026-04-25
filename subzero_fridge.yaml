@@ -223,13 +223,19 @@ button:
     icon: "mdi:bug-play"
     entity_category: diagnostic
     on_press:
-      # Run the full subscribe chain (CCCD on D4 AND D5, unlock on D5,
-      # then get_async on D5). On fw 8.5 fridges the unlock session
-      # silently expires within ~1 minute, so a bare get_async after that
-      # produces no response on EITHER channel - subscribe re-issues
-      # unlock_channel which refreshes the session. Push notifications
-      # via D5 still work after this for live state changes (open door,
-      # change temp, toggle ice maker).
+      # Branch on detected firmware to land debug data quickly:
+      #
+      #   fw 2.27: unlock window is long, so just re-run subscribe
+      #            (CCCDs on D4 AND D5, unlock on D5, get_async on D5).
+      #            ~1.5s to a full debug log.
+      #   fw 8.5:  unlock session expires within ~1 min and re-issuing
+      #            unlock_channel doesn't refresh it (see APK research
+      #            in docs/ble-protocol.adoc). Force a reconnect -
+      #            auto_connect brings it back via post_bond which
+      #            naturally runs subscribe with a fresh unlock window.
+      #            Takes ~10-15s to a full debug log. Push notifications
+      #            for live state (door, temp, ice maker) keep flowing
+      #            normally after the reconnect.
       - lambda: |-
           if (id(${prefix}_d5_handle) == 0) {
             id(${prefix}_debug).publish_state("ERROR: Not connected");
@@ -237,9 +243,15 @@ button:
           }
           id(${prefix}_debug_mode) = true;
           id(${prefix}_debug_switch).publish_state(true);
-          ESP_LOGI("ble", "[${appliance_name}] Debug poll: re-running subscribe");
-          id(${prefix}_debug).publish_state("Debug mode ON - refreshing session...");
-      - script.execute: ${prefix}_subscribe
+          if (id(${prefix}_fw_85_detected)) {
+            ESP_LOGI("ble", "[${appliance_name}] Debug poll: forcing reconnect for fresh unlock");
+            id(${prefix}_debug).publish_state("Debug mode ON - reconnecting for fresh poll...");
+            id(${prefix}_appliance)->disconnect();
+          } else {
+            ESP_LOGI("ble", "[${appliance_name}] Debug poll: re-running subscribe");
+            id(${prefix}_debug).publish_state("Debug mode ON - refreshing session...");
+            id(${prefix}_subscribe).execute();
+          }
 
 script:
   - id: ${prefix}_parse_json

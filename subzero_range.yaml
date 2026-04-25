@@ -296,11 +296,17 @@ button:
     icon: "mdi:bug-play"
     entity_category: diagnostic
     on_press:
-      # Run the full subscribe chain (CCCD + unlock + get_async) instead of
-      # writing get_async directly. On fw 8.5 appliances the unlock session
-      # silently expires within ~1 minute, so a bare get_async after that
-      # gets no response. subscribe re-issues unlock_channel which refreshes
-      # the session, then writes get_async, all in ~1.5s.
+      # Branch on detected firmware to land debug data quickly:
+      #
+      #   fw 2.27: unlock window is long (~20+ min), so just re-run
+      #            subscribe - CCCDs + unlock + get_async, ~1.5s to a
+      #            full debug log.
+      #   fw 8.5:  unlock session expires within ~1 min and re-issuing
+      #            unlock_channel doesn't refresh it (see APK research
+      #            in docs/ble-protocol.adoc). Force a reconnect -
+      #            auto_connect brings it back via post_bond which
+      #            naturally runs subscribe with a fresh unlock window.
+      #            Takes ~10-15s to a full debug log.
       - lambda: |-
           if (id(${prefix}_d5_handle) == 0) {
             id(${prefix}_debug).publish_state("ERROR: Not connected");
@@ -308,9 +314,15 @@ button:
           }
           id(${prefix}_debug_mode) = true;
           id(${prefix}_debug_switch).publish_state(true);
-          ESP_LOGI("ble", "[${appliance_name}] Debug poll: re-running subscribe");
-          id(${prefix}_debug).publish_state("Debug mode ON - refreshing session...");
-      - script.execute: ${prefix}_subscribe
+          if (id(${prefix}_fw_85_detected)) {
+            ESP_LOGI("ble", "[${appliance_name}] Debug poll: forcing reconnect for fresh unlock");
+            id(${prefix}_debug).publish_state("Debug mode ON - reconnecting for fresh poll...");
+            id(${prefix}_appliance)->disconnect();
+          } else {
+            ESP_LOGI("ble", "[${appliance_name}] Debug poll: re-running subscribe");
+            id(${prefix}_debug).publish_state("Debug mode ON - refreshing session...");
+            id(${prefix}_subscribe).execute();
+          }
 
 script:
   - id: ${prefix}_parse_json

@@ -128,9 +128,10 @@ button:
     icon: "mdi:bug-play"
     entity_category: diagnostic
     on_press:
-      # Run the full subscribe chain (CCCD + unlock + get_async) so debug
-      # works regardless of unlock-session state. See subzero_range.yaml's
-      # equivalent button for rationale.
+      # Branch on detected firmware - see subzero_range.yaml's equivalent
+      # button for rationale. Dishwashers are predominantly fw 2.27 so the
+      # subscribe path is the common case, but we still branch in case a
+      # future model lands on fw 8.5.
       - lambda: |-
           if (id(${prefix}_d5_handle) == 0) {
             id(${prefix}_debug).publish_state("ERROR: Not connected");
@@ -138,9 +139,15 @@ button:
           }
           id(${prefix}_debug_mode) = true;
           id(${prefix}_debug_switch).publish_state(true);
-          ESP_LOGI("ble", "[${appliance_name}] Debug poll: re-running subscribe");
-          id(${prefix}_debug).publish_state("Debug mode ON - refreshing session...");
-      - script.execute: ${prefix}_subscribe
+          if (id(${prefix}_fw_85_detected)) {
+            ESP_LOGI("ble", "[${appliance_name}] Debug poll: forcing reconnect for fresh unlock");
+            id(${prefix}_debug).publish_state("Debug mode ON - reconnecting for fresh poll...");
+            id(${prefix}_appliance)->disconnect();
+          } else {
+            ESP_LOGI("ble", "[${appliance_name}] Debug poll: re-running subscribe");
+            id(${prefix}_debug).publish_state("Debug mode ON - refreshing session...");
+            id(${prefix}_subscribe).execute();
+          }
 
 script:
   - id: ${prefix}_parse_json
