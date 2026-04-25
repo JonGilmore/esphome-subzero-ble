@@ -150,6 +150,38 @@ The `Log Debug Info` button on each appliance also calls `_subscribe.execute()` 
 
 `poll_offset` (substitution, default `0s`) is applied at the top of `periodic_poll`, `post_bond`, and `fast_reconnect`. Setting per-appliance values like `0s / 5s / 10s` on a multi-appliance ESP32 spreads the bonding chains in time so the concurrent-bonding race doesn't trigger in the first place. The subscribe-retry path above remains as a safety net.
 
+=== Push-Only Mode for fw 8.5 Appliances
+
+`push_only_after_first_poll` (substitution, default `"false"`) opts out of periodic polling after the first successful response. Recommended for Sub-Zero 313 fridges, Wolf SO3050PESP wall ovens, and any other fw 8.5 / API 5.4 appliance whose unlock session expires within ~1 minute.
+
+When set to `"true"`:
+
+* `periodic_poll` fires once after each (re)connect to land an initial full state, then sets `first_poll_done`.
+* On every subsequent tick, `periodic_poll` returns early without writing `get_async`.
+* The connection stays alive via push notifications (CCCD-based, not session-based), which keep `poll_ok` set so zombie detection doesn't fire spuriously.
+* If 15 minutes of total silence (no polls AND no pushes) ever happens, zombie detection still triggers a reconnect, which lands a fresh poll.
+
+This matches the strategy of the official Sub-Zero Android app (poll briefly, stop polling once async indications flow, rely on pushes thereafter - see link:ble-protocol.adoc#_unlock_session_research_fw_8_5[Unlock Session Research]).
+
+The trade-off: poll-only sensors (model, uptime, version tree, sabbath_on, setpoints) refresh only when a fresh connect happens. They don't drift because they don't change much - the appliance model never changes, the version doesn't change without a firmware update. Setpoints and live state changes arrive via pushes (`cav_temp`, `cav_door_ajar`, `cav_light_on`, `cav_set_temp`, etc.).
+
+For fw 2.27 / API 5.5 appliances (most dishwashers, most ranges, most wine fridges), keep the default `"false"` - their unlock session lasts long enough for the standard 60s polling cadence to work. Likewise keep the default for fridge configurations using `poll_via_d4: "true"` since D4 polls don't need an unlock at all.
+
+Per-appliance configuration in your entry-point YAML:
+
+[source,yaml]
+----
+packages:
+  main_fridge: !include
+    file: subzero_fridge.yaml
+    vars:
+      prefix: "szg"
+      appliance_name: "Main Fridge"
+      appliance_mac: !secret main_fridge_mac
+      appliance_pin: !secret main_fridge_pin
+      push_only_after_first_poll: "true"   # fw 8.5 fridge
+----
+
 === Log Format
 
 [source]

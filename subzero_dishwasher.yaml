@@ -253,9 +253,12 @@ script:
           // Clear poll_in_flight + reset unanswered_polls only on a real
           // poll response, not on pushes. Pushes prove the connection is
           // alive but don't prove the command channel is responding.
+          // first_poll_done is the one-shot used by push_only_after_first_poll
+          // to gate further periodic_poll writes; once any poll lands we stop.
           if (s.is_poll) {
             id(${prefix}_poll_in_flight) = false;
             id(${prefix}_unanswered_polls) = 0;
+            id(${prefix}_first_poll_done) = true;
           }
           id(${prefix}_fast_retries) = 0;
           buf.clear();

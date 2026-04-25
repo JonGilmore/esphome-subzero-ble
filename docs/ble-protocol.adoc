@@ -99,7 +99,7 @@ The full handshake follows these steps (shown for dishwashers/ranges where D5 is
 Fridges follow the same connection and bonding flow, but command/response routing differs:
 
 * *D4 polling:* `get_async` on *D4* works without an unlock and returns basic diagnostic data (model, door status, uptime) but not the full sensor state.
-* *D5 polling:* `get_async` on *D5* returns the full sensor state (set temperatures, ice maker status, sabbath mode, wine zones, etc.) *after a successful `unlock_channel`*. However, the unlock session expires roughly 20-25 minutes after unlock. After expiry, writes to D5 are still accepted (GATT write status 0) but produce no indication response. Re-sending `unlock_channel` does *not* restore the session on some appliances (wall ovens, fridges with fw 8.5) - a full BLE reconnect is required. The integration detects this by tracking poll-response timeouts independently from push activity; see link:advanced.adoc#reconnect-logic[Reconnect Logic] for details.
+* *D5 polling:* `get_async` on *D5* returns the full sensor state (set temperatures, ice maker status, sabbath mode, wine zones, etc.) *after a successful `unlock_channel`*. The unlock session expires after some time. On fw 2.27 / API 5.5 appliances the window is roughly 20-25 minutes; on fw 8.5 / API 5.4 appliances (Sub-Zero 313 fridge, Wolf SO3050PESP wall oven, etc.) it expires within ~1 minute. After expiry, writes to D5 are still accepted (GATT write status 0) but produce no indication response. Re-sending `unlock_channel` does *not* restore the session on fw 8.5 - a full BLE reconnect is required. The integration detects this by tracking poll-response timeouts independently from push activity; see link:advanced.adoc#reconnect-logic[Reconnect Logic] for details.
 * *Push notifications:* Full sensor data also arrives via *D5 push notifications* triggered by state changes on the appliance. Push notifications continue even after the unlock session expires (they are CCCD-based, not session-based).
 * *Push mirroring:* Fridges send each push notification on *both* D4 (`msg_types: 8`) and D5 (`msg_types: 2`) simultaneously with identical `props` content.
 
@@ -151,6 +151,18 @@ Earlier revisions tried to actively *detect* fragment drops by discarding the bu
 On appliances whose full-state response reliably hits the ACL bug (wall ovens, 313 fridge), the "poll-only" sensors (model, uptime, serial, sabbath_on, version tree) may still take several cycles to populate, but they will eventually land whenever one full response arrives intact. Push-driven sensors (door, light, setpoint changes) work regardless.
 +
 Any raw-buffer content that reaches ESPHome's logger (the debug-mode `Response[N/M]:` chunks, the `Parse failed...` preview) is pre-sanitized: bytes outside the printable-ASCII range `0x20..0x7E` are replaced with `?`. Non-UTF-8 bytes in an API log message crash Home Assistant's protobuf decoder the same way they used to crash it via the retired `Raw JSON` text sensor, and HA caches the bad event. Sanitization keeps the log channel safe without touching what the parser actually sees.
+
+== Unlock Session Research (fw 8.5)
+
+The unlock session expiry on fw 8.5 appliances is short (~1 minute, vs. ~20 minutes on fw 2.27) and the only recovery is a full BLE reconnect. Re-sending `unlock_channel` on the existing connection produces no response. We investigated the official Sub-Zero Android app (v4.5.1, decompiled APK) to see if it solves this differently.
+
+**Findings from the APK** (`apk-subzero-4.5.1/lib/arm64-v8a/libapp.so`):
+
+* **No keepalive/ping command exists.** Initial Smali references to `PingMessage` / `_WebSocketPing` / `_cleanupPingTimer` turned out to be Dart's `dart:io` WebSocket framework boilerplate (used for cloud/MQTT comms, not BLE). The compiled Dart binary contains no `{"cmd":"ping"}`-style verb. The `keepAliveIntervalInMilliseconds` field in the per-appliance metadata is the BLE *connection interval* (link-layer parameter), not a JSON command.
+* **The full BLE command set is exactly six verbs.** `unlock_channel`, `get_async`, `display_pin`, `set` (write properties), `scan` (Wi-Fi scan), `reset_air_filter`. No hidden seventh command refreshes the session.
+* **The Android app's strategy is push-driven, not poll-driven.** Strings in the binary include `_startPropertyPolling` / `_stopPropertyPolling` and the message *"Async channel is open, stopping property polling"*. The app polls briefly on connect until indications start flowing, then *stops polling* and relies on push notifications (CCCD-based, not session-based) for live state changes thereafter. Mobile apps then naturally get a fresh unlock window each time the user re-opens the app, because the connection is torn down and remade.
+
+**Implication for an always-on integration:** there is no protocol-level fix. fw 8.5 unlock-session expiry is a hard constraint enforced by the appliance firmware. The integration matches the official app's strategy via the optional `push_only_after_first_poll` substitution (see link:advanced.adoc#reconnect-logic[Reconnect Logic]) - poll once on connect, then stop, rely on pushes. This trades stale poll-only sensors (model, uptime, version, sabbath_on) for zero BLE churn.
 
 == Command Reference
 

@@ -7,6 +7,23 @@
 substitutions:
   poll_offset: "0s"
   poll_via_d4: "false"
+  # Set to "true" for fw 8.5 / API 5.4 appliances (Sub-Zero 313 fridge,
+  # Wolf SO3050PESP wall oven, etc.) where the unlock session expires within
+  # ~1 minute. With this on, periodic_poll fires exactly once after each
+  # (re)connect and then goes silent - the integration relies entirely on
+  # push notifications for live state. Push-driven sensors (door, light,
+  # setpoints, cook mode) keep updating; poll-only sensors (model, uptime,
+  # version, sabbath_on) refresh only on the next zombie reconnect (15 min
+  # of total silence).
+  #
+  # This matches what the official Sub-Zero Android app does: poll briefly
+  # on connect until indications start flowing, then stop polling and rely
+  # on pushes. See docs/ble-protocol.adoc "Unlock Session Research".
+  #
+  # Default "false" keeps the standard 60s polling cadence with subscribe-
+  # retry escalation, appropriate for fw 2.27 / API 5.5 appliances and
+  # fridge configurations using poll_via_d4.
+  push_only_after_first_poll: "false"
 
 # NOTE: external_components is declared by the entry-point yaml, not here.
 # Minimal examples use `type: git` with a released ref; personal dev yamls
@@ -86,6 +103,13 @@ globals:
   - id: ${prefix}_unanswered_polls
     type: int
     initial_value: "0"
+  # One-shot: set true on first valid is_poll parse after (re)connect.
+  # Reset on disconnect. Only used when push_only_after_first_poll is "true"
+  # to gate the periodic_poll write path - once the initial poll has
+  # completed we stop polling entirely and rely on pushes.
+  - id: ${prefix}_first_poll_done
+    type: bool
+    initial_value: "false"
   - id: ${prefix}_debug_mode
     type: bool
     initial_value: "false"
@@ -151,6 +175,7 @@ ble_client:
             id(${prefix}_json_buf).clear();
             id(${prefix}_poll_in_flight) = false;
             id(${prefix}_unanswered_polls) = 0;
+            id(${prefix}_first_poll_done) = false;
             id(${prefix}_post_bond).stop();
             id(${prefix}_subscribe).stop();
             id(${prefix}_fast_reconnect).stop();
@@ -510,6 +535,17 @@ script:
           id(${prefix}_poll_ok) = false;
           // Clear any stale partial JSON from interrupted previous transfer
           id(${prefix}_json_buf).clear();
+          // Push-only mode: after the first successful poll, stop polling
+          // entirely and rely on push notifications for live state. Matches
+          // what the official Sub-Zero Android app does on fw 8.5 (where
+          // the unlock session expires within ~1 minute and re-issuing
+          // unlock_channel doesn't refresh it - see APK research in
+          // docs/ble-protocol.adoc). Pushes still set poll_ok in the notify
+          // handler so zombie detection above keeps working; if 15 min of
+          // total silence ever happens, we'll reconnect normally.
+          if (${push_only_after_first_poll} && id(${prefix}_first_poll_done)) {
+            return;
+          }
           // Recovery ladder when poll_in_flight is still set from the
           // previous tick (the previous get_async went unanswered):
           //
