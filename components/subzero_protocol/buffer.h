@@ -46,18 +46,70 @@ class MessageBuffer {
   //
   // If the buffer was already over-capacity *before* this append, it is
   // reset first — same recovery semantics as the prior YAML lambda.
-  bool feed(const std::uint8_t *data, std::size_t len);
+  //
+  // Defined inline (header-only): keeping all of subzero_protocol's
+  // implementation in protocol.cpp avoids tripping ESPHome's
+  // GLOB_RECURSE source-list cache when this PR ships and existing
+  // installs do an incremental rebuild.
+  inline bool feed(const std::uint8_t *data, std::size_t len) {
+    if (buf_.size() > kMaxBytes) {
+      clear();
+    }
+    if (buf_.capacity() < kReserveHint) {
+      buf_.reserve(kReserveHint);
+    }
+    for (std::size_t i = 0; i < len; i++) {
+      char c = static_cast<char>(data[i]);
+      buf_.push_back(c);
+      if (complete_) {
+        continue;
+      }
+      if (c == '{') {
+        depth_++;
+      } else if (c == '}') {
+        // Clamp at 0: a stray '}' in pre-message ACL-corruption garbage
+        // would otherwise drive depth_ negative, leaving the matching
+        // '}' of the real message at -1 instead of 0 — the message
+        // would never trip complete_ and would be silently lost when
+        // kMaxBytes flushes. Naive in the same way the prior YAML
+        // scanner was, just underflow-safe.
+        if (depth_ > 0) {
+          depth_--;
+          if (depth_ == 0) {
+            complete_ = true;
+          }
+        }
+      }
+    }
+    return complete_;
+  }
 
   // If a complete message is buffered, return the substring starting at
   // the first `{` (leading garbage from ACL corruption is dropped) and
   // reset internal state. If no message is complete or no `{` exists,
   // returns nullopt; in the no-`{` case the buffer is also cleared as
   // unrecoverable garbage (matches the prior parse_json script behavior).
-  std::optional<std::string> take_message();
+  inline std::optional<std::string> take_message() {
+    if (!complete_) {
+      return std::nullopt;
+    }
+    std::size_t start = buf_.find('{');
+    if (start == std::string::npos) {
+      clear();
+      return std::nullopt;
+    }
+    std::string out = (start == 0) ? std::move(buf_) : buf_.substr(start);
+    clear();
+    return out;
+  }
 
   // Manual reset (use on disconnect or when callers detect parse failure
   // and want to discard the current buffer).
-  void clear();
+  inline void clear() {
+    buf_.clear();
+    depth_ = 0;
+    complete_ = false;
+  }
 
   std::size_t size() const { return buf_.size(); }
   bool complete() const { return complete_; }

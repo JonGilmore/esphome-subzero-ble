@@ -23,7 +23,27 @@ namespace subzero_protocol {
 
 // Replaces non-printable bytes in [off, off+len) of `s` with '?' and
 // returns the resulting string. Out-of-range len is clamped.
-std::string sanitize_for_log(const std::string &s, std::size_t off, std::size_t len);
+//
+// Defined inline (header-only): see buffer.h for rationale (avoid
+// tripping ESPHome's GLOB_RECURSE source-list cache).
+inline std::string sanitize_for_log(const std::string &s, std::size_t off, std::size_t len) {
+  if (off >= s.size()) {
+    return std::string();
+  }
+  std::size_t avail = s.size() - off;
+  if (len > avail) {
+    len = avail;
+  }
+  std::string out(s, off, len);
+  for (char &c : out) {
+    unsigned char u = static_cast<unsigned char>(c);
+    bool ok = (u >= 0x20 && u <= 0x7E) || u == 0x09 || u == 0x0A || u == 0x0D;
+    if (!ok) {
+      c = '?';
+    }
+  }
+  return out;
+}
 
 // Splits a message into chunks (default 400 bytes, sized for ESPHome's
 // per-line log budget so the full payload survives) and invokes

@@ -44,8 +44,6 @@ set(FIXTURES_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../fixtures)
 
 add_library(subzero_protocol STATIC
   ${PROTOCOL_DIR}/protocol.cpp
-  ${PROTOCOL_DIR}/buffer.cpp
-  ${PROTOCOL_DIR}/log_sanitize.cpp
 )
 target_include_directories(subzero_protocol PUBLIC ${PROTOCOL_DIR})
 target_link_libraries(subzero_protocol PUBLIC ArduinoJson)
