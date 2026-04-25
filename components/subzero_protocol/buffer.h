@@ -14,6 +14,12 @@
 // (PR #56's "stray { mid-buffer means corruption") was reverted in PR #61
 // after it threw away legitimate poll responses whenever a short push
 // arrived during a long poll. Keep this simple.
+//
+// Underflow guard: the depth counter is clamped at 0 on `}`. The prior YAML
+// scanner did not clamp; an unmatched `}` in pre-message ACL-corruption
+// garbage would drive depth negative, and a complete message arriving after
+// it would never trip the depth==0 check. See buffer_test.cpp's
+// StrayClosingBraceInPrefixIgnored regression test.
 
 #include <cstddef>
 #include <cstdint>
@@ -23,7 +29,7 @@
 namespace esphome {
 namespace subzero_protocol {
 
-class JsonBuffer {
+class MessageBuffer {
  public:
   // Reserve hint matches the prior YAML behavior. Initial reserve avoids
   // repeated reallocs across the ~50 fragments of a typical poll response.

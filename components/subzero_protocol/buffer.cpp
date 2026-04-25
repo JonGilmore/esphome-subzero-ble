@@ -3,7 +3,7 @@
 namespace esphome {
 namespace subzero_protocol {
 
-bool JsonBuffer::feed(const std::uint8_t *data, std::size_t len) {
+bool MessageBuffer::feed(const std::uint8_t *data, std::size_t len) {
   if (buf_.size() > kMaxBytes) {
     clear();
   }
@@ -19,16 +19,23 @@ bool JsonBuffer::feed(const std::uint8_t *data, std::size_t len) {
     if (c == '{') {
       depth_++;
     } else if (c == '}') {
-      depth_--;
-      if (depth_ == 0) {
-        complete_ = true;
+      // Clamp at 0: a stray '}' in pre-message ACL-corruption garbage
+      // would otherwise drive depth_ negative, leaving the matching '}' of
+      // the real message at -1 instead of 0 — the message would never
+      // trip complete_ and would be silently lost when kMaxBytes flushes.
+      // Naive in the same way the prior YAML scanner was, just underflow-safe.
+      if (depth_ > 0) {
+        depth_--;
+        if (depth_ == 0) {
+          complete_ = true;
+        }
       }
     }
   }
   return complete_;
 }
 
-std::optional<std::string> JsonBuffer::take_message() {
+std::optional<std::string> MessageBuffer::take_message() {
   if (!complete_) {
     return std::nullopt;
   }
@@ -42,7 +49,7 @@ std::optional<std::string> JsonBuffer::take_message() {
   return out;
 }
 
-void JsonBuffer::clear() {
+void MessageBuffer::clear() {
   buf_.clear();
   depth_ = 0;
   complete_ = false;

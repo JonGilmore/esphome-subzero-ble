@@ -80,7 +80,7 @@ globals:
     type: int
     initial_value: "0"
   - id: ${prefix}_json_buf
-    type: esphome::subzero_protocol::JsonBuffer
+    type: esphome::subzero_protocol::MessageBuffer
     restore_value: false
   - id: ${prefix}_stored_pin
     type: std::string
