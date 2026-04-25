@@ -158,6 +158,20 @@ namespace esphome
       state.is_poll = is_poll;
       capture_keys(data, state.data_keys);
       fill_common(data, state.common);
+      auto notif_type = opt_int(data["notif_type"]);
+
+      if (notif_type) {
+        switch (*notif_type) {
+          case 108:
+            state.notif_event = "fridge_door_open";
+            break;
+          case 109:
+            state.notif_event = "freezer_door_open";
+            break;
+          default:
+            break;
+        }
+      }
 
       // Setpoint with freezer-only fallback.
       if (data["ref_set_temp"].is<float>())
@@ -208,6 +222,22 @@ namespace esphome
         return state;
       state.valid = true;
       state.is_poll = is_poll;
+      // Map notif_type (empirical mapping from issue discussion)
+      auto notif_type = opt_int(data["notif_type"]);
+
+      if (notif_type) {
+        switch (*notif_type) {
+          case 301:
+            state.notif_event = "dishwasher_notif_301";
+            break;
+
+          case 302:
+            state.notif_event = "dishwasher_notif_302";
+            break;
+          default:
+            break;
+        }
+      }
       capture_keys(data, state.data_keys);
       fill_common(data, state.common);
 
@@ -261,6 +291,35 @@ namespace esphome
       state.is_poll = is_poll;
       capture_keys(data, state.data_keys);
       fill_common(data, state.common);
+      // Map notif_type (empirical mapping from issue discussion)
+      auto notif_type = opt_int(data["notif_type"]);
+
+      if (notif_type) {
+        switch (*notif_type) {
+          case 201:
+            state.notif_event = "oven_notif_201";
+            break;
+
+          case 207:
+            state.notif_event = "oven_notif_207";
+            break;
+
+          case 209:
+            state.notif_event = "oven_notif_209";
+            break;
+
+          case 215:
+            state.notif_event = "oven_notif_215";
+            break;
+
+          case 218:
+            state.notif_event = "oven_notif_218";
+            break;
+
+          default:
+            break;
+        }
+      }
 
       // Door with generic fallback.
       if (data["cav_door_ajar"].is<bool>())
