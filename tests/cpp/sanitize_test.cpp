@@ -34,10 +34,10 @@ TEST(Sanitize, WhitespaceAllowed) {
 
 TEST(Sanitize, ControlCharsBecomeQuestionMark) {
   std::string s;
-  s.push_back(0x01);  // SOH
+  s.push_back(0x01); // SOH
   s.push_back('a');
-  s.push_back(0x1F);  // US (just below 0x20)
-  s.push_back(0x7F);  // DEL (just above 0x7E)
+  s.push_back(0x1F); // US (just below 0x20)
+  s.push_back(0x7F); // DEL (just above 0x7E)
   EXPECT_EQ(sanitize_for_log(s, 0, s.size()), "?a??");
 }
 
@@ -80,15 +80,14 @@ struct Recorded {
   std::string chunk;
 };
 
-}  // namespace
+} // namespace
 
 TEST(ChunkForLog, SingleChunkBelowSize) {
   std::vector<Recorded> calls;
   std::string msg = "small";
-  chunk_for_log(msg,
-                [&](std::size_t i, std::size_t t, const std::string &c) {
-                  calls.push_back({i, t, c});
-                });
+  chunk_for_log(msg, [&](std::size_t i, std::size_t t, const std::string &c) {
+    calls.push_back({i, t, c});
+  });
   ASSERT_EQ(calls.size(), 1u);
   EXPECT_EQ(calls[0].idx, 1u);
   EXPECT_EQ(calls[0].total, 1u);
@@ -97,11 +96,10 @@ TEST(ChunkForLog, SingleChunkBelowSize) {
 
 TEST(ChunkForLog, ExactBoundary) {
   std::vector<Recorded> calls;
-  std::string msg(800, 'x');  // exactly 2 chunks at 400
-  chunk_for_log(msg,
-                [&](std::size_t i, std::size_t t, const std::string &c) {
-                  calls.push_back({i, t, c});
-                });
+  std::string msg(800, 'x'); // exactly 2 chunks at 400
+  chunk_for_log(msg, [&](std::size_t i, std::size_t t, const std::string &c) {
+    calls.push_back({i, t, c});
+  });
   ASSERT_EQ(calls.size(), 2u);
   EXPECT_EQ(calls[0].idx, 1u);
   EXPECT_EQ(calls[0].total, 2u);
@@ -113,11 +111,10 @@ TEST(ChunkForLog, ExactBoundary) {
 
 TEST(ChunkForLog, TrailingPartial) {
   std::vector<Recorded> calls;
-  std::string msg(950, 'x');  // 2.375 chunks → 3 chunks (400, 400, 150)
-  chunk_for_log(msg,
-                [&](std::size_t i, std::size_t t, const std::string &c) {
-                  calls.push_back({i, t, c});
-                });
+  std::string msg(950, 'x'); // 2.375 chunks → 3 chunks (400, 400, 150)
+  chunk_for_log(msg, [&](std::size_t i, std::size_t t, const std::string &c) {
+    calls.push_back({i, t, c});
+  });
   ASSERT_EQ(calls.size(), 3u);
   EXPECT_EQ(calls[0].chunk.size(), 400u);
   EXPECT_EQ(calls[1].chunk.size(), 400u);
@@ -127,7 +124,8 @@ TEST(ChunkForLog, TrailingPartial) {
 
 TEST(ChunkForLog, EmptyMessageNoCalls) {
   int calls = 0;
-  chunk_for_log("", [&](std::size_t, std::size_t, const std::string &) { calls++; });
+  chunk_for_log(
+      "", [&](std::size_t, std::size_t, const std::string &) { calls++; });
   EXPECT_EQ(calls, 0);
 }
 
@@ -138,10 +136,9 @@ TEST(ChunkForLog, SanitizesEachChunk) {
   msg.push_back(static_cast<char>(0xFF));
   msg.append(std::string(50, 'b'));
   std::vector<Recorded> calls;
-  chunk_for_log(msg,
-                [&](std::size_t i, std::size_t t, const std::string &c) {
-                  calls.push_back({i, t, c});
-                });
+  chunk_for_log(msg, [&](std::size_t i, std::size_t t, const std::string &c) {
+    calls.push_back({i, t, c});
+  });
   ASSERT_EQ(calls.size(), 2u);
   EXPECT_EQ(calls[0].chunk, std::string(400, 'a'));
   EXPECT_EQ(calls[1].chunk, "?" + std::string(50, 'b'));
@@ -149,11 +146,12 @@ TEST(ChunkForLog, SanitizesEachChunk) {
 
 TEST(ChunkForLog, CustomChunkSize) {
   std::vector<Recorded> calls;
-  chunk_for_log("abcdef",
-                [&](std::size_t i, std::size_t t, const std::string &c) {
-                  calls.push_back({i, t, c});
-                },
-                2);
+  chunk_for_log(
+      "abcdef",
+      [&](std::size_t i, std::size_t t, const std::string &c) {
+        calls.push_back({i, t, c});
+      },
+      2);
   ASSERT_EQ(calls.size(), 3u);
   EXPECT_EQ(calls[0].chunk, "ab");
   EXPECT_EQ(calls[1].chunk, "cd");

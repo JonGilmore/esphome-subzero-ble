@@ -28,10 +28,11 @@ namespace subzero_protocol {
 // Decoupling from esp_gattc_api.h keeps the helper host-buildable
 // (ESP-IDF headers aren't available outside the ESP32 build).
 struct GattEntry {
-  bool is_characteristic = false;   // true if type == ESP_GATT_DB_CHARACTERISTIC
-  bool is_uuid128 = false;          // true if uuid.len == ESP_UUID_LEN_128
-  std::uint8_t uuid_first_byte = 0; // uuid.uuid.uuid128[0]; valid only if is_uuid128
-  std::uint16_t handle = 0;         // attribute_handle
+  bool is_characteristic = false; // true if type == ESP_GATT_DB_CHARACTERISTIC
+  bool is_uuid128 = false;        // true if uuid.len == ESP_UUID_LEN_128
+  std::uint8_t uuid_first_byte =
+      0;                    // uuid.uuid.uuid128[0]; valid only if is_uuid128
+  std::uint16_t handle = 0; // attribute_handle
 };
 
 // Sub-Zero's data-plane handles, populated incrementally across
@@ -60,20 +61,24 @@ struct AppHandles {
 template <typename Range>
 inline void extract_handles(const Range &entries, AppHandles &out) {
   for (const auto &e : entries) {
-    if (!e.is_characteristic || !e.is_uuid128) continue;
+    if (!e.is_characteristic || !e.is_uuid128)
+      continue;
     switch (e.uuid_first_byte) {
-      case 0xD5:
-        if (out.d5 == 0) out.d5 = e.handle;
-        break;
-      case 0xD6:
-        if (out.d6 == 0) out.d6 = e.handle;
-        break;
-      case 0xD7:
-        if (out.d7 == 0) out.d7 = e.handle;
-        break;
+    case 0xD5:
+      if (out.d5 == 0)
+        out.d5 = e.handle;
+      break;
+    case 0xD6:
+      if (out.d6 == 0)
+        out.d6 = e.handle;
+      break;
+    case 0xD7:
+      if (out.d7 == 0)
+        out.d7 = e.handle;
+      break;
     }
   }
 }
 
-}  // namespace subzero_protocol
-}  // namespace esphome
+} // namespace subzero_protocol
+} // namespace esphome

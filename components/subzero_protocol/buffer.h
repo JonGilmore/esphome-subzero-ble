@@ -30,7 +30,7 @@ namespace esphome {
 namespace subzero_protocol {
 
 class MessageBuffer {
- public:
+public:
   // Reserve hint matches the prior YAML behavior. Initial reserve avoids
   // repeated reallocs across the ~50 fragments of a typical poll response.
   static constexpr std::size_t kReserveHint = 2048;
@@ -114,11 +114,11 @@ class MessageBuffer {
   std::size_t size() const { return buf_.size(); }
   bool complete() const { return complete_; }
 
- private:
+private:
   std::string buf_;
   int depth_ = 0;
   bool complete_ = false;
 };
 
-}  // namespace subzero_protocol
-}  // namespace esphome
+} // namespace subzero_protocol
+} // namespace esphome

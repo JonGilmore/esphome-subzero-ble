@@ -26,7 +26,8 @@ namespace subzero_protocol {
 //
 // Defined inline (header-only): see buffer.h for rationale (avoid
 // tripping ESPHome's GLOB_RECURSE source-list cache).
-inline std::string sanitize_for_log(const std::string &s, std::size_t off, std::size_t len) {
+inline std::string sanitize_for_log(const std::string &s, std::size_t off,
+                                    std::size_t len) {
   if (off >= s.size()) {
     return std::string();
   }
@@ -51,7 +52,8 @@ inline std::string sanitize_for_log(const std::string &s, std::size_t off, std::
 // debug logging — grep `Response\[` and concatenate the chunks to
 // reassemble the raw payload.
 template <typename Cb>
-void chunk_for_log(const std::string &msg, Cb cb, std::size_t chunk_size = 400) {
+void chunk_for_log(const std::string &msg, Cb cb,
+                   std::size_t chunk_size = 400) {
   if (msg.empty() || chunk_size == 0) {
     return;
   }
@@ -63,5 +65,5 @@ void chunk_for_log(const std::string &msg, Cb cb, std::size_t chunk_size = 400) 
   }
 }
 
-}  // namespace subzero_protocol
-}  // namespace esphome
+} // namespace subzero_protocol
+} // namespace esphome

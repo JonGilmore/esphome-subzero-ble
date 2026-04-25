@@ -16,7 +16,7 @@ bool feed_str(MessageBuffer &b, const char *s) {
   return b.feed(reinterpret_cast<const std::uint8_t *>(s), std::strlen(s));
 }
 
-}  // namespace
+} // namespace
 
 TEST(MessageBuffer, EmptyByDefault) {
   MessageBuffer b;
@@ -40,7 +40,7 @@ TEST(MessageBuffer, FragmentedDelivery) {
   MessageBuffer b;
   EXPECT_FALSE(feed_str(b, "{\"a"));
   EXPECT_FALSE(feed_str(b, "\":1,"));
-  EXPECT_FALSE(feed_str(b, "\"b\":{\"c\":2}"));  // nested {}: depth back to 1
+  EXPECT_FALSE(feed_str(b, "\"b\":{\"c\":2}")); // nested {}: depth back to 1
   EXPECT_FALSE(b.complete());
   EXPECT_TRUE(feed_str(b, "}"));
   ASSERT_TRUE(b.complete());
@@ -79,7 +79,8 @@ TEST(MessageBuffer, OverCapacityResetsOnNextFeed) {
   std::string huge(MessageBuffer::kMaxBytes + 100, 'x');
   // Prepend a `{` so depth goes to 1 (not complete).
   std::string bytes = "{" + huge;
-  EXPECT_FALSE(b.feed(reinterpret_cast<const std::uint8_t *>(bytes.data()), bytes.size()));
+  EXPECT_FALSE(b.feed(reinterpret_cast<const std::uint8_t *>(bytes.data()),
+                      bytes.size()));
   EXPECT_GT(b.size(), MessageBuffer::kMaxBytes);
 
   // Next feed: pre-emptive reset, then append the new fragment.
@@ -163,7 +164,7 @@ TEST(MessageBuffer, StickyCompleteThroughTrailingBytes) {
   // don't accumulate in practice — but verify the sticky property.
   MessageBuffer b;
   EXPECT_TRUE(feed_str(b, "{\"a\":1}"));
-  EXPECT_TRUE(feed_str(b, "extra"));  // doesn't affect completion
+  EXPECT_TRUE(feed_str(b, "extra")); // doesn't affect completion
   EXPECT_TRUE(b.complete());
   auto msg = b.take_message();
   ASSERT_TRUE(msg.has_value());
@@ -173,10 +174,11 @@ TEST(MessageBuffer, StickyCompleteThroughTrailingBytes) {
 TEST(MessageBuffer, RealWorldFridgePollResponse) {
   // Approximate a fragmented Sub-Zero poll response — small fragments
   // similar to default-MTU ACL chunks (~20-40 bytes).
-  static const char *kFull =
-      "{\"status\":0,\"resp\":{\"appliance_model\":\"BI36UFDID\",\"uptime\":\"1d2h\","
-      "\"version\":{\"fw\":\"2.27\",\"api\":\"4.0\"},\"ref_set_temp\":38,\"frz_set_temp\":-2,"
-      "\"door_ajar\":false,\"frz_door_ajar\":false}}";
+  static const char *kFull = "{\"status\":0,\"resp\":{\"appliance_model\":"
+                             "\"BI36UFDID\",\"uptime\":\"1d2h\","
+                             "\"version\":{\"fw\":\"2.27\",\"api\":\"4.0\"},"
+                             "\"ref_set_temp\":38,\"frz_set_temp\":-2,"
+                             "\"door_ajar\":false,\"frz_door_ajar\":false}}";
   MessageBuffer b;
   size_t total = std::strlen(kFull);
   size_t off = 0;

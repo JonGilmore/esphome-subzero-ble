@@ -11,11 +11,11 @@ using esphome::subzero_protocol::GattEntry;
 namespace {
 
 GattEntry make_char(std::uint8_t uuid_first, std::uint16_t handle) {
-  return GattEntry{/*is_characteristic=*/true, /*is_uuid128=*/true,
-                   uuid_first, handle};
+  return GattEntry{/*is_characteristic=*/true, /*is_uuid128=*/true, uuid_first,
+                   handle};
 }
 
-}  // namespace
+} // namespace
 
 TEST(AppHandles, EmptyByDefault) {
   AppHandles h;
@@ -52,11 +52,9 @@ TEST(ExtractHandles, EmptyInputLeavesOutputUntouched) {
 
 TEST(ExtractHandles, FullDiscoveryPicksUpAllThree) {
   std::vector<GattEntry> entries{
-      make_char(0xD4, 0x10),  // ignored: D4 unused post-PR-#72
-      make_char(0xD5, 0x12),
-      make_char(0xD6, 0x14),
-      make_char(0xD7, 0x16),
-      make_char(0xD8, 0x18),  // ignored: D8 unused post-PR-#72
+      make_char(0xD4, 0x10), // ignored: D4 unused post-PR-#72
+      make_char(0xD5, 0x12), make_char(0xD6, 0x14), make_char(0xD7, 0x16),
+      make_char(0xD8, 0x18), // ignored: D8 unused post-PR-#72
   };
   AppHandles h;
   extract_handles(entries, h);
@@ -110,14 +108,14 @@ TEST(ExtractHandles, DoesNotOverwriteAlreadyFoundHandles) {
   h.d5 = 0x12;
   h.d6 = 0x14;
   std::vector<GattEntry> later_pass{
-      make_char(0xD5, 0xAA),  // would-be replacement
+      make_char(0xD5, 0xAA), // would-be replacement
       make_char(0xD6, 0xBB),
       make_char(0xD7, 0x16),
   };
   extract_handles(later_pass, h);
-  EXPECT_EQ(h.d5, 0x12);  // preserved
-  EXPECT_EQ(h.d6, 0x14);  // preserved
-  EXPECT_EQ(h.d7, 0x16);  // newly found
+  EXPECT_EQ(h.d5, 0x12); // preserved
+  EXPECT_EQ(h.d6, 0x14); // preserved
+  EXPECT_EQ(h.d7, 0x16); // newly found
 }
 
 TEST(ExtractHandles, IgnoresDescriptorsAndServices) {

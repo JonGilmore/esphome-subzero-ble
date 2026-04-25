@@ -37,28 +37,42 @@ inline std::string escape_json_string(const std::string &s) {
   for (char c : s) {
     unsigned char u = static_cast<unsigned char>(c);
     switch (c) {
-      case '"':  out += "\\\""; break;
-      case '\\': out += "\\\\"; break;
-      case '\b': out += "\\b"; break;
-      case '\f': out += "\\f"; break;
-      case '\n': out += "\\n"; break;
-      case '\r': out += "\\r"; break;
-      case '\t': out += "\\t"; break;
-      default:
-        if (u < 0x20) {
-          char buf[8];
-          std::snprintf(buf, sizeof(buf), "\\u%04X", u);
-          out += buf;
-        } else {
-          out.push_back(c);
-        }
-        break;
+    case '"':
+      out += "\\\"";
+      break;
+    case '\\':
+      out += "\\\\";
+      break;
+    case '\b':
+      out += "\\b";
+      break;
+    case '\f':
+      out += "\\f";
+      break;
+    case '\n':
+      out += "\\n";
+      break;
+    case '\r':
+      out += "\\r";
+      break;
+    case '\t':
+      out += "\\t";
+      break;
+    default:
+      if (u < 0x20) {
+        char buf[8];
+        std::snprintf(buf, sizeof(buf), "\\u%04X", u);
+        out += buf;
+      } else {
+        out.push_back(c);
+      }
+      break;
     }
   }
   return out;
 }
 
-}  // namespace detail
+} // namespace detail
 
 // `unlock_channel` opens the encrypted command/data channel after bonding
 // using the appliance's currently-displayed PIN. Sent on D5 (control)
@@ -76,9 +90,7 @@ inline std::string build_unlock_channel(const std::string &pin) {
 
 // `get_async` requests a full state dump on the channel it's written to.
 // Used on D6 only post-PR-#72 — D5 returns nothing for get_async.
-inline std::string build_get_async() {
-  return "{\"cmd\":\"get_async\"}\n";
-}
+inline std::string build_get_async() { return "{\"cmd\":\"get_async\"}\n"; }
 
 // `display_pin` makes the appliance show its random pairing PIN on its
 // front-panel display for the requested duration (seconds). Sent on D5
@@ -88,5 +100,5 @@ inline std::string build_display_pin(int duration_seconds = 30) {
          std::to_string(duration_seconds) + "}}\n";
 }
 
-}  // namespace subzero_protocol
-}  // namespace esphome
+} // namespace subzero_protocol
+} // namespace esphome

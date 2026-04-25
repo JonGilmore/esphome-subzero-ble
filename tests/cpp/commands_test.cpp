@@ -52,8 +52,8 @@ TEST(Commands, UnlockChannelEscapesBackslashInPin) {
 
 TEST(Commands, UnlockChannelEscapesNamedControlChars) {
   std::string pin = "a\b\f\n\r\tb";
-  EXPECT_EQ(build_unlock_channel(pin),
-            "{\"cmd\":\"unlock_channel\",\"params\":{\"pin\":\"a\\b\\f\\n\\r\\tb\"}}\n");
+  EXPECT_EQ(build_unlock_channel(pin), "{\"cmd\":\"unlock_channel\",\"params\":"
+                                       "{\"pin\":\"a\\b\\f\\n\\r\\tb\"}}\n");
 }
 
 TEST(Commands, UnlockChannelEscapesOtherControlCharsAsUnicode) {
@@ -62,8 +62,9 @@ TEST(Commands, UnlockChannelEscapesOtherControlCharsAsUnicode) {
   std::string pin;
   pin.push_back(0x01);
   pin.push_back(0x1F);
-  EXPECT_EQ(build_unlock_channel(pin),
-            "{\"cmd\":\"unlock_channel\",\"params\":{\"pin\":\"\\u0001\\u001F\"}}\n");
+  EXPECT_EQ(
+      build_unlock_channel(pin),
+      "{\"cmd\":\"unlock_channel\",\"params\":{\"pin\":\"\\u0001\\u001F\"}}\n");
 }
 
 TEST(Commands, UnlockChannelPassesNumericPinThrough) {
@@ -78,10 +79,10 @@ TEST(Commands, UnlockChannelPassesHighBitBytesThrough) {
   // (HA's text input would normally reject these but we don't enforce.)
   std::string pin;
   pin.push_back(static_cast<char>(0xC3));
-  pin.push_back(static_cast<char>(0xA9));  // é in UTF-8
+  pin.push_back(static_cast<char>(0xA9)); // é in UTF-8
   EXPECT_EQ(build_unlock_channel(pin),
-            std::string("{\"cmd\":\"unlock_channel\",\"params\":{\"pin\":\"") + pin +
-                "\"}}\n");
+            std::string("{\"cmd\":\"unlock_channel\",\"params\":{\"pin\":\"") +
+                pin + "\"}}\n");
 }
 
 TEST(Commands, DisplayPinDefaultDuration) {

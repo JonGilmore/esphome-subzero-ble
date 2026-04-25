@@ -45,12 +45,12 @@ namespace detail {
 
 // Null-checked publish helpers. Templated on the ESPHome sensor type
 // so we don't write 50 copies of `if (s) s->publish_state(v)`.
-template <typename S, typename V>
-inline void publish_if(S *s, V v) {
-  if (s != nullptr) s->publish_state(v);
+template <typename S, typename V> inline void publish_if(S *s, V v) {
+  if (s != nullptr)
+    s->publish_state(v);
 }
 
-}  // namespace detail
+} // namespace detail
 
 // Common (appliance-agnostic) bus. Inherited by every appliance bus.
 struct CommonBus {
@@ -74,15 +74,33 @@ struct CommonBus {
   void publish_model(const std::string &v) { detail::publish_if(model, v); }
   void publish_uptime(const std::string &v) { detail::publish_if(uptime, v); }
   void publish_serial(const std::string &v) { detail::publish_if(serial, v); }
-  void publish_appliance_type(const std::string &v) { detail::publish_if(appliance_type, v); }
-  void publish_diag_status(const std::string &v) { detail::publish_if(diag_status, v); }
-  void publish_build_date(const std::string &v) { detail::publish_if(build_date, v); }
-  void publish_fw_version(const std::string &v) { detail::publish_if(fw_version, v); }
-  void publish_api_version(const std::string &v) { detail::publish_if(api_version, v); }
-  void publish_bleapp_version(const std::string &v) { detail::publish_if(bleapp_version, v); }
-  void publish_os_version(const std::string &v) { detail::publish_if(os_version, v); }
-  void publish_rtapp_version(const std::string &v) { detail::publish_if(rtapp_version, v); }
-  void publish_board_version(const std::string &v) { detail::publish_if(board_version, v); }
+  void publish_appliance_type(const std::string &v) {
+    detail::publish_if(appliance_type, v);
+  }
+  void publish_diag_status(const std::string &v) {
+    detail::publish_if(diag_status, v);
+  }
+  void publish_build_date(const std::string &v) {
+    detail::publish_if(build_date, v);
+  }
+  void publish_fw_version(const std::string &v) {
+    detail::publish_if(fw_version, v);
+  }
+  void publish_api_version(const std::string &v) {
+    detail::publish_if(api_version, v);
+  }
+  void publish_bleapp_version(const std::string &v) {
+    detail::publish_if(bleapp_version, v);
+  }
+  void publish_os_version(const std::string &v) {
+    detail::publish_if(os_version, v);
+  }
+  void publish_rtapp_version(const std::string &v) {
+    detail::publish_if(rtapp_version, v);
+  }
+  void publish_board_version(const std::string &v) {
+    detail::publish_if(board_version, v);
+  }
 };
 
 struct FridgeBus : CommonBus {
@@ -108,17 +126,27 @@ struct FridgeBus : CommonBus {
   void publish_ice_maker(bool v) { detail::publish_if(ice_maker, v); }
   void publish_ref2_door_ajar(bool v) { detail::publish_if(ref2_door_ajar, v); }
   void publish_wine_door_ajar(bool v) { detail::publish_if(wine_door_ajar, v); }
-  void publish_wine_temp_alert(bool v) { detail::publish_if(wine_temp_alert, v); }
+  void publish_wine_temp_alert(bool v) {
+    detail::publish_if(wine_temp_alert, v);
+  }
   void publish_air_filter_on(bool v) { detail::publish_if(air_filter_on, v); }
 
   void publish_set_temp(float v) { detail::publish_if(set_temp, v); }
   void publish_frz_set_temp(float v) { detail::publish_if(frz_set_temp, v); }
   void publish_ref2_set_temp(float v) { detail::publish_if(ref2_set_temp, v); }
   void publish_wine_set_temp(float v) { detail::publish_if(wine_set_temp, v); }
-  void publish_wine2_set_temp(float v) { detail::publish_if(wine2_set_temp, v); }
-  void publish_crisp_set_temp(float v) { detail::publish_if(crisp_set_temp, v); }
-  void publish_air_filter_pct(float v) { detail::publish_if(air_filter_pct, v); }
-  void publish_water_filter_pct(float v) { detail::publish_if(water_filter_pct, v); }
+  void publish_wine2_set_temp(float v) {
+    detail::publish_if(wine2_set_temp, v);
+  }
+  void publish_crisp_set_temp(float v) {
+    detail::publish_if(crisp_set_temp, v);
+  }
+  void publish_air_filter_pct(float v) {
+    detail::publish_if(air_filter_pct, v);
+  }
+  void publish_water_filter_pct(float v) {
+    detail::publish_if(water_filter_pct, v);
+  }
 };
 
 struct DishwasherBus : CommonBus {
@@ -152,8 +180,12 @@ struct DishwasherBus : CommonBus {
   void publish_remote_ready(bool v) { detail::publish_if(remote_ready, v); }
   void publish_delay_start(bool v) { detail::publish_if(delay_start, v); }
 
-  void publish_wash_status(int v) { detail::publish_if(wash_status, static_cast<float>(v)); }
-  void publish_wash_cycle(int v) { detail::publish_if(wash_cycle, static_cast<float>(v)); }
+  void publish_wash_status(int v) {
+    detail::publish_if(wash_status, static_cast<float>(v));
+  }
+  void publish_wash_cycle(int v) {
+    detail::publish_if(wash_cycle, static_cast<float>(v));
+  }
   void publish_wash_time_remaining(int v) {
     detail::publish_if(wash_time_remaining, static_cast<float>(v));
   }
@@ -224,24 +256,38 @@ struct RangeBus : CommonBus {
   // Primary cavity publishes
   void publish_door_ajar(bool v) { detail::publish_if(door_ajar, v); }
   void publish_cav_unit_on(bool v) { detail::publish_if(cav_unit_on, v); }
-  void publish_cav_at_set_temp(bool v) { detail::publish_if(cav_at_set_temp, v); }
+  void publish_cav_at_set_temp(bool v) {
+    detail::publish_if(cav_at_set_temp, v);
+  }
   void publish_cav_light_on(bool v) { detail::publish_if(cav_light_on, v); }
-  void publish_cav_remote_ready(bool v) { detail::publish_if(cav_remote_ready, v); }
+  void publish_cav_remote_ready(bool v) {
+    detail::publish_if(cav_remote_ready, v);
+  }
   void publish_cav_probe_on(bool v) { detail::publish_if(cav_probe_on, v); }
-  void publish_cav_probe_at_temp(bool v) { detail::publish_if(cav_probe_at_temp, v); }
+  void publish_cav_probe_at_temp(bool v) {
+    detail::publish_if(cav_probe_at_temp, v);
+  }
   void publish_cav_probe_near(bool v) { detail::publish_if(cav_probe_near, v); }
   void publish_cav_gourmet(bool v) { detail::publish_if(cav_gourmet, v); }
-  void publish_cook_timer_done(bool v) { detail::publish_if(cook_timer_done, v); }
-  void publish_cook_timer_near(bool v) { detail::publish_if(cook_timer_near, v); }
+  void publish_cook_timer_done(bool v) {
+    detail::publish_if(cook_timer_done, v);
+  }
+  void publish_cook_timer_near(bool v) {
+    detail::publish_if(cook_timer_near, v);
+  }
 
   void publish_cav_temp(float v) { detail::publish_if(cav_temp, v); }
   void publish_cav_set_temp(float v) { detail::publish_if(cav_set_temp, v); }
-  void publish_cav_cook_mode(int v) { detail::publish_if(cav_cook_mode, static_cast<float>(v)); }
+  void publish_cav_cook_mode(int v) {
+    detail::publish_if(cav_cook_mode, static_cast<float>(v));
+  }
   void publish_cav_gourmet_recipe(int v) {
     detail::publish_if(cav_gourmet_recipe, static_cast<float>(v));
   }
   void publish_probe_temp(float v) { detail::publish_if(probe_temp, v); }
-  void publish_probe_set_temp(float v) { detail::publish_if(probe_set_temp, v); }
+  void publish_probe_set_temp(float v) {
+    detail::publish_if(probe_set_temp, v);
+  }
 
   // Kitchen timer publishes
   void publish_ktimer_active(bool v) { detail::publish_if(ktimer_active, v); }
@@ -250,27 +296,47 @@ struct RangeBus : CommonBus {
   void publish_ktimer2_active(bool v) { detail::publish_if(ktimer2_active, v); }
   void publish_ktimer2_done(bool v) { detail::publish_if(ktimer2_done, v); }
   void publish_ktimer2_near(bool v) { detail::publish_if(ktimer2_near, v); }
-  void publish_ktimer_end_time(const std::string &v) { detail::publish_if(ktimer_end_time, v); }
-  void publish_ktimer2_end_time(const std::string &v) { detail::publish_if(ktimer2_end_time, v); }
+  void publish_ktimer_end_time(const std::string &v) {
+    detail::publish_if(ktimer_end_time, v);
+  }
+  void publish_ktimer2_end_time(const std::string &v) {
+    detail::publish_if(ktimer2_end_time, v);
+  }
 
   // Secondary cavity publishes
   void publish_cav2_unit_on(bool v) { detail::publish_if(cav2_unit_on, v); }
   void publish_cav2_door_ajar(bool v) { detail::publish_if(cav2_door_ajar, v); }
-  void publish_cav2_at_set_temp(bool v) { detail::publish_if(cav2_at_set_temp, v); }
+  void publish_cav2_at_set_temp(bool v) {
+    detail::publish_if(cav2_at_set_temp, v);
+  }
   void publish_cav2_light_on(bool v) { detail::publish_if(cav2_light_on, v); }
-  void publish_cav2_remote_ready(bool v) { detail::publish_if(cav2_remote_ready, v); }
+  void publish_cav2_remote_ready(bool v) {
+    detail::publish_if(cav2_remote_ready, v);
+  }
   void publish_cav2_probe_on(bool v) { detail::publish_if(cav2_probe_on, v); }
-  void publish_cav2_probe_at_temp(bool v) { detail::publish_if(cav2_probe_at_temp, v); }
-  void publish_cav2_probe_near(bool v) { detail::publish_if(cav2_probe_near, v); }
+  void publish_cav2_probe_at_temp(bool v) {
+    detail::publish_if(cav2_probe_at_temp, v);
+  }
+  void publish_cav2_probe_near(bool v) {
+    detail::publish_if(cav2_probe_near, v);
+  }
   void publish_cav2_gourmet(bool v) { detail::publish_if(cav2_gourmet, v); }
-  void publish_cav2_cook_timer_done(bool v) { detail::publish_if(cav2_cook_timer_done, v); }
+  void publish_cav2_cook_timer_done(bool v) {
+    detail::publish_if(cav2_cook_timer_done, v);
+  }
 
   void publish_cav2_temp(float v) { detail::publish_if(cav2_temp, v); }
   void publish_cav2_set_temp(float v) { detail::publish_if(cav2_set_temp, v); }
-  void publish_cav2_cook_mode(int v) { detail::publish_if(cav2_cook_mode, static_cast<float>(v)); }
-  void publish_cav2_probe_temp(float v) { detail::publish_if(cav2_probe_temp, v); }
-  void publish_cav2_probe_set_temp(float v) { detail::publish_if(cav2_probe_set_temp, v); }
+  void publish_cav2_cook_mode(int v) {
+    detail::publish_if(cav2_cook_mode, static_cast<float>(v));
+  }
+  void publish_cav2_probe_temp(float v) {
+    detail::publish_if(cav2_probe_temp, v);
+  }
+  void publish_cav2_probe_set_temp(float v) {
+    detail::publish_if(cav2_probe_set_temp, v);
+  }
 };
 
-}  // namespace subzero_protocol
-}  // namespace esphome
+} // namespace subzero_protocol
+} // namespace esphome

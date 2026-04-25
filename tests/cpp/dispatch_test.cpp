@@ -34,15 +34,23 @@ struct CommonRecorder {
   void publish_model(const std::string &v) { strings["model"] = v; }
   void publish_uptime(const std::string &v) { strings["uptime"] = v; }
   void publish_serial(const std::string &v) { strings["serial"] = v; }
-  void publish_appliance_type(const std::string &v) { strings["appliance_type"] = v; }
+  void publish_appliance_type(const std::string &v) {
+    strings["appliance_type"] = v;
+  }
   void publish_diag_status(const std::string &v) { strings["diag_status"] = v; }
   void publish_build_date(const std::string &v) { strings["build_date"] = v; }
   void publish_fw_version(const std::string &v) { strings["fw_version"] = v; }
   void publish_api_version(const std::string &v) { strings["api_version"] = v; }
-  void publish_bleapp_version(const std::string &v) { strings["bleapp_version"] = v; }
+  void publish_bleapp_version(const std::string &v) {
+    strings["bleapp_version"] = v;
+  }
   void publish_os_version(const std::string &v) { strings["os_version"] = v; }
-  void publish_rtapp_version(const std::string &v) { strings["rtapp_version"] = v; }
-  void publish_board_version(const std::string &v) { strings["board_version"] = v; }
+  void publish_rtapp_version(const std::string &v) {
+    strings["rtapp_version"] = v;
+  }
+  void publish_board_version(const std::string &v) {
+    strings["board_version"] = v;
+  }
 };
 
 struct FridgeRecorder : CommonRecorder {
@@ -85,7 +93,9 @@ struct DishwasherRecorder : CommonRecorder {
     strings["wash_cycle_end_time"] = v;
   }
 
-  void clear_wash_time_remaining_if_running() { clear_wash_time_remaining_called = true; }
+  void clear_wash_time_remaining_if_running() {
+    clear_wash_time_remaining_called = true;
+  }
 };
 
 struct RangeRecorder : CommonRecorder {
@@ -114,8 +124,12 @@ struct RangeRecorder : CommonRecorder {
   void publish_ktimer2_active(bool v) { bools["ktimer2_active"] = v; }
   void publish_ktimer2_done(bool v) { bools["ktimer2_done"] = v; }
   void publish_ktimer2_near(bool v) { bools["ktimer2_near"] = v; }
-  void publish_ktimer_end_time(const std::string &v) { strings["ktimer_end_time"] = v; }
-  void publish_ktimer2_end_time(const std::string &v) { strings["ktimer2_end_time"] = v; }
+  void publish_ktimer_end_time(const std::string &v) {
+    strings["ktimer_end_time"] = v;
+  }
+  void publish_ktimer2_end_time(const std::string &v) {
+    strings["ktimer2_end_time"] = v;
+  }
 
   void publish_cav2_unit_on(bool v) { bools["cav2_unit_on"] = v; }
   void publish_cav2_door_ajar(bool v) { bools["cav2_door_ajar"] = v; }
@@ -126,13 +140,17 @@ struct RangeRecorder : CommonRecorder {
   void publish_cav2_probe_at_temp(bool v) { bools["cav2_probe_at_temp"] = v; }
   void publish_cav2_probe_near(bool v) { bools["cav2_probe_near"] = v; }
   void publish_cav2_gourmet(bool v) { bools["cav2_gourmet"] = v; }
-  void publish_cav2_cook_timer_done(bool v) { bools["cav2_cook_timer_done"] = v; }
+  void publish_cav2_cook_timer_done(bool v) {
+    bools["cav2_cook_timer_done"] = v;
+  }
 
   void publish_cav2_temp(float v) { floats["cav2_temp"] = v; }
   void publish_cav2_set_temp(float v) { floats["cav2_set_temp"] = v; }
   void publish_cav2_cook_mode(int v) { ints["cav2_cook_mode"] = v; }
   void publish_cav2_probe_temp(float v) { floats["cav2_probe_temp"] = v; }
-  void publish_cav2_probe_set_temp(float v) { floats["cav2_probe_set_temp"] = v; }
+  void publish_cav2_probe_set_temp(float v) {
+    floats["cav2_probe_set_temp"] = v;
+  }
 };
 
 std::string read_file(const fs::path &p) {
@@ -142,7 +160,7 @@ std::string read_file(const fs::path &p) {
   return ss.str();
 }
 
-}  // namespace
+} // namespace
 
 // =============================================================================
 // Empty-state behavior — no fields → no calls. Catches dispatchers that
@@ -150,7 +168,7 @@ std::string read_file(const fs::path &p) {
 // =============================================================================
 
 TEST(Dispatch, FridgeEmptyStateNoCalls) {
-  FridgeState s;  // all optionals nullopt
+  FridgeState s; // all optionals nullopt
   FridgeRecorder rec;
   dispatch_fridge(s, rec);
   EXPECT_TRUE(rec.bools.empty());
@@ -442,7 +460,8 @@ TEST(Dispatch, RangeFieldsRouted_SecondaryCavity) {
 // =============================================================================
 
 TEST(Dispatch, FixtureFridgeFullPoll) {
-  std::string raw = read_file(fs::path(FIXTURES_DIR) / "fridge_back_2028_d5_full.json");
+  std::string raw =
+      read_file(fs::path(FIXTURES_DIR) / "fridge_back_2028_d5_full.json");
   ASSERT_FALSE(raw.empty());
   auto s = parse_fridge(raw);
   ASSERT_TRUE(s.valid);
@@ -462,11 +481,12 @@ TEST(Dispatch, FixtureFridgeFullPoll) {
 }
 
 TEST(Dispatch, FixtureFridgePushDoor) {
-  std::string raw = read_file(fs::path(FIXTURES_DIR) / "fridge_push_ref_door_true.json");
+  std::string raw =
+      read_file(fs::path(FIXTURES_DIR) / "fridge_push_ref_door_true.json");
   ASSERT_FALSE(raw.empty());
   auto s = parse_fridge(raw);
   ASSERT_TRUE(s.valid);
-  EXPECT_FALSE(s.is_poll);  // push notification
+  EXPECT_FALSE(s.is_poll); // push notification
 
   FridgeRecorder rec;
   dispatch_fridge(s, rec);
@@ -479,7 +499,8 @@ TEST(Dispatch, FixtureFridgePushDoor) {
 }
 
 TEST(Dispatch, FixtureDishwasherFullPoll) {
-  std::string raw = read_file(fs::path(FIXTURES_DIR) / "dishwasher_dw2450_d5_full.json");
+  std::string raw =
+      read_file(fs::path(FIXTURES_DIR) / "dishwasher_dw2450_d5_full.json");
   ASSERT_FALSE(raw.empty());
   auto s = parse_dishwasher(raw);
   ASSERT_TRUE(s.valid);
@@ -490,13 +511,14 @@ TEST(Dispatch, FixtureDishwasherFullPoll) {
   EXPECT_FALSE(rec.strings["model"].empty());
   // The fixture should populate at least one wash-related field.
   bool has_wash_field = rec.bools.count("wash_cycle_on") > 0 ||
-                       rec.ints.count("wash_status") > 0 ||
-                       rec.ints.count("wash_cycle") > 0;
+                        rec.ints.count("wash_status") > 0 ||
+                        rec.ints.count("wash_cycle") > 0;
   EXPECT_TRUE(has_wash_field);
 }
 
 TEST(Dispatch, FixtureRangeFullPoll) {
-  std::string raw = read_file(fs::path(FIXTURES_DIR) / "range_df36450_d5_full.json");
+  std::string raw =
+      read_file(fs::path(FIXTURES_DIR) / "range_df36450_d5_full.json");
   ASSERT_FALSE(raw.empty());
   auto s = parse_range(raw);
   ASSERT_TRUE(s.valid);
@@ -509,7 +531,8 @@ TEST(Dispatch, FixtureRangeFullPoll) {
 }
 
 TEST(Dispatch, FixtureRangePushLightOn) {
-  std::string raw = read_file(fs::path(FIXTURES_DIR) / "range_push_light_on.json");
+  std::string raw =
+      read_file(fs::path(FIXTURES_DIR) / "range_push_light_on.json");
   ASSERT_FALSE(raw.empty());
   auto s = parse_range(raw);
   ASSERT_TRUE(s.valid);
@@ -523,7 +546,8 @@ TEST(Dispatch, FixtureRangePushLightOn) {
 }
 
 TEST(Dispatch, FixtureWallovenPushSetTemp) {
-  std::string raw = read_file(fs::path(FIXTURES_DIR) / "walloven_push_set_temp.json");
+  std::string raw =
+      read_file(fs::path(FIXTURES_DIR) / "walloven_push_set_temp.json");
   ASSERT_FALSE(raw.empty());
   auto s = parse_range(raw);
   ASSERT_TRUE(s.valid);
@@ -539,7 +563,7 @@ TEST(Dispatch, InvalidParseProducesNoCalls) {
   // verify dispatching a struct with all-nullopt optionals (the shape of
   // an "invalid" parse result) doesn't accidentally call anything.
   FridgeState s;
-  s.valid = false;  // dispatch doesn't check this — fields are still empty
+  s.valid = false; // dispatch doesn't check this — fields are still empty
   FridgeRecorder rec;
   dispatch_fridge(s, rec);
   EXPECT_TRUE(rec.bools.empty());
