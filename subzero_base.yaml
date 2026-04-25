@@ -398,12 +398,21 @@ button:
             return;
           }
           auto *client = id(${prefix}_appliance);
+          // Re-unlock D6 first (session may have expired since last poll).
+          std::string pin = id(${prefix}_stored_pin);
+          if (!pin.empty()) {
+            std::string unlock = "{\"cmd\":\"unlock_channel\",\"params\":{\"pin\":\"" + pin + "\"}}\n";
+            esp_ble_gattc_write_char(
+              client->get_gattc_if(), client->get_conn_id(),
+              d6, unlock.size(), (uint8_t*)unlock.data(),
+              ESP_GATT_WRITE_TYPE_RSP, ESP_GATT_AUTH_REQ_NONE);
+          }
           std::string cmd = "{\"cmd\":\"get_async\"}\n";
           esp_ble_gattc_write_char(
             client->get_gattc_if(), client->get_conn_id(),
             d6, cmd.size(), (uint8_t*)cmd.data(),
             ESP_GATT_WRITE_TYPE_RSP, ESP_GATT_AUTH_REQ_NONE);
-          ESP_LOGI("ble", "[${appliance_name}] POLL D6: get_async");
+          ESP_LOGI("ble", "[${appliance_name}] POLL D6: re-unlock + get_async");
           id(${prefix}_debug).publish_state("Polling...");
 
   - platform: template
@@ -500,6 +509,20 @@ script:
           id(${prefix}_poll_ok) = false;
           // Clear any stale partial JSON from interrupted previous transfer
           id(${prefix}_json_buf).clear();
+          // Re-unlock D6 before polling. The D6 unlock session expires
+          // independently from the BLE link - on fw 8.5 within ~1 minute,
+          // on some fw 2.27 appliances within a few minutes. The official
+          // Sub-Zero app re-issues unlock_channel before every refresh
+          // poll; we do the same. Without re-unlock the get_async write
+          // is accepted (status 0) but produces no indication response.
+          std::string pin = id(${prefix}_stored_pin);
+          if (!pin.empty()) {
+            std::string unlock_cmd = "{\"cmd\":\"unlock_channel\",\"params\":{\"pin\":\"" + pin + "\"}}\n";
+            esp_ble_gattc_write_char(
+              client->get_gattc_if(), client->get_conn_id(),
+              d6, unlock_cmd.size(), (uint8_t*)unlock_cmd.data(),
+              ESP_GATT_WRITE_TYPE_RSP, ESP_GATT_AUTH_REQ_NONE);
+          }
           std::string cmd = "{\"cmd\":\"get_async\"}\n";
           esp_err_t err = esp_ble_gattc_write_char(
             client->get_gattc_if(), client->get_conn_id(),
