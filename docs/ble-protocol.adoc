@@ -50,7 +50,7 @@ The characteristics serve specific roles, derived from analyzing HCI snoop logs 
 | Subscribed by the app but never receives meaningful data. Not used by this integration.
 |===
 
-NOTE: We've previously misdiagnosed "fw 8.5 unlock session expiry" as the root cause of silent poll failures on wall ovens and 313 fridges. The actual cause was polling D5 (the control channel) instead of D6 (the data channel). D6 returns full state on demand on both firmware versions with no session expiry behavior. The push-only / subscribe-retry workarounds we previously needed are gone.
+NOTE: We previously misdiagnosed "fw 8.5 unlock session expiry" as the cause of silent poll failures - the actual *primary* cause was polling D5 instead of D6. D6 is the right channel to poll. **However, D6 itself does have its own session expiry on fw 8.5** that behaves like the old D5 expiry: after about 60-80 seconds of idle, the unlock session goes stale and re-issuing `unlock_channel` on the live connection does NOT refresh it. The official Sub-Zero Android app handles this by disconnecting and reconnecting between polls (verified via HCI snoop). Our integration matches: `periodic_poll` writes unlock + get_async every 60s; on fw 8.5 those writes silently fail and the zombie detector forces a reconnect after 3 missed cycles (~3 min). Net effect: one full state refresh every ~3 min on fw 8.5, plus continuous push notifications in between. fw 2.27 doesn't have this behavior - re-unlock works on its live connection and polls succeed every 60s.
 
 === Firmware Versions
 

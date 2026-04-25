@@ -194,33 +194,25 @@ button:
     icon: "mdi:bug-play"
     entity_category: diagnostic
     on_press:
-      # Enable debug mode, re-unlock D6 (session may have expired since
-      # last poll), then poll for a full state dump. D6 returns full
-      # state on demand once the unlock is fresh.
+      # Enable debug mode, then force a disconnect. auto_connect brings
+      # the connection back via post_bond + subscribe, which lands a
+      # fresh full-state get_async response. ~10-15s to a chunked debug
+      # log. We disconnect (rather than just re-running subscribe) because
+      # fw 8.5 appliances cannot refresh their unlock session on a live
+      # connection - the only way to unstick them is a full reconnect
+      # (verified via official app HCI snoop). fw 2.27 doesn't strictly
+      # need the disconnect, but doing it uniformly keeps the code simple
+      # and the extra ~10s wait is acceptable for a manual debug button.
       - lambda: |-
-          uint16_t d6 = id(${prefix}_d6_handle);
-          if (d6 == 0) {
+          if (id(${prefix}_d6_handle) == 0) {
             id(${prefix}_debug).publish_state("ERROR: Not connected");
             return;
           }
           id(${prefix}_debug_mode) = true;
           id(${prefix}_debug_switch).publish_state(true);
-          auto *client = id(${prefix}_appliance);
-          std::string pin = id(${prefix}_stored_pin);
-          if (!pin.empty()) {
-            std::string unlock = "{\"cmd\":\"unlock_channel\",\"params\":{\"pin\":\"" + pin + "\"}}\n";
-            esp_ble_gattc_write_char(
-              client->get_gattc_if(), client->get_conn_id(),
-              d6, unlock.size(), (uint8_t*)unlock.data(),
-              ESP_GATT_WRITE_TYPE_RSP, ESP_GATT_AUTH_REQ_NONE);
-          }
-          std::string cmd = "{\"cmd\":\"get_async\"}\n";
-          esp_err_t err = esp_ble_gattc_write_char(
-            client->get_gattc_if(), client->get_conn_id(),
-            d6, cmd.size(), (uint8_t*)cmd.data(),
-            ESP_GATT_WRITE_TYPE_RSP, ESP_GATT_AUTH_REQ_NONE);
-          ESP_LOGI("ble", "[${appliance_name}] Debug poll D6 (re-unlocked) err=%d", err);
-          id(${prefix}_debug).publish_state("Debug mode ON - polling for full state...");
+          ESP_LOGI("ble", "[${appliance_name}] Log Debug Info: forcing reconnect for fresh unlock");
+          id(${prefix}_debug).publish_state("Debug mode ON - reconnecting for fresh poll...");
+          id(${prefix}_appliance)->disconnect();
 
 script:
   - id: ${prefix}_parse_json
