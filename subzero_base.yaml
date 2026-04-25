@@ -6,41 +6,6 @@
 
 substitutions:
   poll_offset: "0s"
-  poll_via_d4: "false"
-  # Three values:
-  #   "auto"  (default) - decide at runtime based on the firmware version
-  #                       reported in the first poll response. If the
-  #                       appliance reports `fw: 8.5` (API 5.4), enable
-  #                       push-only mode for this connection. Otherwise
-  #                       leave it off. Reverts to off on disconnect, so
-  #                       the next connect re-evaluates from the fresh
-  #                       version response.
-  #   "true"  - always enable push-only after the first successful poll,
-  #             regardless of detected firmware. Use this if you want the
-  #             behavior on a fw 2.27 appliance for some reason.
-  #   "false" - never enable push-only. Use this to override the auto
-  #             detection (e.g. on a fw 8.5 appliance where you really
-  #             want fresh uptime/diagnostic_status at the cost of the
-  #             ~4 minute reconnect cycle).
-  #
-  # When push-only is active, periodic_poll fires exactly once after each
-  # (re)connect (to land an initial full state) and then returns early
-  # on every subsequent tick - no get_async writes, no subscribe-retry
-  # ladder. Push notifications carry live state (door, light, setpoints,
-  # cook mode, etc.) and keep poll_ok set so zombie detection stays at
-  # zero unless 15 min of total silence happens. Poll-only fields
-  # (model, serial, version, uptime, diagnostic_status) refresh only on
-  # the next reconnect.
-  #
-  # Why this exists: fw 8.5 / API 5.4 appliances (Sub-Zero 313 fridge,
-  # Wolf SO3050PESP wall oven) silently invalidate the unlock session
-  # within ~1 minute. Without push-only mode, the periodic_poll write
-  # gets no response, the subscribe-retry ladder fires, and the session
-  # eventually escalates to a forced reconnect every ~4 min. Push-only
-  # avoids that churn entirely. Matches what the official Sub-Zero
-  # Android app does - see docs/ble-protocol.adoc "Unlock Session
-  # Research".
-  push_only_after_first_poll: "auto"
 
 # NOTE: external_components is declared by the entry-point yaml, not here.
 # Minimal examples use `type: git` with a released ref; personal dev yamls
@@ -64,9 +29,11 @@ globals:
   - id: ${prefix}_phase
     type: int
     initial_value: "0"
-  - id: ${prefix}_d4_handle
-    type: int
-    initial_value: "0"
+  # D5 = encrypted control channel (display_pin, unlock_channel, set,
+  # scan). D6 = encrypted data channel (get_async + push notifications).
+  # D7 = open pre-auth diagnostic channel (kept for first-poll fallback
+  # before bonding completes). D4 and D8 are subscribed-but-unused by
+  # the official app and aren't tracked here.
   - id: ${prefix}_d5_handle
     type: int
     initial_value: "0"
@@ -74,9 +41,6 @@ globals:
     type: int
     initial_value: "0"
   - id: ${prefix}_d7_handle
-    type: int
-    initial_value: "0"
-  - id: ${prefix}_d8_handle
     type: int
     initial_value: "0"
   - id: ${prefix}_json_buf
@@ -99,42 +63,6 @@ globals:
   - id: ${prefix}_poll_miss
     type: int
     initial_value: "0"
-  # Set to true when we write a get_async; cleared when a valid poll
-  # response (`{"status":0,"resp":...}`, parser sets is_poll=true) arrives.
-  # Push notifications do NOT clear it - they're not a response to our
-  # poll. Cleared on disconnect. When still true at the next periodic_poll
-  # tick, the previous poll went unanswered (cold-boot race left the
-  # subscribe chain half-initialized, OR fw 8.5 unlock session expired
-  # silently) and periodic_poll re-runs the full _subscribe chain to
-  # refresh CCCDs + unlock_channel + get_async instead of writing a bare
-  # get_async into the void.
-  - id: ${prefix}_poll_in_flight
-    type: bool
-    initial_value: "false"
-  # Counts consecutive periodic_poll cycles that took the subscribe-retry
-  # branch (poll_in_flight stayed true). Reset on any valid is_poll parse
-  # and on disconnect. When >= 3, the session is wedged at a level even
-  # subscribe (unlock_channel) can't unstick - force a reconnect via
-  # client->disconnect(). auto_connect: true brings the connection back
-  # from scratch.
-  - id: ${prefix}_unanswered_polls
-    type: int
-    initial_value: "0"
-  # One-shot: set true on first valid is_poll parse after (re)connect.
-  # Reset on disconnect. Only used when push_only_after_first_poll is
-  # "true" or "auto" (with fw_85_detected) to gate the periodic_poll
-  # write path - once the initial poll has completed we stop polling
-  # entirely and rely on pushes.
-  - id: ${prefix}_first_poll_done
-    type: bool
-    initial_value: "false"
-  # Set true when parse_json sees `version.fw == "8.5"` in a poll response.
-  # Reset on disconnect. Used by `push_only_after_first_poll: "auto"` to
-  # auto-enable push-only mode on appliances whose unlock session expires
-  # within ~1 minute, without requiring per-appliance configuration.
-  - id: ${prefix}_fw_85_detected
-    type: bool
-    initial_value: "false"
   - id: ${prefix}_debug_mode
     type: bool
     initial_value: "false"
@@ -198,10 +126,6 @@ ble_client:
       then:
         - lambda: |-
             id(${prefix}_json_buf).clear();
-            id(${prefix}_poll_in_flight) = false;
-            id(${prefix}_unanswered_polls) = 0;
-            id(${prefix}_first_poll_done) = false;
-            id(${prefix}_fw_85_detected) = false;
             id(${prefix}_post_bond).stop();
             id(${prefix}_subscribe).stop();
             id(${prefix}_fast_reconnect).stop();
@@ -214,10 +138,8 @@ ble_client:
                 auto *client = id(${prefix}_appliance);
                 esp_ble_remove_bond_device(*(esp_bd_addr_t*)client->get_remote_bda());
                 id(${prefix}_d5_handle) = 0;
-                id(${prefix}_d4_handle) = 0;
                 id(${prefix}_d6_handle) = 0;
                 id(${prefix}_d7_handle) = 0;
-                id(${prefix}_d8_handle) = 0;
                 id(${prefix}_phase) = 0;
                 id(${prefix}_fast_retries) = 0;
                 id(${prefix}_debug).publish_state("Bond cleared, re-pairing on next connect...");
@@ -227,11 +149,9 @@ ble_client:
               }
             } else {
               id(${prefix}_phase) = 0;
-              id(${prefix}_d4_handle) = 0;
               id(${prefix}_d5_handle) = 0;
               id(${prefix}_d6_handle) = 0;
               id(${prefix}_d7_handle) = 0;
-              id(${prefix}_d8_handle) = 0;
               ESP_LOGI("ble", "[${appliance_name}] Disconnected");
             }
             id(${prefix}_debug).publish_state("Disconnected");
@@ -248,11 +168,14 @@ sensor:
     notify: true
     update_interval: never
     lambda: |-
-      // Any notification = connection alive (resets zombie detection).
+      // D5 is the control channel only - command responses (display_pin,
+      // unlock_channel, set, scan) come back here. We do NOT feed json_buf
+      // from D5 because the appliance broadcasts push notifications on
+      // BOTH D5 and D6, and feeding both would interleave duplicate messages
+      // into the shared buffer (the parser would see {...}{...} as one
+      // invalid blob). Heartbeat only - resets zombie detection.
+      // PIN confirmation is captured from D6's parallel unlock response.
       id(${prefix}_poll_ok) = true;
-      if (id(${prefix}_json_buf).feed(x.data(), x.size())) {
-        id(${prefix}_parse_json).execute();
-      }
       return {};
 
   # D6 Notify - the official Sub-Zero app polls get_async on D6 (not D5) and
@@ -402,11 +325,9 @@ button:
       - logger.log: "[${appliance_name}] Initiating connection..."
       - lambda: |-
           id(${prefix}_phase) = 0;
-          id(${prefix}_d4_handle) = 0;
           id(${prefix}_d5_handle) = 0;
           id(${prefix}_d6_handle) = 0;
           id(${prefix}_d7_handle) = 0;
-          id(${prefix}_d8_handle) = 0;
           id(${prefix}_json_buf).clear();
           id(${prefix}_post_bond).stop();
           id(${prefix}_subscribe).stop();
@@ -471,8 +392,8 @@ button:
     icon: "mdi:refresh"
     on_press:
       - lambda: |-
-          uint16_t d5 = id(${prefix}_d5_handle);
-          if (d5 == 0) {
+          uint16_t d6 = id(${prefix}_d6_handle);
+          if (d6 == 0) {
             id(${prefix}_debug).publish_state("ERROR: Not connected");
             return;
           }
@@ -480,33 +401,10 @@ button:
           std::string cmd = "{\"cmd\":\"get_async\"}\n";
           esp_ble_gattc_write_char(
             client->get_gattc_if(), client->get_conn_id(),
-            d5, cmd.size(), (uint8_t*)cmd.data(),
-            ESP_GATT_WRITE_TYPE_RSP, ESP_GATT_AUTH_REQ_NONE);
-          ESP_LOGI("ble", "[${appliance_name}] POLL: get_async");
-          id(${prefix}_debug).publish_state("Polling...");
-
-  # Diagnostic: poll D6 (the actual data channel per the official app).
-  # Phase 1 of the D6 refactor - verify D6 returns full state before
-  # switching the periodic poll over.
-  - platform: template
-    name: "Poll ${appliance_name} D6"
-    icon: "mdi:refresh-circle"
-    entity_category: diagnostic
-    on_press:
-      - lambda: |-
-          uint16_t d6 = id(${prefix}_d6_handle);
-          if (d6 == 0) {
-            id(${prefix}_debug).publish_state("ERROR: D6 handle not set");
-            return;
-          }
-          auto *client = id(${prefix}_appliance);
-          std::string cmd = "{\"cmd\":\"get_async\"}\n";
-          esp_err_t err = esp_ble_gattc_write_char(
-            client->get_gattc_if(), client->get_conn_id(),
             d6, cmd.size(), (uint8_t*)cmd.data(),
             ESP_GATT_WRITE_TYPE_RSP, ESP_GATT_AUTH_REQ_NONE);
-          ESP_LOGI("ble", "[${appliance_name}] POLL D6: get_async (h=%d) err=%d", d6, err);
-          id(${prefix}_debug).publish_state("Polling D6...");
+          ESP_LOGI("ble", "[${appliance_name}] POLL D6: get_async");
+          id(${prefix}_debug).publish_state("Polling...");
 
   - platform: template
     name: "Disconnect ${appliance_name}"
@@ -524,10 +422,8 @@ button:
       - lambda: |-
           id(${prefix}_pin_confirmed) = false;
           id(${prefix}_d5_handle) = 0;
-          id(${prefix}_d4_handle) = 0;
           id(${prefix}_d6_handle) = 0;
           id(${prefix}_d7_handle) = 0;
-          id(${prefix}_d8_handle) = 0;
           id(${prefix}_phase) = 0;
           id(${prefix}_fast_retries) = 0;
           id(${prefix}_poll_miss) = 0;
@@ -562,7 +458,7 @@ script:
   # that populates ESPHome's characteristic database - it only appears after bonding +
   # cache refresh. ble_client.ble_write would fail to find D5 on fridges.
   #
-  # Zombie detection: poll_ok is set by ANY D5/D4 indication (push or poll response).
+  # Zombie detection: poll_ok is set by any D5 or D6 indication.
   # If 15 intervals pass with zero activity, the connection is dead - reconnect.
   # At 60s intervals that's 15 min of total silence. Polls that complete - or pushes
   # that arrive between polls - keep the counter at 0 indefinitely.
@@ -571,13 +467,22 @@ script:
     then:
       - delay: ${poll_offset}
       - lambda: |-
+          // Poll D6 with get_async - matches the official Sub-Zero app's
+          // behavior on both fw 8.5 and fw 2.27. D6 returns full sensor
+          // state regardless of firmware version. The previous "unlock
+          // session expiry" we worked around with push-only mode and the
+          // subscribe-retry ladder was actually D5 not being the data
+          // channel; D6 polling has no such issue.
           if (!id(${prefix}_pin_confirmed)) return;
           if (id(${prefix}_subscribe).is_running() || id(${prefix}_post_bond).is_running() || id(${prefix}_fast_reconnect).is_running()) return;
-          // Fridges respond on D4 (open channel), dishwashers/ranges on D5
-          uint16_t handle = ${poll_via_d4} ? id(${prefix}_d4_handle) : id(${prefix}_d5_handle);
-          if (handle == 0) return;
+          uint16_t d6 = id(${prefix}_d6_handle);
+          if (d6 == 0) return;
           auto *client = id(${prefix}_appliance);
           if (!client->connected()) return;
+          // Zombie detection: if no notifications (poll responses or pushes)
+          // arrived during the last poll interval, count as a miss. After
+          // 15 consecutive misses (~30 min at 120s interval), force a
+          // reconnect via auto_connect.
           if (id(${prefix}_poll_ok)) {
             id(${prefix}_poll_miss) = 0;
           } else {
@@ -595,77 +500,24 @@ script:
           id(${prefix}_poll_ok) = false;
           // Clear any stale partial JSON from interrupted previous transfer
           id(${prefix}_json_buf).clear();
-          // Push-only mode: after the first successful poll, stop polling
-          // entirely and rely on push notifications for live state. Matches
-          // what the official Sub-Zero Android app does on fw 8.5 (where
-          // the unlock session expires within ~1 minute and re-issuing
-          // unlock_channel doesn't refresh it - see APK research in
-          // docs/ble-protocol.adoc). Pushes still set poll_ok in the notify
-          // handler so zombie detection above keeps working; if 15 min of
-          // total silence ever happens, we'll reconnect normally.
-          //
-          // Three modes: "true" forces it on, "false" forces it off,
-          // "auto" (default) enables it whenever the parser sees
-          // `version.fw == "8.5"` in the first poll response.
-          {
-            const char *mode = "${push_only_after_first_poll}";
-            bool push_only =
-              (mode[0] == 't') ||  // "true"
-              (mode[0] == 'a' && id(${prefix}_fw_85_detected));  // "auto" + fw 8.5
-            if (push_only && id(${prefix}_first_poll_done)) {
-              return;
-            }
-          }
-          // Recovery ladder when poll_in_flight is still set from the
-          // previous tick (the previous get_async went unanswered):
-          //
-          //   Tick 1: run subscribe to re-issue unlock_channel + get_async.
-          //           Handles cold-boot races and most fw 8.5 unlock-expiry
-          //           cases - the unlock response is small (single fragment,
-          //           not ACL-vulnerable) so it parses cleanly as is_poll
-          //           and clears poll_in_flight + unanswered_polls.
-          //   Tick 2-3: same. Some sessions take a couple of refreshes.
-          //   Tick 4 (unanswered_polls >= 3): escalate to a full reconnect.
-          //           At this point the session is wedged at a level even
-          //           unlock_channel can't unstick - we never even saw the
-          //           unlock response come back across multiple retries.
-          //           auto_connect: true brings the connection back from
-          //           scratch. Counter resets on any valid is_poll parse.
-          if (id(${prefix}_poll_in_flight)) {
-            id(${prefix}_unanswered_polls) += 1;
-            if (id(${prefix}_unanswered_polls) >= 3) {
-              ESP_LOGW("szg", "[${appliance_name}] %d subscribe retries unanswered - session wedged, forcing reconnect",
-                id(${prefix}_unanswered_polls));
-              id(${prefix}_unanswered_polls) = 0;
-              id(${prefix}_poll_in_flight) = false;
-              id(${prefix}_debug).publish_state("Session wedged, reconnecting...");
-              client->disconnect();
-              return;
-            }
-            ESP_LOGW("szg", "[${appliance_name}] Previous poll unanswered (%d/3) - re-running subscribe to refresh session",
-              id(${prefix}_unanswered_polls));
-            id(${prefix}_subscribe).execute();
-            return;
-          }
           std::string cmd = "{\"cmd\":\"get_async\"}\n";
           esp_err_t err = esp_ble_gattc_write_char(
             client->get_gattc_if(), client->get_conn_id(),
-            handle, cmd.size(), (uint8_t*)cmd.data(),
+            d6, cmd.size(), (uint8_t*)cmd.data(),
             ESP_GATT_WRITE_TYPE_RSP, ESP_GATT_AUTH_REQ_NONE);
           if (err != ESP_OK) {
-            ESP_LOGW("szg", "[${appliance_name}] Write failed (err=%d), forcing reconnect", err);
+            ESP_LOGW("szg", "[${appliance_name}] D6 write failed (err=%d), forcing reconnect", err);
             id(${prefix}_debug).publish_state("Write failed, reconnecting...");
             client->disconnect();
             return;
           }
-          id(${prefix}_poll_in_flight) = true;
-          ESP_LOGI("szg", "[${appliance_name}] Periodic poll (miss=%d, retries=%d)",
+          ESP_LOGI("szg", "[${appliance_name}] Periodic poll D6 (miss=%d, retries=%d)",
             id(${prefix}_poll_miss), id(${prefix}_fast_retries));
 
   # Post-bond discovery sequence - custom because:
   # 1. On fridges, D5 is not visible in GATT until after bonding + cache refresh.
   #    ESPHome's ble_client performs discovery once at connect and doesn't re-run it.
-  # 2. We need to match D4/D5/D6/D7/D8 by UUID suffix and cache handles for fast reconnect.
+  # 2. We need to match D5/D6/D7 by UUID suffix and cache handles for fast reconnect.
   # 3. ESPHome does not expose GATT cache management (cache_refresh, cache_clean).
   #
   # The leading poll_offset delay staggers the bonding chain across multiple
@@ -709,11 +561,9 @@ script:
               ESP_LOGI("gatt", "  [%d] %s h=%d uuid=%s p=0x%02X", i, t, e.attribute_handle, us, e.properties);
               if (e.type == ESP_GATT_DB_CHARACTERISTIC && e.uuid.len == ESP_UUID_LEN_128) {
                 uint8_t suffix = e.uuid.uuid.uuid128[0];
-                if (suffix == 0xD4) id(${prefix}_d4_handle) = e.attribute_handle;
-                else if (suffix == 0xD5) id(${prefix}_d5_handle) = e.attribute_handle;
+                if (suffix == 0xD5) id(${prefix}_d5_handle) = e.attribute_handle;
                 else if (suffix == 0xD6) id(${prefix}_d6_handle) = e.attribute_handle;
                 else if (suffix == 0xD7) id(${prefix}_d7_handle) = e.attribute_handle;
-                else if (suffix == 0xD8) id(${prefix}_d8_handle) = e.attribute_handle;
               }
             }
           }
@@ -759,11 +609,9 @@ script:
           for (int i = 0; i < count; i++) {
             if (db[i].type == ESP_GATT_DB_CHARACTERISTIC && db[i].uuid.len == ESP_UUID_LEN_128) {
               uint8_t s = db[i].uuid.uuid.uuid128[0];
-              if (s == 0xD4) id(${prefix}_d4_handle) = db[i].attribute_handle;
-              else if (s == 0xD5) id(${prefix}_d5_handle) = db[i].attribute_handle;
+              if (s == 0xD5) id(${prefix}_d5_handle) = db[i].attribute_handle;
               else if (s == 0xD6) id(${prefix}_d6_handle) = db[i].attribute_handle;
               else if (s == 0xD7) id(${prefix}_d7_handle) = db[i].attribute_handle;
-              else if (s == 0xD8) id(${prefix}_d8_handle) = db[i].attribute_handle;
             }
           }
           if (id(${prefix}_d5_handle) > 0) { id(${prefix}_subscribe).execute(); return; }
@@ -779,11 +627,9 @@ script:
           for (int i = 0; i < count; i++) {
             if (db[i].type == ESP_GATT_DB_CHARACTERISTIC && db[i].uuid.len == ESP_UUID_LEN_128) {
               uint8_t s = db[i].uuid.uuid.uuid128[0];
-              if (s == 0xD4) id(${prefix}_d4_handle) = db[i].attribute_handle;
-              else if (s == 0xD5) id(${prefix}_d5_handle) = db[i].attribute_handle;
+              if (s == 0xD5) id(${prefix}_d5_handle) = db[i].attribute_handle;
               else if (s == 0xD6) id(${prefix}_d6_handle) = db[i].attribute_handle;
               else if (s == 0xD7) id(${prefix}_d7_handle) = db[i].attribute_handle;
-              else if (s == 0xD8) id(${prefix}_d8_handle) = db[i].attribute_handle;
             }
           }
           if (id(${prefix}_d5_handle) > 0) { id(${prefix}_subscribe).execute(); return; }
@@ -799,11 +645,9 @@ script:
           for (int i = 0; i < count; i++) {
             if (db[i].type == ESP_GATT_DB_CHARACTERISTIC && db[i].uuid.len == ESP_UUID_LEN_128) {
               uint8_t s = db[i].uuid.uuid.uuid128[0];
-              if (s == 0xD4) id(${prefix}_d4_handle) = db[i].attribute_handle;
-              else if (s == 0xD5) id(${prefix}_d5_handle) = db[i].attribute_handle;
+              if (s == 0xD5) id(${prefix}_d5_handle) = db[i].attribute_handle;
               else if (s == 0xD6) id(${prefix}_d6_handle) = db[i].attribute_handle;
               else if (s == 0xD7) id(${prefix}_d7_handle) = db[i].attribute_handle;
-              else if (s == 0xD8) id(${prefix}_d8_handle) = db[i].attribute_handle;
             }
           }
           if (id(${prefix}_d5_handle) > 0) { id(${prefix}_subscribe).execute(); return; }
@@ -861,7 +705,6 @@ script:
           }
           id(${prefix}_d5_notify)->handle = d5;
           ESP_LOGI("ble", "[${appliance_name}] Injected D5 handle %d", d5);
-          uint16_t d4 = id(${prefix}_d4_handle);
           uint16_t d6 = id(${prefix}_d6_handle);
           if (d6 > 0) {
             id(${prefix}_d6_notify)->handle = d6;
@@ -877,11 +720,6 @@ script:
             esp_ble_gattc_register_for_notify(
               client->get_gattc_if(), client->get_remote_bda(), d6);
             ESP_LOGI("ble", "[${appliance_name}] Subscribe D6 (h=%d) for data + pushes", d6);
-          }
-          if (d4 > 0) {
-            esp_ble_gattc_register_for_notify(
-              client->get_gattc_if(), client->get_remote_bda(), d4);
-            ESP_LOGI("ble", "[${appliance_name}] Subscribe D4 (h=%d) for diagnostics", d4);
           }
           // Manually write CCCD enable value (0x0002 = indications on).
           // CCCD descriptor is at char_value_handle + 2 (standard BLE layout).
@@ -900,13 +738,6 @@ script:
               d6 + 2, sizeof(cccd_on), cccd_on,
               ESP_GATT_WRITE_TYPE_RSP, ESP_GATT_AUTH_REQ_NONE);
             ESP_LOGI("ble", "[${appliance_name}] CCCD write D6 (h=%d)", d6 + 2);
-          }
-          if (d4 > 0) {
-            esp_ble_gattc_write_char(
-              client->get_gattc_if(), client->get_conn_id(),
-              d4 + 2, sizeof(cccd_on), cccd_on,
-              ESP_GATT_WRITE_TYPE_RSP, ESP_GATT_AUTH_REQ_NONE);
-            ESP_LOGI("ble", "[${appliance_name}] CCCD write D4 (h=%d)", d4 + 2);
           }
           id(${prefix}_json_buf).clear();
       - delay: 500ms
@@ -941,13 +772,13 @@ script:
       - lambda: |-
           if (!id(${prefix}_pin_confirmed)) return;
           auto *client = id(${prefix}_appliance);
-          uint16_t d5 = id(${prefix}_d5_handle);
+          uint16_t d6 = id(${prefix}_d6_handle);
+          if (d6 == 0) return;
           id(${prefix}_poll_ok) = false;
           std::string cmd = "{\"cmd\":\"get_async\"}\n";
           esp_err_t err = esp_ble_gattc_write_char(
             client->get_gattc_if(), client->get_conn_id(),
-            d5, cmd.size(), (uint8_t*)cmd.data(),
+            d6, cmd.size(), (uint8_t*)cmd.data(),
             ESP_GATT_WRITE_TYPE_RSP, ESP_GATT_AUTH_REQ_NONE);
-          ESP_LOGI("ble", "[${appliance_name}] get_async err=%d", err);
-          if (err == ESP_OK) id(${prefix}_poll_in_flight) = true;
+          ESP_LOGI("ble", "[${appliance_name}] Initial get_async D6 err=%d", err);
           id(${prefix}_debug).publish_state("Connected and polling.");

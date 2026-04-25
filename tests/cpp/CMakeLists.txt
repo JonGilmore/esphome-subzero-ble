@@ -54,7 +54,6 @@ add_executable(protocol_tests
   protocol_test.cpp
   buffer_test.cpp
   sanitize_test.cpp
-  poll_state_test.cpp
 )
 target_link_libraries(protocol_tests PRIVATE
   subzero_protocol

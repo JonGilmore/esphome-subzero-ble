@@ -10,7 +10,7 @@ toc::[]
 
 == GATT Service Structure
 
-All Sub-Zero appliances expose a single custom GATT service:
+All Sub-Zero appliances expose a single custom GATT service with five characteristics:
 
 [cols="1,2"]
 |===
@@ -24,45 +24,46 @@ All Sub-Zero appliances expose a single custom GATT service:
 | *D8 Characteristic* | `08590F7E-DB05-467E-8757-72F6FAEB13D8`
 |===
 
-The number of visible characteristics varies by appliance type:
-
-* **Dishwashers & Ranges** expose *D4 and D5* only.
-* **Refrigerators** expose *all five* (D4-D8).
+All five characteristics are present on every tested appliance type (refrigerators, freezers, ranges, wall ovens, dishwashers, wine storage). Earlier docs claimed dishwashers and ranges only exposed D4 and D5; that was a misreading of our own discovery output - the official app subscribes to all five on every device.
 
 === Channel Roles
 
-The characteristics serve different roles depending on the appliance type:
+The characteristics serve specific roles, derived from analyzing HCI snoop logs of the official Sub-Zero Android app talking to a fw 8.5 wall oven (Wolf SO3050PESP) and a fw 2.27 range (Wolf DF36450GSP). The architecture is identical across both firmware versions:
 
-[cols="1,2,2"]
+[cols="1,3"]
 |===
-| Channel | Dishwashers & Ranges | Refrigerators
+| Channel | Role
 
 | *D4*
-| Open (unencrypted) diagnostic channel
-| Open channel - responds to `get_async` with basic diagnostic data; also mirrors D5 push notifications with `msg_types: 8`
+| Subscribed by the app but never receives meaningful data. Some firmware emits periodic non-JSON binary heartbeats here (~35 bytes). Not used by this integration.
 
 | *D5*
-| Encrypted command/response channel - handles `unlock_channel`, `get_async`, `display_pin`, and delivers push notifications
-| Encrypted channel - delivers push notifications (`msg_types: 2`) for state changes; also responds to `get_async` after a successful `unlock_channel`, but the unlock session expires after some time (possibly hours), after which command responses stop until a fresh unlock is performed
+| Encrypted *control* channel. Handles `display_pin`, `unlock_channel`, `set` (time/wifi/token), `scan` (Wi-Fi APs). Command responses (e.g. `{"status":0,"resp":{"pin":"..."}}`) come back as indications. Also receives a duplicate copy of every D6 push notification - we ignore those to avoid double-feeding the JSON buffer.
 
 | *D6*
-| _Not present_
-| Encrypted channel - accepts writes, no observed responses
+| Encrypted *data* channel. Handles `unlock_channel` (separate unlock from D5) and `get_async`. The full sensor state response and all push notifications (`msg_types:2` props updates and `msg_types:1` diagnostic_status updates) arrive here.
 
 | *D7*
-| _Not present_
-| Open channel - accepts writes, no observed responses
+| Open pre-auth diagnostic channel. `get_async` works without unlock and returns a smaller subset (model, door, uptime, wlan_id). The official app uses this for the initial probe before bonding. The integration discovers it but doesn't currently use it post-bond.
 
 | *D8*
-| _Not present_
-| Open channel - accepts writes, no observed responses
+| Subscribed by the app but never receives meaningful data. Not used by this integration.
 |===
 
-NOTE: Firmware versions are model-dependent, not simply split by appliance category. The Sub-Zero 313 fridge and Wolf SO3050PESP wall oven both run API 5.4 / fw 8.5, while the Sub-Zero IW30R wine fridge, Cove dishwashers, and Wolf ranges run API 5.5 / fw 2.27.
+NOTE: We've previously misdiagnosed "fw 8.5 unlock session expiry" as the root cause of silent poll failures on wall ovens and 313 fridges. The actual cause was polling D5 (the control channel) instead of D6 (the data channel). D6 returns full state on demand on both firmware versions with no session expiry behavior. The push-only / subscribe-retry workarounds we previously needed are gone.
+
+=== Firmware Versions
+
+| Firmware | API | Models | Indication Fragment Size | CCCD Property |
+|----------|-----|--------|--------------------------|---------------|
+| fw 8.5 | API 5.4 | Sub-Zero 313, Wolf SO3050PESP, DEU2450R | ~40 bytes (fragmented) | INDICATE only (0x2A) |
+| fw 2.27 | API 5.5 | Wolf DF36450GSP, Cove DW2450, Sub-Zero IW30R | ~244 bytes (mostly single-fragment) | NOTIFY + INDICATE (0x3E) |
+
+The fragment size difference matters because fw 8.5 is more sensitive to the ESP-IDF Bluedroid HCI bug (see <<ACL Fragment Drops>> below). The CCCD property difference matters because the official app writes 0x0001 (notifications) on fw 2.27 vs 0x0002 (indications) on fw 8.5. Our integration writes 0x0002 universally - safe on both firmware versions, since fw 2.27 chars also support indications.
 
 == Connection & Authentication Flow
 
-The full handshake follows these steps (shown for dishwashers/ranges where D5 is the command channel):
+The full handshake (identical across firmware versions and appliance types):
 
 [source]
 ----
@@ -70,7 +71,7 @@ The full handshake follows these steps (shown for dishwashers/ranges where D5 is
     |                                 |
     +---- BLE Connect --------------->|
     |                                 |
-    |<--- Service Discovery ----------|  (only D4 visible initially)
+    |<--- Service Discovery ----------|  (D5 not visible until after bonding)
     |                                 |
     +---- Request Encryption -------->|  esp_ble_set_encryption(MITM)
     |                                 |
@@ -81,27 +82,23 @@ The full handshake follows these steps (shown for dishwashers/ranges where D5 is
     |                                 |
     +---- GATT Cache Refresh -------->|  esp_ble_gattc_cache_refresh()
     |                                 |
-    |<--- Service Re-discovery -------|  (D5 now visible!)
+    |<--- Service Re-discovery -------|  (D5 + D6 now visible)
     |                                 |
-    +--- Subscribe D5 (indications) ->|  CCCD = 0x0200
-    +--- Subscribe D4 (indications) ->|
+    +--- Subscribe D5 (indications) ->|  CCCD = 0x0002 (indications)
+    +--- Subscribe D6 (indications) ->|  CCCD = 0x0002 (indications)
     |                                 |
-    +---- unlock_channel ------------>|  {"cmd":"unlock_channel","params":{"pin":"XXXXXX"}}\n
-    |<--- PIN response ---------------|  {"status": 0, "resp": {"pin": "XXXXXX"}}
+    +---- unlock_channel D5 -------->|  {"cmd":"unlock_channel","params":{"pin":"XXXXXX"}}\n
+    |<--- PIN response on D5 ---------|  {"status": 0, "resp": {"pin": "XXXXXX"}}
+    +---- unlock_channel D6 -------->|  same payload, separate unlock per channel
+    |<--- PIN response on D6 ---------|  {"status": 0, "resp": {"pin": "XXXXXX"}}
     |                                 |
-    +---- get_async ----------------->|  {"cmd":"get_async"}\n
-    |<--- Full JSON state ------------|  (fragmented across indications)
+    +---- get_async on D6 ----------->|  {"cmd":"get_async"}\n
+    |<--- Full JSON state on D6 -----|  (fragmented across indications)
     |                                 |
+    [steady state: pushes arrive on D6 with msg_types:2 / msg_types:1]
 ----
 
-=== Refrigerator Differences
-
-Fridges follow the same connection and bonding flow, but command/response routing differs:
-
-* *D4 polling:* `get_async` on *D4* works without an unlock and returns basic diagnostic data (model, door status, uptime) but not the full sensor state.
-* *D5 polling:* `get_async` on *D5* returns the full sensor state (set temperatures, ice maker status, sabbath mode, wine zones, etc.) *after a successful `unlock_channel`*. The unlock session expires after some time. On fw 2.27 / API 5.5 appliances the window is roughly 20-25 minutes; on fw 8.5 / API 5.4 appliances (Sub-Zero 313 fridge, Wolf SO3050PESP wall oven, etc.) it expires within ~1 minute. After expiry, writes to D5 are still accepted (GATT write status 0) but produce no indication response. Re-sending `unlock_channel` does *not* restore the session on fw 8.5 - a full BLE reconnect is required. The integration detects this by tracking poll-response timeouts independently from push activity; see link:advanced.adoc#reconnect-logic[Reconnect Logic] for details.
-* *Push notifications:* Full sensor data also arrives via *D5 push notifications* triggered by state changes on the appliance. Push notifications continue even after the unlock session expires (they are CCCD-based, not session-based).
-* *Push mirroring:* Fridges send each push notification on *both* D4 (`msg_types: 8`) and D5 (`msg_types: 2`) simultaneously with identical `props` content.
+D5 needs its own `unlock_channel` write before the appliance accepts control commands (display_pin, set, scan) on it. D6 needs its own `unlock_channel` write before the appliance answers `get_async` or sends push notifications on it. The official app sends both unlocks back-to-back with the same PIN, and so do we.
 
 === Key Protocol Details
 
@@ -112,26 +109,21 @@ NOTE: Sub-Zero's BLE module seems to only support Legacy Pairing, *not* BLE Secu
 After the first successful bond, the keys are stored and reconnection is automatic.
 If the bond becomes stale (e.g. appliance-side timeout overnight), the integration detects repeated auth failures (3 attempts) and automatically clears the stale bond, then re-pairs from scratch.
 
-Command Framing:: Every command written to D5 *must* end with a newline character (`\n`).
+Command Framing:: Every command (D5 control or D6 data) *must* end with a newline character (`\n`).
 The appliance's serial parser silently discards any command without it.
 
-Response Fragmentation:: The appliance sends JSON responses as BLE indications, fragmented into chunks.
-Fridges fragment at ~40 bytes per indication on both D4 and D5 (30-45 fragments for a full poll response), while dishwashers and ranges use larger ~244 byte fragments on D5 (7-8 fragments for a ~1600-1736 byte response).
-The receiver must buffer and reassemble these fragments by tracking JSON brace depth (`{` / `}`) to detect message completion.
+Response Fragmentation:: The appliance sends responses as BLE indications, fragmented into chunks.
+fw 8.5 appliances fragment at ~40 bytes per indication (50+ fragments for a ~2 KB poll response). fw 2.27 appliances use ~244 byte fragments (most pushes fit in a single indication).
+The receiver buffers and reassembles by tracking JSON brace depth (`{` / `}`) to detect message completion.
 
-Push Notifications:: In addition to polled responses (`{"status":0,"resp":{...}}`), appliances send real-time push notifications for state changes (e.g. door open/close, temperature change, light toggle).
-These use the format `{"seq":N,"props":{...},"msg_types":M}` where `msg_types` indicates the channel:
+Push Notifications:: Appliances send real-time push notifications for state changes (door open/close, temperature change, light toggle, etc.) on D6. Format: `{"seq":N,"props":{...},"msg_types":M}` (or `{"diagnostic_status":"...","msg_types":1}` for diagnostic_status updates).
 +
-* `msg_types: 2` - D5 (encrypted channel)
-* `msg_types: 8` - D4 (open channel, fridges only)
-+
-The parser handles both poll and push formats, extracting sensor data from `"resp"` (polls) or `"props"` (pushes).
+The appliance also broadcasts a duplicate copy of every D6 push on D5. We deliberately ignore those copies in the D5 notification handler (it doesn't feed the JSON buffer) to prevent the same push from being parsed twice and corrupting the buffer with duplicated bytes.
 
-D5 Discovery Timing:: On refrigerators, the encrypted D5 characteristic is *not visible* in the GATT database until after bonding completes.
-The implementation must refresh the GATT cache (`esp_ble_gattc_cache_refresh`) and re-run service discovery after encryption is established.
-The code polls up to three times with delays to handle timing variations across different appliance models.
+D5 + D6 Discovery Timing:: The encrypted D5 and D6 characteristics are not visible in the initial GATT database - they only appear after BLE bonding completes.
+The implementation requests encryption, refreshes the GATT cache (`esp_ble_gattc_cache_refresh`), and re-runs service discovery to make them visible. The code polls up to three times with delays to handle timing variations across different appliance models.
 +
-NOTE: Cove dishwashers expose D5 in the GATT database *before* bonding, but still require BLE-level encryption for writes (GATT status 5 = insufficient authentication without it). The code always requests encryption regardless of when D5 is discovered.
+NOTE: Cove dishwashers expose D5/D6 in the GATT database *before* bonding, but still require BLE-level encryption for writes (GATT status 5 = insufficient authentication without it). The code always requests encryption regardless of when D5 is discovered.
 
 MTU:: Negotiated to 517 bytes, though the appliance still fragments at ~40 bytes per indication (fridges) or ~244 bytes (dishwashers/ranges).
 
@@ -152,57 +144,30 @@ On appliances whose full-state response reliably hits the ACL bug (wall ovens, 3
 +
 Any raw-buffer content that reaches ESPHome's logger (the debug-mode `Response[N/M]:` chunks, the `Parse failed...` preview) is pre-sanitized: bytes outside the printable-ASCII range `0x20..0x7E` are replaced with `?`. Non-UTF-8 bytes in an API log message crash Home Assistant's protobuf decoder the same way they used to crash it via the retired `Raw JSON` text sensor, and HA caches the bad event. Sanitization keeps the log channel safe without touching what the parser actually sees.
 
-== Unlock Session Research (fw 8.5)
-
-The unlock session expiry on fw 8.5 appliances is short (~1 minute, vs. ~20 minutes on fw 2.27) and the only recovery is a full BLE reconnect. Re-sending `unlock_channel` on the existing connection produces no response. We investigated the official Sub-Zero Android app (v4.5.1, decompiled APK) to see if it solves this differently.
-
-**Findings from the APK** (`apk-subzero-4.5.1/lib/arm64-v8a/libapp.so`):
-
-* **No keepalive/ping command exists.** Initial Smali references to `PingMessage` / `_WebSocketPing` / `_cleanupPingTimer` turned out to be Dart's `dart:io` WebSocket framework boilerplate (used for cloud/MQTT comms, not BLE). The compiled Dart binary contains no `{"cmd":"ping"}`-style verb. The `keepAliveIntervalInMilliseconds` field in the per-appliance metadata is the BLE *connection interval* (link-layer parameter), not a JSON command.
-* **The full BLE command set is exactly six verbs.** `unlock_channel`, `get_async`, `display_pin`, `set` (write properties), `scan` (Wi-Fi scan), `reset_air_filter`. No hidden seventh command refreshes the session.
-* **The Android app's strategy is push-driven, not poll-driven.** Strings in the binary include `_startPropertyPolling` / `_stopPropertyPolling` and the message *"Async channel is open, stopping property polling"*. The app polls briefly on connect until indications start flowing, then *stops polling* and relies on push notifications (CCCD-based, not session-based) for live state changes thereafter. Mobile apps then naturally get a fresh unlock window each time the user re-opens the app, because the connection is torn down and remade.
-
-**Implication for an always-on integration:** there is no protocol-level fix. fw 8.5 unlock-session expiry is a hard constraint enforced by the appliance firmware. The integration matches the official app's strategy via the optional `push_only_after_first_poll` substitution (see link:advanced.adoc#reconnect-logic[Reconnect Logic]) - poll once on connect, then stop, rely on pushes. This trades stale poll-only sensors (model, uptime, version, sabbath_on) for zero BLE churn.
-
 == Command Reference
 
-Commands are JSON objects terminated with `\n`. The target characteristic depends on the appliance type and command.
-
-=== Dishwashers & Ranges
-
-All commands are written to *D5*. Responses arrive as D5 indications.
-
-[cols="1,2,2"]
-|===
-| Command | Payload | Response
-
-| `display_pin` | `{"cmd":"display_pin","params":{"duration": 30}}\n` | Displays PIN on appliance for 30 seconds
-| `unlock_channel` | `{"cmd":"unlock_channel","params":{"pin":"XXXXXX"}}\n` | `{"status": 0, "resp": {"pin": "XXXXXX"}}`
-| `get_async` | `{"cmd":"get_async"}\n` | Full appliance state as JSON (see <<Example Responses>>)
-|===
-
-=== Refrigerators
-
-Fridges use different channels for different operations:
+Commands are JSON objects terminated with `\n`. The full command set per the official app's binary is six verbs: `unlock_channel`, `get_async`, `display_pin`, `set` (write properties), `scan` (Wi-Fi scan), `reset_air_filter`. There is no keepalive/ping verb.
 
 [cols="1,1,2,2"]
 |===
 | Command | Channel | Payload | Response
 
-| `get_async` | *D4* | `{"cmd":"get_async"}\n` | Basic diagnostic data, no unlock needed (see <<D4 Response>>)
-| `unlock_channel` | *D5* | `{"cmd":"unlock_channel","params":{"pin":"XXXXXX"}}\n` | `{"status": 0, "resp": {"pin": "XXXXXX"}}` (after successful unlock)
-| `get_async` | *D5* | `{"cmd":"get_async"}\n` | Full appliance state (requires prior `unlock_channel`; session expires after some time)
-| `display_pin` | D5 | `{"cmd":"display_pin","params":{"duration": 30}}\n` | Displays PIN on appliance display
+| `unlock_channel` | *D5 + D6* | `{"cmd":"unlock_channel","params":{"pin":"XXXXXX"}}\n` | `{"status":0,"resp":{"pin":"XXXXXX"}}` on whichever channel was written. Each channel needs its own unlock.
+| `get_async` | *D6* | `{"cmd":"get_async"}\n` | Full appliance state as JSON (see <<Example Responses>>)
+| `display_pin` | *D5* | `{"cmd":"display_pin","params":{"duration": 30}}\n` | `{"status":0,"resp":{}}`. Displays PIN on appliance for 30 seconds.
+| `set` | *D5* | `{"cmd":"set","params":{"<field>":"<value>"}}\n` | `{"status":0,"resp":{}}`. Writes a single property (time, ap_ssid + ap_pass + ap_enc, remote_svc_reg_token, etc.)
+| `scan` | *D5* | `{"cmd":"scan"}\n` | `{"status":0,"resp":{"aps":[{"ap_ssid":"...","ap_enc":3,"ap_rssi":N},...]}}`
+| `reset_air_filter` | *D5* | `{"cmd":"reset_air_filter"}\n` | (untested by this integration)
 |===
 
-NOTE: D5 command responses require an active unlock session. After the session expires (~20-25 minutes), `get_async` writes to D5 are accepted but produce no response. On fridges/wall ovens with fw 8.5, re-sending `unlock_channel` does not restore the session - a full BLE reconnect is required. Push notifications on D5 continue regardless of session state, which is why expiry detection has to track poll responses specifically rather than relying on "any D5 activity". See link:advanced.adoc#reconnect-logic[Reconnect Logic].
+The *open* channel `get_async` (no unlock required) the official app uses for its initial probe is on *D7*, not D4. It returns a much smaller response (model, doors, uptime, wlan_id) than D6's full state. The integration discovers D7 but doesn't currently use it.
 
 [[example-responses]]
 == Example Responses
 
-=== D5 `get_async` Response (Dishwashers & Ranges)
+=== D6 `get_async` Response (Dishwashers & Ranges)
 
-Dishwashers and ranges return their full state in a single `get_async` response on D5.
+Dishwashers and ranges return their full state in a single `get_async` response on D6.
 
 Different appliance types include different properties. Dishwashers use `door_ajar` and have wash-specific properties, while ranges use `cav_door_ajar` with oven-specific `cav_*` and `kitchen_timer*` properties. Each appliance type has its own package file that only includes the relevant sensors.
 
@@ -274,10 +239,10 @@ Different appliance types include different properties. Dishwashers use `door_aj
 ----
 ====
 
-[[d4-response]]
-=== D4 `get_async` Response (Refrigerators)
+[[d7-response]]
+=== D7 `get_async` Response (pre-auth diagnostic)
 
-Fridges respond to `get_async` on D4 with basic diagnostic data. This is a smaller response than what dishwashers/ranges return on D5.
+D7 accepts `get_async` without an unlock and returns a smaller response (model, doors, uptime, wlan_id). The official app uses this for the initial probe before bonding. This integration discovers D7 but doesn't currently use it post-bond.
 
 .French-door fridge/freezer (313) - ~403 bytes
 [%collapsible]
@@ -306,31 +271,39 @@ Fridges respond to `get_async` on D4 with basic diagnostic data. This is a small
 ----
 ====
 
-NOTE: Keys like `ref_set_temp`, `frz_set_temp`, `ice_maker_on`, and `sabbath_on` are *not* included in D4 responses. These are available via D5 `get_async` (with an active unlock session) or D5 push notifications when the appliance state changes.
+NOTE: Keys like `ref_set_temp`, `frz_set_temp`, `ice_maker_on`, and `sabbath_on` are *not* included in D7 responses. These are available via D6 `get_async` (after `unlock_channel` on D6) or D6 push notifications.
 
-=== D5 Push Notification (Refrigerators)
+=== D6 Push Notifications
 
-Sensor data from fridges arrives as push notifications on D5. Each push contains only the fields that changed.
+Sensor changes arrive as push notifications on D6. Each push contains only the fields that changed.
 
-.Door opened
+.Door opened (props update, msg_types:2)
 [source,json]
 ----
 {"msg_types": 2, "seq": 75, "timestamp": "2025-01-23T09:43:54.901", "props": {"ref_door_ajar": true}}
 ----
 
-.Temperature change
+.Temperature change (props update)
 [source,json]
 ----
 {"msg_types": 2, "seq": 80, "props": {"ref_set_temp": 38}}
 ----
 
-The combined set of keys observed across D4 polls and D5 push notifications for fridge/freezer units includes: `ref_door_ajar`, `frz_door_ajar`, `ref_set_temp`, `frz_set_temp`, `ice_maker_on`, `max_ice_on`, `night_ice_on`, `sabbath_on`, `service_required`, `water_filter_gal_remaining`, `water_filter_pct_remaining`, `air_filter_pct_remaining`, `air_filter_on`, `appliance_model`, `uptime`, and others. Refrigerator-only units (no freezer) will not have `frz_*` or `ice_maker_*` keys. Wine storage units include `wine_door_ajar`, `wine_set_temp`, `wine2_set_temp`, and `wine_temp_alert_on`.
+.Diagnostic_status update (msg_types:1)
+[source,json]
+----
+{"diagnostic_status": "0x00000301111", "msg_types": 1, "seq": 113, "timestamp": "2026-04-25T07:31:44.114"}
+----
+
+The combined set of keys observed across D6 polls and pushes for fridge/freezer units includes: `ref_door_ajar`, `frz_door_ajar`, `ref_set_temp`, `frz_set_temp`, `ice_maker_on`, `max_ice_on`, `night_ice_on`, `sabbath_on`, `service_required`, `water_filter_gal_remaining`, `water_filter_pct_remaining`, `air_filter_pct_remaining`, `air_filter_on`, `appliance_model`, `uptime`, and others. Refrigerator-only units (no freezer) will not have `frz_*` or `ice_maker_*` keys. Wine storage units include `wine_door_ajar`, `wine_set_temp`, `wine2_set_temp`, and `wine_temp_alert_on`.
+
+NOTE: The appliance also broadcasts a duplicate copy of every D6 push on D5. Our D5 notification handler ignores the data (does not feed the JSON buffer) to prevent the same push from being parsed twice.
 
 IMPORTANT: Fridge firmware exposes only setpoints (`*_set_temp`) - no actual/measured compartment temperatures are published over BLE. This was confirmed empirically against an IW30R (fw 2.27) by capturing full `get_async` responses across a setpoint change that would drive the compressor; no `*_cur_temp`, `*_actual_temp`, or plain `*_temp` keys appeared in any response. The derived boolean `wine_temp_alert_on` shows the firmware tracks the real value internally, but it is not published. (Wolf ranges, by contrast, do expose `cav_temp` and `cav_probe_temp` as actual measurements distinct from their `*_set_temp` counterparts.)
 
-=== D5 `get_async` Response (Wine Fridge)
+=== D6 `get_async` Response (Wine Fridge)
 
-Wine fridges respond to `get_async` on D5 after a successful `unlock_channel` with their full state, similar to dishwashers and ranges.
+Wine fridges return their full state in a single `get_async` response on D6, same as every other appliance type.
 
 .Sub-Zero wine storage (IW30R)
 [%collapsible]
@@ -359,19 +332,30 @@ Wine fridges respond to `get_async` on D5 after a successful `unlock_channel` wi
 ----
 ====
 
-=== GATT Handle Map (Refrigerator)
+=== GATT Handle Maps
 
-For reference, the GATT handle layout observed on a Sub-Zero 313 fridge/freezer:
+Handle numbers are assigned by the appliance firmware and vary across models. The implementation discovers handles dynamically by UUID suffix, not by hardcoded values.
 
-[cols="1,1,1"]
+.Sub-Zero 313 fridge/freezer (fw 8.5)
+[cols="1,1"]
 |===
-| Characteristic | Handle | Notes
+| Characteristic | Handle
 
-| D5 | 3 | Push notifications, encrypted
-| D6 | 7 | Encrypted, no observed responses
-| D4 | 11 | Open channel, responds to `get_async`
-| D7 | 15 | Open, no observed responses
-| D8 | 19 | Open, no observed responses
+| D5 | 3
+| D6 | 7
+| D4 | 11
+| D7 | 15
+| D8 | 19
 |===
 
-NOTE: Handle numbers are assigned by the appliance firmware and may vary across models. The implementation discovers handles dynamically by UUID suffix, not by hardcoded values.
+.Wolf DF36450GSP range (fw 2.27)
+[cols="1,1"]
+|===
+| Characteristic | Handle
+
+| D4 | 13
+| D7 | 16
+| D8 | 19
+| D5 | 22
+| D6 | 25
+|===

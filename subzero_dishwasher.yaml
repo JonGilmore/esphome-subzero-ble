@@ -128,26 +128,24 @@ button:
     icon: "mdi:bug-play"
     entity_category: diagnostic
     on_press:
-      # Branch on detected firmware - see subzero_range.yaml's equivalent
-      # button for rationale. Dishwashers are predominantly fw 2.27 so the
-      # subscribe path is the common case, but we still branch in case a
-      # future model lands on fw 8.5.
+      # Enable debug mode and poll D6 for a full state dump. D6 returns
+      # full state on demand on both fw 8.5 and fw 2.27.
       - lambda: |-
-          if (id(${prefix}_d5_handle) == 0) {
+          uint16_t d6 = id(${prefix}_d6_handle);
+          if (d6 == 0) {
             id(${prefix}_debug).publish_state("ERROR: Not connected");
             return;
           }
           id(${prefix}_debug_mode) = true;
           id(${prefix}_debug_switch).publish_state(true);
-          if (id(${prefix}_fw_85_detected)) {
-            ESP_LOGI("ble", "[${appliance_name}] Debug poll: forcing reconnect for fresh unlock");
-            id(${prefix}_debug).publish_state("Debug mode ON - reconnecting for fresh poll...");
-            id(${prefix}_appliance)->disconnect();
-          } else {
-            ESP_LOGI("ble", "[${appliance_name}] Debug poll: re-running subscribe");
-            id(${prefix}_debug).publish_state("Debug mode ON - refreshing session...");
-            id(${prefix}_subscribe).execute();
-          }
+          auto *client = id(${prefix}_appliance);
+          std::string cmd = "{\"cmd\":\"get_async\"}\n";
+          esp_err_t err = esp_ble_gattc_write_char(
+            client->get_gattc_if(), client->get_conn_id(),
+            d6, cmd.size(), (uint8_t*)cmd.data(),
+            ESP_GATT_WRITE_TYPE_RSP, ESP_GATT_AUTH_REQ_NONE);
+          ESP_LOGI("ble", "[${appliance_name}] Debug poll D6 err=%d", err);
+          id(${prefix}_debug).publish_state("Debug mode ON - polling for full state...");
 
 script:
   - id: ${prefix}_parse_json
@@ -228,11 +226,4 @@ script:
           if (s.common.version.rtapp)     id(${prefix}_rtapp_version).publish_state(*s.common.version.rtapp);
           if (s.common.version.appliance) id(${prefix}_board_version).publish_state(*s.common.version.appliance);
           id(${prefix}_poll_ok) = true;
-          // Post-parse state-machine mutation. See poll_state.h for invariants.
-          esphome::subzero_protocol::apply_parse_result(
-              id(${prefix}_poll_in_flight),
-              id(${prefix}_unanswered_polls),
-              id(${prefix}_first_poll_done),
-              id(${prefix}_fw_85_detected),
-              id(${prefix}_fast_retries),
-              s);
+          id(${prefix}_fast_retries) = 0;
