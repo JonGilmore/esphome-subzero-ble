@@ -24,6 +24,8 @@
 !components/patch_acl_reassembly/**
 !components/subzero_protocol/
 !components/subzero_protocol/**
+!components/subzero_appliance/
+!components/subzero_appliance/**
 !tests/
 !tests/README.md
 !tests/fixtures/

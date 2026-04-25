@@ -40,6 +40,7 @@ set(JSON_BuildTests OFF CACHE INTERNAL "")
 FetchContent_MakeAvailable(nlohmann_json)
 
 set(PROTOCOL_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../components/subzero_protocol)
+set(APPLIANCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../components/subzero_appliance)
 set(FIXTURES_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../fixtures)
 
 add_library(subzero_protocol STATIC
@@ -47,6 +48,13 @@ add_library(subzero_protocol STATIC
 )
 target_include_directories(subzero_protocol PUBLIC ${PROTOCOL_DIR})
 target_link_libraries(subzero_protocol PUBLIC ArduinoJson)
+
+# Hub library — depends on subzero_protocol for buffer/commands/log_sanitize.
+add_library(subzero_appliance STATIC
+  ${APPLIANCE_DIR}/hub.cpp
+)
+target_include_directories(subzero_appliance PUBLIC ${APPLIANCE_DIR})
+target_link_libraries(subzero_appliance PUBLIC subzero_protocol)
 
 enable_testing()
 
@@ -57,9 +65,11 @@ add_executable(protocol_tests
   commands_test.cpp
   gatt_handles_test.cpp
   dispatch_test.cpp
+  hub_test.cpp
 )
 target_link_libraries(protocol_tests PRIVATE
   subzero_protocol
+  subzero_appliance
   nlohmann_json::nlohmann_json
   GTest::gtest_main
 )
