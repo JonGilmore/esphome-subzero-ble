@@ -223,25 +223,23 @@ button:
     icon: "mdi:bug-play"
     entity_category: diagnostic
     on_press:
-      # Fridges respond to get_async on D4 (open channel).
-      # Full sensor data comes via D5 push notifications - interact with the
-      # appliance (open door, change temp, toggle ice maker) with debug mode on.
+      # Run the full subscribe chain (CCCD on D4 AND D5, unlock on D5,
+      # then get_async on D5). On fw 8.5 fridges the unlock session
+      # silently expires within ~1 minute, so a bare get_async after that
+      # produces no response on EITHER channel - subscribe re-issues
+      # unlock_channel which refreshes the session. Push notifications
+      # via D5 still work after this for live state changes (open door,
+      # change temp, toggle ice maker).
       - lambda: |-
-          uint16_t d4 = id(${prefix}_d4_handle);
-          if (d4 == 0) {
+          if (id(${prefix}_d5_handle) == 0) {
             id(${prefix}_debug).publish_state("ERROR: Not connected");
             return;
           }
           id(${prefix}_debug_mode) = true;
           id(${prefix}_debug_switch).publish_state(true);
-          auto *client = id(${prefix}_appliance);
-          std::string cmd = "{\"cmd\":\"get_async\"}\n";
-          esp_err_t err = esp_ble_gattc_write_char(
-            client->get_gattc_if(), client->get_conn_id(),
-            d4, cmd.size(), (uint8_t*)cmd.data(),
-            ESP_GATT_WRITE_TYPE_RSP, ESP_GATT_AUTH_REQ_NONE);
-          ESP_LOGI("ble", "[${appliance_name}] Debug poll via D4 (h=%d) err=%d", d4, err);
-          id(${prefix}_debug).publish_state("Debug mode ON - polling D4, interact with appliance for full data");
+          ESP_LOGI("ble", "[${appliance_name}] Debug poll: re-running subscribe");
+          id(${prefix}_debug).publish_state("Debug mode ON - refreshing session...");
+      - script.execute: ${prefix}_subscribe
 
 script:
   - id: ${prefix}_parse_json
@@ -344,6 +342,9 @@ script:
           if (s.common.version.rtapp)     id(${prefix}_rtapp_version).publish_state(*s.common.version.rtapp);
           if (s.common.version.appliance) id(${prefix}_board_version).publish_state(*s.common.version.appliance);
           id(${prefix}_poll_ok) = true;
-          id(${prefix}_first_poll_seen) = true;
+          // Clear poll_in_flight only on a real poll response, not on pushes.
+          // Pushes prove the connection is alive but don't prove the poll
+          // command channel is responding.
+          if (s.is_poll) id(${prefix}_poll_in_flight) = false;
           id(${prefix}_fast_retries) = 0;
           buf.clear();

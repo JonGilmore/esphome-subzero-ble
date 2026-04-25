@@ -65,12 +65,16 @@ globals:
   - id: ${prefix}_poll_miss
     type: int
     initial_value: "0"
-  # Set to true the first time a parse succeeds on the current connection
-  # cycle (poll response OR push notification). Cleared on disconnect.
-  # When false, periodic_poll re-runs the full _subscribe chain instead of
-  # just writing get_async, which recovers from boot-time races where the
-  # initial unlock_channel write got dropped under concurrent BLE traffic.
-  - id: ${prefix}_first_poll_seen
+  # Set to true when we write a get_async; cleared when a valid poll
+  # response (`{"status":0,"resp":...}`, parser sets is_poll=true) arrives.
+  # Push notifications do NOT clear it - they're not a response to our
+  # poll. Cleared on disconnect. When still true at the next periodic_poll
+  # tick, the previous poll went unanswered (cold-boot race left the
+  # subscribe chain half-initialized, OR fw 8.5 unlock session expired
+  # silently) and periodic_poll re-runs the full _subscribe chain to
+  # refresh CCCDs + unlock_channel + get_async instead of writing a bare
+  # get_async into the void.
+  - id: ${prefix}_poll_in_flight
     type: bool
     initial_value: "false"
   - id: ${prefix}_debug_mode
@@ -136,7 +140,7 @@ ble_client:
       then:
         - lambda: |-
             id(${prefix}_json_buf).clear();
-            id(${prefix}_first_poll_seen) = false;
+            id(${prefix}_poll_in_flight) = false;
             id(${prefix}_post_bond).stop();
             id(${prefix}_subscribe).stop();
             id(${prefix}_fast_reconnect).stop();
@@ -496,14 +500,21 @@ script:
           id(${prefix}_poll_ok) = false;
           // Clear any stale partial JSON from interrupted previous transfer
           id(${prefix}_json_buf).clear();
-          // Recovery path: if we've never seen a parse on this connection
-          // cycle, the initial subscribe chain probably lost its
-          // unlock_channel write to a concurrent-bonding race at boot.
+          // Recovery path: if poll_in_flight is still set from the previous
+          // tick, the previous get_async went unanswered. Either:
+          //  - cold-boot race: subscribe ran but unlock_channel got lost
+          //    under concurrent BLE traffic, leaving the session
+          //    half-initialized (the appliance never produces ANYTHING)
+          //  - fw 8.5 unlock-session expired (session-based; pushes keep
+          //    flowing but command channel goes silent within ~1 minute)
           // Re-run subscribe (CCCD writes are idempotent, unlock is
-          // re-doable). Once any parse lands, first_poll_seen flips and
-          // we resume normal get_async writes.
-          if (!id(${prefix}_first_poll_seen)) {
-            ESP_LOGW("szg", "[${appliance_name}] No parse since connect - re-running subscribe");
+          // re-doable, get_async will be re-issued at the end). The
+          // unlock_channel response is small (40 bytes, single fragment,
+          // not vulnerable to ACL drops) so it parses cleanly as
+          // is_poll=true and clears poll_in_flight. Once the session is
+          // refreshed, the next periodic tick takes the bare-poll path.
+          if (id(${prefix}_poll_in_flight)) {
+            ESP_LOGW("szg", "[${appliance_name}] Previous poll unanswered - re-running subscribe to refresh session");
             id(${prefix}_subscribe).execute();
             return;
           }
@@ -518,6 +529,7 @@ script:
             client->disconnect();
             return;
           }
+          id(${prefix}_poll_in_flight) = true;
           ESP_LOGI("szg", "[${appliance_name}] Periodic poll (miss=%d, retries=%d)",
             id(${prefix}_poll_miss), id(${prefix}_fast_retries));
 
@@ -778,4 +790,5 @@ script:
             d5, cmd.size(), (uint8_t*)cmd.data(),
             ESP_GATT_WRITE_TYPE_RSP, ESP_GATT_AUTH_REQ_NONE);
           ESP_LOGI("ble", "[${appliance_name}] get_async err=%d", err);
+          if (err == ESP_OK) id(${prefix}_poll_in_flight) = true;
           id(${prefix}_debug).publish_state("Connected and polling.");

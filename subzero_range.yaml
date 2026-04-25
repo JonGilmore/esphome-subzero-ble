@@ -296,23 +296,21 @@ button:
     icon: "mdi:bug-play"
     entity_category: diagnostic
     on_press:
-      # Ranges respond to get_async on D5 with the full state.
+      # Run the full subscribe chain (CCCD + unlock + get_async) instead of
+      # writing get_async directly. On fw 8.5 appliances the unlock session
+      # silently expires within ~1 minute, so a bare get_async after that
+      # gets no response. subscribe re-issues unlock_channel which refreshes
+      # the session, then writes get_async, all in ~1.5s.
       - lambda: |-
-          uint16_t d5 = id(${prefix}_d5_handle);
-          if (d5 == 0) {
+          if (id(${prefix}_d5_handle) == 0) {
             id(${prefix}_debug).publish_state("ERROR: Not connected");
             return;
           }
           id(${prefix}_debug_mode) = true;
           id(${prefix}_debug_switch).publish_state(true);
-          auto *client = id(${prefix}_appliance);
-          std::string cmd = "{\"cmd\":\"get_async\"}\n";
-          esp_err_t err = esp_ble_gattc_write_char(
-            client->get_gattc_if(), client->get_conn_id(),
-            d5, cmd.size(), (uint8_t*)cmd.data(),
-            ESP_GATT_WRITE_TYPE_RSP, ESP_GATT_AUTH_REQ_NONE);
-          ESP_LOGI("ble", "[${appliance_name}] Debug poll via D5 (h=%d) err=%d", d5, err);
-          id(${prefix}_debug).publish_state("Debug mode ON - full state logged");
+          ESP_LOGI("ble", "[${appliance_name}] Debug poll: re-running subscribe");
+          id(${prefix}_debug).publish_state("Debug mode ON - refreshing session...");
+      - script.execute: ${prefix}_subscribe
 
 script:
   - id: ${prefix}_parse_json
@@ -436,6 +434,9 @@ script:
           if (s.common.version.rtapp)     id(${prefix}_rtapp_version).publish_state(*s.common.version.rtapp);
           if (s.common.version.appliance) id(${prefix}_board_version).publish_state(*s.common.version.appliance);
           id(${prefix}_poll_ok) = true;
-          id(${prefix}_first_poll_seen) = true;
+          // Clear poll_in_flight only on a real poll response, not on pushes.
+          // Pushes prove the connection is alive but don't prove the poll
+          // command channel is responding.
+          if (s.is_poll) id(${prefix}_poll_in_flight) = false;
           id(${prefix}_fast_retries) = 0;
           buf.clear();

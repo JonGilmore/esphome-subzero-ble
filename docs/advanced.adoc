@@ -128,13 +128,21 @@ The integration runs a periodic poll every 60 seconds against each bonded applia
 
 This catches cases where the BLE link has died entirely. It intentionally does *not* try to distinguish "poll silently unanswered" from "appliance is quiet" - past attempts at a tighter signal caused pointless reconnect loops on fw 8.5 appliances whose polls sometimes fail to reassemble (see link:ble-protocol.adoc#_key_protocol_details[ACL Fragment Drops]) while pushes keep flowing.
 
-=== Subscribe Retry on Stuck Connection
+=== Subscribe Retry on Stale Unlock or Stuck Boot
 
-When multiple appliances all reconnect simultaneously at boot, the ESP-IDF Bluedroid stack occasionally drops one peer's `unlock_channel` write under the concurrent traffic. That appliance ends up bonded, with CCCDs subscribed and the `get_async` written successfully at the BLE layer (status 0), but the appliance never responds because its session was never unlocked. The connection looks alive at every layer below the protocol.
+Two distinct conditions land the same appliance in the same state - bonded and connected at the GATT layer, but the command channel goes silent:
 
-`first_poll_seen` is a per-appliance bool, cleared on disconnect, set to `true` whenever any parse succeeds (poll OR push). When `periodic_poll` fires and finds it still `false`, instead of writing a bare `get_async` it re-runs the full `_subscribe` script - which re-writes the CCCDs and re-issues `unlock_channel` followed by `get_async`. CCCD writes are idempotent and `unlock_channel` is re-doable, so this is safe to repeat. As soon as one parse lands, `first_poll_seen` flips and the periodic poll resumes its normal write cadence.
+1. **Cold-boot race.** When multiple appliances reconnect simultaneously at boot, the ESP-IDF Bluedroid stack occasionally drops one peer's `unlock_channel` write under the concurrent traffic. That appliance ends up subscribed and `get_async`-written at the BLE layer (status 0), but never responds because its session was never unlocked.
 
-This is bounded retry, not a reconnect loop: it keeps the connection (the underlying GATT bond is fine), it just nudges the protocol-layer handshake until the appliance responds. Worst case it runs once every 60s on a permanently-stuck appliance until the 15-minute zombie threshold gives up and forces a full reconnect.
+2. **fw 8.5 unlock-session expiry.** Sub-Zero fridges and wall ovens running fw 8.5 / API 5.4 silently invalidate the unlock session within ~1 minute (much shorter than the 20-25 minute window observed on other firmware). After that, `get_async` writes on D5 are accepted at the BLE layer but produce no indication response, even though push notifications keep flowing.
+
+`poll_in_flight` is a per-appliance bool, cleared on disconnect, set to `true` whenever a `get_async` is written (in `subscribe` or `periodic_poll`), and cleared only by a valid poll response (`{"status":0,"resp":...}`, parser sets `is_poll=true`). Push notifications do **not** clear it - they prove the connection is alive but don't prove the command channel is responding.
+
+When `periodic_poll` fires and finds `poll_in_flight` still `true` from the previous tick, the previous poll went unanswered. Instead of writing another bare `get_async` into the void, it runs `_subscribe.execute()` - which re-writes CCCDs (idempotent), re-issues `unlock_channel`, and writes `get_async` again. The `unlock_channel` response is small (40 bytes, single fragment, not vulnerable to ACL drops) so it parses cleanly and clears `poll_in_flight`. Next tick takes the bare-poll path again.
+
+For the false-positive scenario the prior unlock-expiry detector hit (a push interleaving with a poll on fw 8.5 makes the poll's brace-balance never reach zero, so we never get an `is_poll=true` parse): re-running subscribe is the right response anyway. It refreshes the session and the next attempt either succeeds or repeats the cycle - no reconnect loop, no false positives.
+
+The `Log Debug Info` button on each appliance also calls `_subscribe.execute()` for the same reason: a bare `get_async` from the button doesn't work on a stale-unlock fw 8.5 appliance. Going through subscribe refreshes the session first.
 
 === Boot Stagger via `poll_offset`
 
@@ -145,12 +153,12 @@ This is bounded retry, not a reconnect loop: it keeps the connection (the underl
 [source]
 ----
 [I][szg:XXX]: [Left Dishwasher] Periodic poll (miss=2, retries=0)
-[W][szg:XXX]: [Kitchen Range] No parse since connect - re-running subscribe
+[W][szg:XXX]: [Wall Oven] Previous poll unanswered - re-running subscribe to refresh session
 ----
 
 * `miss` - zombie counter (0-15, reconnect at 15 = 15 min of total silence)
 * `retries` - fast-reconnect retry counter (0-3, bond clear at 3; see below)
-* `No parse since connect` - subscribe-retry path firing (Option B); will keep firing once per poll until the appliance responds or zombie kicks in
+* `Previous poll unanswered` - subscribe-retry path firing (poll_in_flight stayed `true` across a tick); on fw 8.5 appliances this is normal once per ~minute as the unlock session refreshes
 
 === Fast Reconnect + Bond Clear
 
