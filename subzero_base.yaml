@@ -489,15 +489,22 @@ script:
           auto *client = id(${prefix}_appliance);
           if (!client->connected()) return;
           // Zombie detection: if no notifications (poll responses or pushes)
-          // arrived during the last poll interval, count as a miss. After
-          // 15 consecutive misses (~30 min at 120s interval), force a
-          // reconnect via auto_connect.
+          // arrived during the last poll interval, count as a miss. Each
+          // periodic_poll writes BOTH unlock_channel AND get_async to D6;
+          // either's response (~37 bytes for unlock, ~2 KB for get_async)
+          // sets poll_ok in the D6 notify handler. So if 3 consecutive
+          // misses happen (~3 min at 60s interval), the appliance is
+          // genuinely unresponsive (stuck serial parser, or the BLE link
+          // is wedged) - force a reconnect via auto_connect. Catches the
+          // boot-time race where two appliances bond simultaneously and
+          // one ends up in a half-initialized state where writes succeed
+          // but no indications come back.
           if (id(${prefix}_poll_ok)) {
             id(${prefix}_poll_miss) = 0;
           } else {
             id(${prefix}_poll_miss) += 1;
-            if (id(${prefix}_poll_miss) >= 15) {
-              ESP_LOGW("szg", "[${appliance_name}] Connection stale (%d intervals, no data), forcing reconnect",
+            if (id(${prefix}_poll_miss) >= 3) {
+              ESP_LOGW("szg", "[${appliance_name}] Appliance unresponsive (%d intervals, no data), forcing reconnect",
                 id(${prefix}_poll_miss));
               id(${prefix}_poll_miss) = 0;
               id(${prefix}_json_buf).clear();
