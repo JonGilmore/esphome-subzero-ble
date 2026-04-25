@@ -297,6 +297,9 @@ TIP: Sub-Zero appliance BLE MAC addresses typically start with `00:06:80`. You c
 | *Auth failures overnight (auth fail reason=102)*
 | The BLE bond went stale. The integration automatically detects this after 3 consecutive failures, clears the old bond, and re-pairs. No action needed.
 
+| *Most sensors stuck at "unknown" / Status sensor reads "Pairing required"*
+| The appliance returned `status: 302` to the unlock attempt. This usually means its PIN rotated - some appliances assign a new pairing key after a power cycle, factory reset, or when the official app re-pairs. Press the *Start Pairing* button for that appliance in HA, watch the appliance display for the new 6-digit PIN, then enter it into the appliance's *PIN* text input in HA. The next poll cycle will pick up full state. (You'll also see `[szg:###]: [Appliance] Pairing rejected (status 302)` in the ESPHome logs.)
+
 | *Sensors stop updating on a fridge or wall oven after ~20-25 min*
 | The BLE unlock session on fw 8.5 appliances expires after ~20-25 min. Poll responses stop, but push notifications continue. Zombie detection kicks in after 15 minutes of total silence (no polls AND no pushes) and forces a reconnect. If only polls fall silent while pushes keep arriving, the integration waits for the next state change to land, then catches up on the following reconnect cycle. See link:docs/advanced.adoc#reconnect-logic[Reconnect Logic].
 

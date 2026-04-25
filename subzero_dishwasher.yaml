@@ -140,6 +140,15 @@ script:
           }
           auto s = esphome::subzero_protocol::parse_dishwasher(*msg);
           if (!s.valid) {
+            // status 302 = appliance rejected unlock_channel because its
+            // pairing window is closed. Most often happens after a power
+            // cycle that rotated the PIN. User must press Start Pairing
+            // and re-enter the PIN now shown on the appliance.
+            if (msg->find("\"status\":302") != std::string::npos) {
+              ESP_LOGE("szg", "[${appliance_name}] Pairing rejected (status 302). The PIN has likely changed - press 'Start Pairing' on the appliance and enter the new PIN in HA.");
+              id(${prefix}_debug).publish_state("Pairing required - press Start Pairing and re-enter PIN");
+              return;
+            }
             ESP_LOGW("szg", "[${appliance_name}] Parse failed or status!=0, skipping (%s...)",
                      esphome::subzero_protocol::sanitize_for_log(*msg, 0, std::min<size_t>(80, msg->size())).c_str());
             return;
