@@ -122,26 +122,6 @@ globals:
     type: std::string
     restore_value: false
 
-button:
-  - platform: template
-    name: "${appliance_name} Log Debug Info"
-    icon: "mdi:bug-play"
-    entity_category: diagnostic
-    on_press:
-      # Force a reconnect - auto_connect brings the connection back via
-      # post_bond + subscribe with a fresh unlock + full-state poll.
-      # See subzero_fridge.yaml for the rationale.
-      - lambda: |-
-          if (id(${prefix}_d6_handle) == 0) {
-            id(${prefix}_debug).publish_state("ERROR: Not connected");
-            return;
-          }
-          id(${prefix}_debug_mode) = true;
-          id(${prefix}_debug_switch).publish_state(true);
-          ESP_LOGI("ble", "[${appliance_name}] Log Debug Info: forcing reconnect for fresh unlock");
-          id(${prefix}_debug).publish_state("Debug mode ON - reconnecting for fresh poll...");
-          id(${prefix}_appliance)->disconnect();
-
 script:
   - id: ${prefix}_parse_json
     mode: single

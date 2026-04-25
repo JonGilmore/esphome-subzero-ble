@@ -188,32 +188,6 @@ binary_sensor:
     icon: "mdi:air-filter"
     internal: ${hide_air_filter}
 
-button:
-  - platform: template
-    name: "${appliance_name} Log Debug Info"
-    icon: "mdi:bug-play"
-    entity_category: diagnostic
-    on_press:
-      # Enable debug mode, then force a disconnect. auto_connect brings
-      # the connection back via post_bond + subscribe, which lands a
-      # fresh full-state get_async response. ~10-15s to a chunked debug
-      # log. We disconnect (rather than just re-running subscribe) because
-      # fw 8.5 appliances cannot refresh their unlock session on a live
-      # connection - the only way to unstick them is a full reconnect
-      # (verified via official app HCI snoop). fw 2.27 doesn't strictly
-      # need the disconnect, but doing it uniformly keeps the code simple
-      # and the extra ~10s wait is acceptable for a manual debug button.
-      - lambda: |-
-          if (id(${prefix}_d6_handle) == 0) {
-            id(${prefix}_debug).publish_state("ERROR: Not connected");
-            return;
-          }
-          id(${prefix}_debug_mode) = true;
-          id(${prefix}_debug_switch).publish_state(true);
-          ESP_LOGI("ble", "[${appliance_name}] Log Debug Info: forcing reconnect for fresh unlock");
-          id(${prefix}_debug).publish_state("Debug mode ON - reconnecting for fresh poll...");
-          id(${prefix}_appliance)->disconnect();
-
 script:
   - id: ${prefix}_parse_json
     mode: single
