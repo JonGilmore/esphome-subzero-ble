@@ -30,6 +30,14 @@ substitutions:
 packages:
   base: !include subzero_base.yaml
 
+# Sensor-publishing bus for the range dispatcher. Pointers populated in
+# on_boot below; dispatch_range() in parse_json then routes every parsed-
+# state field to the right entity.
+globals:
+  - id: ${prefix}_bus
+    type: esphome::subzero_protocol::RangeBus
+    restore_value: false
+
 esphome:
   on_boot:
     - priority: -100
@@ -37,6 +45,65 @@ esphome:
         - lambda: |-
             id(${prefix}_ktimer_end_time).publish_state("");
             id(${prefix}_ktimer2_end_time).publish_state("");
+            auto& b = id(${prefix}_bus);
+            // Common (declared in subzero_base.yaml)
+            b.svc_required = id(${prefix}_svc_required);
+            b.model = id(${prefix}_model);
+            b.uptime = id(${prefix}_uptime);
+            b.serial = id(${prefix}_serial);
+            b.appliance_type = id(${prefix}_appliance_type);
+            b.diag_status = id(${prefix}_diag_status);
+            b.build_date = id(${prefix}_build_date);
+            b.fw_version = id(${prefix}_fw_version);
+            b.api_version = id(${prefix}_api_version);
+            b.bleapp_version = id(${prefix}_bleapp_version);
+            b.os_version = id(${prefix}_os_version);
+            b.rtapp_version = id(${prefix}_rtapp_version);
+            b.board_version = id(${prefix}_board_version);
+            b.door_ajar = id(${prefix}_door_ajar);
+            b.sabbath_on = id(${prefix}_sabbath_on);
+            // Primary cavity
+            b.cav_unit_on = id(${prefix}_cav_unit_on);
+            b.cav_at_set_temp = id(${prefix}_cav_at_set_temp);
+            b.cav_light_on = id(${prefix}_cav_light_on);
+            b.cav_remote_ready = id(${prefix}_cav_remote_ready);
+            b.cav_probe_on = id(${prefix}_cav_probe_on);
+            b.cav_probe_at_temp = id(${prefix}_cav_probe_at_temp);
+            b.cav_probe_near = id(${prefix}_cav_probe_near);
+            b.cav_gourmet = id(${prefix}_cav_gourmet);
+            b.cook_timer_done = id(${prefix}_cook_timer_done);
+            b.cook_timer_near = id(${prefix}_cook_timer_near);
+            b.cav_temp = id(${prefix}_cav_temp);
+            b.cav_set_temp = id(${prefix}_cav_set_temp);
+            b.cav_cook_mode = id(${prefix}_cav_cook_mode);
+            b.cav_gourmet_recipe = id(${prefix}_cav_gourmet_recipe);
+            b.probe_temp = id(${prefix}_probe_temp);
+            b.probe_set_temp = id(${prefix}_probe_set_temp);
+            // Kitchen timers
+            b.ktimer_active = id(${prefix}_ktimer_active);
+            b.ktimer_done = id(${prefix}_ktimer_done);
+            b.ktimer_near = id(${prefix}_ktimer_near);
+            b.ktimer2_active = id(${prefix}_ktimer2_active);
+            b.ktimer2_done = id(${prefix}_ktimer2_done);
+            b.ktimer2_near = id(${prefix}_ktimer2_near);
+            b.ktimer_end_time = id(${prefix}_ktimer_end_time);
+            b.ktimer2_end_time = id(${prefix}_ktimer2_end_time);
+            // Secondary cavity (dual-oven; entities exist even when hidden)
+            b.cav2_unit_on = id(${prefix}_cav2_unit_on);
+            b.cav2_door_ajar = id(${prefix}_cav2_door_ajar);
+            b.cav2_at_set_temp = id(${prefix}_cav2_at_set_temp);
+            b.cav2_light_on = id(${prefix}_cav2_light_on);
+            b.cav2_remote_ready = id(${prefix}_cav2_remote_ready);
+            b.cav2_probe_on = id(${prefix}_cav2_probe_on);
+            b.cav2_probe_at_temp = id(${prefix}_cav2_probe_at_temp);
+            b.cav2_probe_near = id(${prefix}_cav2_probe_near);
+            b.cav2_gourmet = id(${prefix}_cav2_gourmet);
+            b.cav2_cook_timer_done = id(${prefix}_cav2_cook_timer_done);
+            b.cav2_temp = id(${prefix}_cav2_temp);
+            b.cav2_set_temp = id(${prefix}_cav2_set_temp);
+            b.cav2_cook_mode = id(${prefix}_cav2_cook_mode);
+            b.cav2_probe_temp = id(${prefix}_cav2_probe_temp);
+            b.cav2_probe_set_temp = id(${prefix}_cav2_probe_set_temp);
 sensor:
   - platform: template
     name: "${appliance_name} Oven Temperature"
@@ -325,7 +392,8 @@ script:
             for (const auto &k : s.data_keys)
               ESP_LOGI("szg-debug", "[${appliance_name}] key=%s", k.c_str());
           }
-          // PIN confirmation (unlock_channel response)
+          // PIN confirmation (unlock_channel response). Stays in YAML -
+          // see subzero_fridge.yaml's parse_json comment.
           if (s.common.pin_confirmed) {
             const std::string &pin = *s.common.pin_confirmed;
             id(${prefix}_stored_pin) = pin;
@@ -334,62 +402,9 @@ script:
             ESP_LOGI("szg", "[${appliance_name}] PIN confirmed: %s", pin.c_str());
             id(${prefix}_debug).publish_state("PIN confirmed! Channel unlocked.");
           }
-          if (s.door_ajar) id(${prefix}_door_ajar).publish_state(*s.door_ajar);
-          // --- Range / Oven sensors ---
-          if (s.cav_unit_on)                id(${prefix}_cav_unit_on).publish_state(*s.cav_unit_on);
-          if (s.cav_at_set_temp)            id(${prefix}_cav_at_set_temp).publish_state(*s.cav_at_set_temp);
-          if (s.cav_light_on)               id(${prefix}_cav_light_on).publish_state(*s.cav_light_on);
-          if (s.cav_remote_ready)           id(${prefix}_cav_remote_ready).publish_state(*s.cav_remote_ready);
-          if (s.cav_probe_on)               id(${prefix}_cav_probe_on).publish_state(*s.cav_probe_on);
-          if (s.cav_probe_at_set_temp)      id(${prefix}_cav_probe_at_temp).publish_state(*s.cav_probe_at_set_temp);
-          if (s.cav_probe_within_10deg)     id(${prefix}_cav_probe_near).publish_state(*s.cav_probe_within_10deg);
-          if (s.cav_gourmet_mode_on)        id(${prefix}_cav_gourmet).publish_state(*s.cav_gourmet_mode_on);
-          if (s.cav_gourmet_recipe)         id(${prefix}_cav_gourmet_recipe).publish_state(*s.cav_gourmet_recipe);
-          if (s.cav_cook_timer_complete)    id(${prefix}_cook_timer_done).publish_state(*s.cav_cook_timer_complete);
-          if (s.cav_cook_timer_within_1min) id(${prefix}_cook_timer_near).publish_state(*s.cav_cook_timer_within_1min);
-          if (s.kitchen_timer_active)       id(${prefix}_ktimer_active).publish_state(*s.kitchen_timer_active);
-          if (s.kitchen_timer_complete)     id(${prefix}_ktimer_done).publish_state(*s.kitchen_timer_complete);
-          if (s.kitchen_timer_within_1min)  id(${prefix}_ktimer_near).publish_state(*s.kitchen_timer_within_1min);
-          if (s.kitchen_timer_end_time)     id(${prefix}_ktimer_end_time).publish_state(*s.kitchen_timer_end_time);
-          if (s.kitchen_timer2_active)      id(${prefix}_ktimer2_active).publish_state(*s.kitchen_timer2_active);
-          if (s.kitchen_timer2_complete)    id(${prefix}_ktimer2_done).publish_state(*s.kitchen_timer2_complete);
-          if (s.kitchen_timer2_within_1min) id(${prefix}_ktimer2_near).publish_state(*s.kitchen_timer2_within_1min);
-          if (s.kitchen_timer2_end_time)    id(${prefix}_ktimer2_end_time).publish_state(*s.kitchen_timer2_end_time);
-          if (s.cav_temp)                   id(${prefix}_cav_temp).publish_state(*s.cav_temp);
-          if (s.cav_set_temp)               id(${prefix}_cav_set_temp).publish_state(*s.cav_set_temp);
-          if (s.cav_cook_mode)              id(${prefix}_cav_cook_mode).publish_state(*s.cav_cook_mode);
-          if (s.cav_probe_temp)             id(${prefix}_probe_temp).publish_state(*s.cav_probe_temp);
-          if (s.cav_probe_set_temp)         id(${prefix}_probe_set_temp).publish_state(*s.cav_probe_set_temp);
-          // --- Oven 2 (dual-oven ranges) ---
-          if (s.cav2_door_ajar)           id(${prefix}_cav2_door_ajar).publish_state(*s.cav2_door_ajar);
-          if (s.cav2_unit_on)             id(${prefix}_cav2_unit_on).publish_state(*s.cav2_unit_on);
-          if (s.cav2_at_set_temp)         id(${prefix}_cav2_at_set_temp).publish_state(*s.cav2_at_set_temp);
-          if (s.cav2_light_on)            id(${prefix}_cav2_light_on).publish_state(*s.cav2_light_on);
-          if (s.cav2_remote_ready)        id(${prefix}_cav2_remote_ready).publish_state(*s.cav2_remote_ready);
-          if (s.cav2_probe_on)            id(${prefix}_cav2_probe_on).publish_state(*s.cav2_probe_on);
-          if (s.cav2_probe_at_set_temp)   id(${prefix}_cav2_probe_at_temp).publish_state(*s.cav2_probe_at_set_temp);
-          if (s.cav2_probe_within_10deg)  id(${prefix}_cav2_probe_near).publish_state(*s.cav2_probe_within_10deg);
-          if (s.cav2_gourmet_mode_on)     id(${prefix}_cav2_gourmet).publish_state(*s.cav2_gourmet_mode_on);
-          if (s.cav2_cook_timer_complete) id(${prefix}_cav2_cook_timer_done).publish_state(*s.cav2_cook_timer_complete);
-          if (s.cav2_temp)                id(${prefix}_cav2_temp).publish_state(*s.cav2_temp);
-          if (s.cav2_set_temp)            id(${prefix}_cav2_set_temp).publish_state(*s.cav2_set_temp);
-          if (s.cav2_cook_mode)           id(${prefix}_cav2_cook_mode).publish_state(*s.cav2_cook_mode);
-          if (s.cav2_probe_temp)          id(${prefix}_cav2_probe_temp).publish_state(*s.cav2_probe_temp);
-          if (s.cav2_probe_set_temp)      id(${prefix}_cav2_probe_set_temp).publish_state(*s.cav2_probe_set_temp);
-          // --- Common ---
-          if (s.common.sabbath_on)        id(${prefix}_sabbath_on).publish_state(*s.common.sabbath_on);
-          if (s.common.service_required)  id(${prefix}_svc_required).publish_state(*s.common.service_required);
-          if (s.common.appliance_model)   id(${prefix}_model).publish_state(*s.common.appliance_model);
-          if (s.common.uptime)            id(${prefix}_uptime).publish_state(*s.common.uptime);
-          if (s.common.appliance_serial)  id(${prefix}_serial).publish_state(*s.common.appliance_serial);
-          if (s.common.appliance_type)    id(${prefix}_appliance_type).publish_state(*s.common.appliance_type);
-          if (s.common.diagnostic_status) id(${prefix}_diag_status).publish_state(*s.common.diagnostic_status);
-          if (s.common.build_date)        id(${prefix}_build_date).publish_state(*s.common.build_date);
-          if (s.common.version.fw)        id(${prefix}_fw_version).publish_state(*s.common.version.fw);
-          if (s.common.version.api)       id(${prefix}_api_version).publish_state(*s.common.version.api);
-          if (s.common.version.bleapp)    id(${prefix}_bleapp_version).publish_state(*s.common.version.bleapp);
-          if (s.common.version.os)        id(${prefix}_os_version).publish_state(*s.common.version.os);
-          if (s.common.version.rtapp)     id(${prefix}_rtapp_version).publish_state(*s.common.version.rtapp);
-          if (s.common.version.appliance) id(${prefix}_board_version).publish_state(*s.common.version.appliance);
+          // Sensor publishes - every parser field is routed to its
+          // corresponding entity by dispatch_range. See dispatch.h for
+          // the field-to-method mapping; bus pointers wired in on_boot.
+          esphome::subzero_protocol::dispatch_range(s, id(${prefix}_bus));
           id(${prefix}_poll_ok) = true;
           id(${prefix}_fast_retries) = 0;

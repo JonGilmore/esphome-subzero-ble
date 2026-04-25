@@ -67,6 +67,58 @@ substitutions:
 packages:
   base: !include subzero_base.yaml
 
+# Sensor-publishing bus for the fridge dispatcher. Pointers are populated
+# once at boot (see on_boot below) and then dispatch_fridge() in parse_json
+# routes every parsed-state field to the right entity. Default-constructed
+# value is all-nullptr, which dispatch treats as "no such sensor on this
+# appliance" - safe even before on_boot fires.
+globals:
+  - id: ${prefix}_bus
+    type: esphome::subzero_protocol::FridgeBus
+    restore_value: false
+
+esphome:
+  on_boot:
+    - priority: -100
+      then:
+        - lambda: |-
+            auto& b = id(${prefix}_bus);
+            // Common (declared in subzero_base.yaml)
+            b.svc_required = id(${prefix}_svc_required);
+            b.model = id(${prefix}_model);
+            b.uptime = id(${prefix}_uptime);
+            b.serial = id(${prefix}_serial);
+            b.appliance_type = id(${prefix}_appliance_type);
+            b.diag_status = id(${prefix}_diag_status);
+            b.build_date = id(${prefix}_build_date);
+            b.fw_version = id(${prefix}_fw_version);
+            b.api_version = id(${prefix}_api_version);
+            b.bleapp_version = id(${prefix}_bleapp_version);
+            b.os_version = id(${prefix}_os_version);
+            b.rtapp_version = id(${prefix}_rtapp_version);
+            b.board_version = id(${prefix}_board_version);
+            b.door_ajar = id(${prefix}_door_ajar);
+            // Fridge / freezer
+            b.sabbath_on = id(${prefix}_sabbath_on);
+            b.set_temp = id(${prefix}_set_temp);
+            b.frz_set_temp = id(${prefix}_frz_set_temp);
+            b.frz_door_ajar = id(${prefix}_frz_door_ajar);
+            b.ice_maker = id(${prefix}_ice_maker);
+            // Refrigerator drawer
+            b.ref2_set_temp = id(${prefix}_ref2_set_temp);
+            b.ref2_door_ajar = id(${prefix}_ref2_door_ajar);
+            // Wine
+            b.wine_door_ajar = id(${prefix}_wine_door_ajar);
+            b.wine_set_temp = id(${prefix}_wine_set_temp);
+            b.wine2_set_temp = id(${prefix}_wine2_set_temp);
+            b.wine_temp_alert = id(${prefix}_wine_temp_alert);
+            // Crisper
+            b.crisp_set_temp = id(${prefix}_crisp_set_temp);
+            // Filters
+            b.air_filter_on = id(${prefix}_air_filter_on);
+            b.air_filter_pct = id(${prefix}_air_filter_pct);
+            b.water_filter_pct = id(${prefix}_water_filter_pct);
+
 sensor:
   - platform: template
     name: "${appliance_name} Set Temperature"
@@ -227,7 +279,10 @@ script:
             for (const auto &k : s.data_keys)
               ESP_LOGI("szg-debug", "[${appliance_name}] key=%s", k.c_str());
           }
-          // PIN confirmation (unlock_channel response)
+          // PIN confirmation (unlock_channel response). Stays in YAML
+          // because it touches multiple state-machine globals (stored_pin,
+          // pin_confirmed) plus the PIN text input - out of scope for the
+          // pure dispatch helper.
           if (s.common.pin_confirmed) {
             const std::string &pin = *s.common.pin_confirmed;
             id(${prefix}_stored_pin) = pin;
@@ -236,42 +291,10 @@ script:
             ESP_LOGI("szg", "[${appliance_name}] PIN confirmed: %s", pin.c_str());
             id(${prefix}_debug).publish_state("PIN confirmed! Channel unlocked.");
           }
-          // --- Fridge sensors ---
-          if (s.ref_set_temp) id(${prefix}_set_temp).publish_state(*s.ref_set_temp);
-          if (s.door_ajar)    id(${prefix}_door_ajar).publish_state(*s.door_ajar);
-          // --- Freezer sensors ---
-          if (s.frz_set_temp)  id(${prefix}_frz_set_temp).publish_state(*s.frz_set_temp);
-          if (s.frz_door_ajar) id(${prefix}_frz_door_ajar).publish_state(*s.frz_door_ajar);
-          if (s.ice_maker_on)  id(${prefix}_ice_maker).publish_state(*s.ice_maker_on);
-          // --- Refrigerator drawer sensors ---
-          if (s.ref2_set_temp)  id(${prefix}_ref2_set_temp).publish_state(*s.ref2_set_temp);
-          if (s.ref2_door_ajar) id(${prefix}_ref2_door_ajar).publish_state(*s.ref2_door_ajar);
-          // --- Wine sensors ---
-          if (s.wine_door_ajar)     id(${prefix}_wine_door_ajar).publish_state(*s.wine_door_ajar);
-          if (s.wine_set_temp)      id(${prefix}_wine_set_temp).publish_state(*s.wine_set_temp);
-          if (s.wine2_set_temp)     id(${prefix}_wine2_set_temp).publish_state(*s.wine2_set_temp);
-          if (s.wine_temp_alert_on) id(${prefix}_wine_temp_alert).publish_state(*s.wine_temp_alert_on);
-          // --- Crisper drawer sensors ---
-          if (s.crisp_set_temp) id(${prefix}_crisp_set_temp).publish_state(*s.crisp_set_temp);
-          // --- Filter sensors ---
-          if (s.air_filter_on)              id(${prefix}_air_filter_on).publish_state(*s.air_filter_on);
-          if (s.air_filter_pct_remaining)   id(${prefix}_air_filter_pct).publish_state(*s.air_filter_pct_remaining);
-          if (s.water_filter_pct_remaining) id(${prefix}_water_filter_pct).publish_state(*s.water_filter_pct_remaining);
-          // --- Common ---
-          if (s.common.sabbath_on)        id(${prefix}_sabbath_on).publish_state(*s.common.sabbath_on);
-          if (s.common.service_required)  id(${prefix}_svc_required).publish_state(*s.common.service_required);
-          if (s.common.appliance_model)   id(${prefix}_model).publish_state(*s.common.appliance_model);
-          if (s.common.uptime)            id(${prefix}_uptime).publish_state(*s.common.uptime);
-          if (s.common.appliance_serial)  id(${prefix}_serial).publish_state(*s.common.appliance_serial);
-          if (s.common.appliance_type)    id(${prefix}_appliance_type).publish_state(*s.common.appliance_type);
-          if (s.common.diagnostic_status) id(${prefix}_diag_status).publish_state(*s.common.diagnostic_status);
-          if (s.common.build_date)        id(${prefix}_build_date).publish_state(*s.common.build_date);
-          if (s.common.version.fw)        id(${prefix}_fw_version).publish_state(*s.common.version.fw);
-          if (s.common.version.api)       id(${prefix}_api_version).publish_state(*s.common.version.api);
-          if (s.common.version.bleapp)    id(${prefix}_bleapp_version).publish_state(*s.common.version.bleapp);
-          if (s.common.version.os)        id(${prefix}_os_version).publish_state(*s.common.version.os);
-          if (s.common.version.rtapp)     id(${prefix}_rtapp_version).publish_state(*s.common.version.rtapp);
-          if (s.common.version.appliance) id(${prefix}_board_version).publish_state(*s.common.version.appliance);
+          // Sensor publishes - every parser field is routed to its
+          // corresponding entity by dispatch_fridge. See dispatch.h for
+          // the field-to-method mapping; bus pointers wired in on_boot.
+          esphome::subzero_protocol::dispatch_fridge(s, id(${prefix}_bus));
           id(${prefix}_poll_ok) = true;
           // Any valid response means the connection is functional, so prior
           // fast-reconnect failures aren't relevant anymore.

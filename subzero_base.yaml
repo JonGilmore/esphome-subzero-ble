@@ -345,7 +345,7 @@ button:
             return;
           }
           auto *client = id(${prefix}_appliance);
-          std::string cmd = "{\"cmd\":\"display_pin\",\"params\":{\"duration\": 30}}\n";
+          std::string cmd = esphome::subzero_protocol::build_display_pin();
           esp_err_t err = esp_ble_gattc_write_char(
             client->get_gattc_if(), client->get_conn_id(),
             d5, cmd.size(), (uint8_t*)cmd.data(),
@@ -369,7 +369,7 @@ button:
             return;
           }
           auto *client = id(${prefix}_appliance);
-          std::string cmd = "{\"cmd\":\"unlock_channel\",\"params\":{\"pin\":\"" + pin + "\"}}\n";
+          std::string cmd = esphome::subzero_protocol::build_unlock_channel(pin);
           esp_err_t err = esp_ble_gattc_write_char(
             client->get_gattc_if(), client->get_conn_id(),
             d5, cmd.size(), (uint8_t*)cmd.data(),
@@ -381,7 +381,7 @@ button:
           uint16_t d5 = id(${prefix}_d5_handle);
           if (d5 == 0) return;
           auto *client = id(${prefix}_appliance);
-          std::string cmd = "{\"cmd\":\"get_async\"}\n";
+          std::string cmd = esphome::subzero_protocol::build_get_async();
           esp_ble_gattc_write_char(
             client->get_gattc_if(), client->get_conn_id(),
             d5, cmd.size(), (uint8_t*)cmd.data(),
@@ -401,13 +401,13 @@ button:
           // Re-unlock D6 first (session may have expired since last poll).
           std::string pin = id(${prefix}_stored_pin);
           if (!pin.empty()) {
-            std::string unlock = "{\"cmd\":\"unlock_channel\",\"params\":{\"pin\":\"" + pin + "\"}}\n";
+            std::string unlock = esphome::subzero_protocol::build_unlock_channel(pin);
             esp_ble_gattc_write_char(
               client->get_gattc_if(), client->get_conn_id(),
               d6, unlock.size(), (uint8_t*)unlock.data(),
               ESP_GATT_WRITE_TYPE_RSP, ESP_GATT_AUTH_REQ_NONE);
           }
-          std::string cmd = "{\"cmd\":\"get_async\"}\n";
+          std::string cmd = esphome::subzero_protocol::build_get_async();
           esp_ble_gattc_write_char(
             client->get_gattc_if(), client->get_conn_id(),
             d6, cmd.size(), (uint8_t*)cmd.data(),
@@ -549,13 +549,13 @@ script:
           // is accepted (status 0) but produces no indication response.
           std::string pin = id(${prefix}_stored_pin);
           if (!pin.empty()) {
-            std::string unlock_cmd = "{\"cmd\":\"unlock_channel\",\"params\":{\"pin\":\"" + pin + "\"}}\n";
+            std::string unlock_cmd = esphome::subzero_protocol::build_unlock_channel(pin);
             esp_ble_gattc_write_char(
               client->get_gattc_if(), client->get_conn_id(),
               d6, unlock_cmd.size(), (uint8_t*)unlock_cmd.data(),
               ESP_GATT_WRITE_TYPE_RSP, ESP_GATT_AUTH_REQ_NONE);
           }
-          std::string cmd = "{\"cmd\":\"get_async\"}\n";
+          std::string cmd = esphome::subzero_protocol::build_get_async();
           esp_err_t err = esp_ble_gattc_write_char(
             client->get_gattc_if(), client->get_conn_id(),
             d6, cmd.size(), (uint8_t*)cmd.data(),
@@ -597,6 +597,9 @@ script:
             0x0001, 0xFFFF, db, &count);
           ESP_LOGI("poll", "[${appliance_name}] Initial get_db: err=%d count=%d", err, count);
           if (err == ESP_OK) {
+            // First pass: dump every entry for debug visibility, then extract
+            // handles via the host-tested helper (preserves any already-found
+            // handle from a previous discovery attempt).
             for (int i = 0; i < count; i++) {
               auto &e = db[i];
               const char *t = "?";
@@ -614,13 +617,9 @@ script:
                   u[7],u[6],u[5],u[4],u[3],u[2],u[1],u[0]);
               }
               ESP_LOGI("gatt", "  [%d] %s h=%d uuid=%s p=0x%02X", i, t, e.attribute_handle, us, e.properties);
-              if (e.type == ESP_GATT_DB_CHARACTERISTIC && e.uuid.len == ESP_UUID_LEN_128) {
-                uint8_t suffix = e.uuid.uuid.uuid128[0];
-                if (suffix == 0xD5) id(${prefix}_d5_handle) = e.attribute_handle;
-                else if (suffix == 0xD6) id(${prefix}_d6_handle) = e.attribute_handle;
-                else if (suffix == 0xD7) id(${prefix}_d7_handle) = e.attribute_handle;
-              }
             }
+            esphome::subzero_protocol::update_handles_from_db(db, count,
+                id(${prefix}_d5_handle), id(${prefix}_d6_handle), id(${prefix}_d7_handle));
           }
           // Always request encryption - some appliances (dishwashers) expose D5
           // before bonding but still require encryption for writes (status=5).
@@ -661,14 +660,8 @@ script:
           uint16_t count = 64;
           esp_ble_gattc_get_db(client->get_gattc_if(), client->get_conn_id(), 0x0001, 0xFFFF, db, &count);
           ESP_LOGI("poll", "[${appliance_name}] Poll 1: count=%d", count);
-          for (int i = 0; i < count; i++) {
-            if (db[i].type == ESP_GATT_DB_CHARACTERISTIC && db[i].uuid.len == ESP_UUID_LEN_128) {
-              uint8_t s = db[i].uuid.uuid.uuid128[0];
-              if (s == 0xD5) id(${prefix}_d5_handle) = db[i].attribute_handle;
-              else if (s == 0xD6) id(${prefix}_d6_handle) = db[i].attribute_handle;
-              else if (s == 0xD7) id(${prefix}_d7_handle) = db[i].attribute_handle;
-            }
-          }
+          esphome::subzero_protocol::update_handles_from_db(db, count,
+              id(${prefix}_d5_handle), id(${prefix}_d6_handle), id(${prefix}_d7_handle));
           if (id(${prefix}_d5_handle) > 0) { id(${prefix}_subscribe).execute(); return; }
           id(${prefix}_debug).publish_state("Poll 1: waiting...");
       - delay: 5s
@@ -679,14 +672,8 @@ script:
           uint16_t count = 64;
           esp_ble_gattc_get_db(client->get_gattc_if(), client->get_conn_id(), 0x0001, 0xFFFF, db, &count);
           ESP_LOGI("poll", "[${appliance_name}] Poll 2: count=%d", count);
-          for (int i = 0; i < count; i++) {
-            if (db[i].type == ESP_GATT_DB_CHARACTERISTIC && db[i].uuid.len == ESP_UUID_LEN_128) {
-              uint8_t s = db[i].uuid.uuid.uuid128[0];
-              if (s == 0xD5) id(${prefix}_d5_handle) = db[i].attribute_handle;
-              else if (s == 0xD6) id(${prefix}_d6_handle) = db[i].attribute_handle;
-              else if (s == 0xD7) id(${prefix}_d7_handle) = db[i].attribute_handle;
-            }
-          }
+          esphome::subzero_protocol::update_handles_from_db(db, count,
+              id(${prefix}_d5_handle), id(${prefix}_d6_handle), id(${prefix}_d7_handle));
           if (id(${prefix}_d5_handle) > 0) { id(${prefix}_subscribe).execute(); return; }
           id(${prefix}_debug).publish_state("Poll 2: waiting...");
       - delay: 5s
@@ -697,14 +684,8 @@ script:
           uint16_t count = 64;
           esp_ble_gattc_get_db(client->get_gattc_if(), client->get_conn_id(), 0x0001, 0xFFFF, db, &count);
           ESP_LOGI("poll", "[${appliance_name}] Poll 3: count=%d", count);
-          for (int i = 0; i < count; i++) {
-            if (db[i].type == ESP_GATT_DB_CHARACTERISTIC && db[i].uuid.len == ESP_UUID_LEN_128) {
-              uint8_t s = db[i].uuid.uuid.uuid128[0];
-              if (s == 0xD5) id(${prefix}_d5_handle) = db[i].attribute_handle;
-              else if (s == 0xD6) id(${prefix}_d6_handle) = db[i].attribute_handle;
-              else if (s == 0xD7) id(${prefix}_d7_handle) = db[i].attribute_handle;
-            }
-          }
+          esphome::subzero_protocol::update_handles_from_db(db, count,
+              id(${prefix}_d5_handle), id(${prefix}_d6_handle), id(${prefix}_d7_handle));
           if (id(${prefix}_d5_handle) > 0) { id(${prefix}_subscribe).execute(); return; }
           ESP_LOGW("ble", "[${appliance_name}] No D5 after 20s. Reconnecting...");
           id(${prefix}_debug).publish_state("No D5 found. Reconnecting...");
@@ -806,7 +787,7 @@ script:
             id(${prefix}_debug).publish_state("Connected! Press 'Start Pairing', then enter PIN.");
             return;
           }
-          std::string cmd = "{\"cmd\":\"unlock_channel\",\"params\":{\"pin\":\"" + pin + "\"}}\n";
+          std::string cmd = esphome::subzero_protocol::build_unlock_channel(pin);
           // Unlock D5 (control channel) - the only channel we use today
           esp_err_t err5 = esp_ble_gattc_write_char(
             client->get_gattc_if(), client->get_conn_id(),
@@ -830,7 +811,7 @@ script:
           uint16_t d6 = id(${prefix}_d6_handle);
           if (d6 == 0) return;
           id(${prefix}_poll_ok) = false;
-          std::string cmd = "{\"cmd\":\"get_async\"}\n";
+          std::string cmd = esphome::subzero_protocol::build_get_async();
           esp_err_t err = esp_ble_gattc_write_char(
             client->get_gattc_if(), client->get_conn_id(),
             d6, cmd.size(), (uint8_t*)cmd.data(),

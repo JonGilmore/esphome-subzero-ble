@@ -30,6 +30,14 @@ substitutions:
 packages:
   base: !include subzero_base.yaml
 
+# Sensor-publishing bus for the dishwasher dispatcher. Pointers populated
+# in on_boot below; dispatch_dishwasher() in parse_json then routes every
+# parsed-state field to the right entity.
+globals:
+  - id: ${prefix}_bus
+    type: esphome::subzero_protocol::DishwasherBus
+    restore_value: false
+
 esphome:
   on_boot:
     - priority: -100
@@ -37,6 +45,37 @@ esphome:
         - lambda: |-
             id(${prefix}_wash_time_remaining).publish_state(0);
             id(${prefix}_wash_cycle_end_time).publish_state("");
+            auto& b = id(${prefix}_bus);
+            // Common (declared in subzero_base.yaml)
+            b.svc_required = id(${prefix}_svc_required);
+            b.model = id(${prefix}_model);
+            b.uptime = id(${prefix}_uptime);
+            b.serial = id(${prefix}_serial);
+            b.appliance_type = id(${prefix}_appliance_type);
+            b.diag_status = id(${prefix}_diag_status);
+            b.build_date = id(${prefix}_build_date);
+            b.fw_version = id(${prefix}_fw_version);
+            b.api_version = id(${prefix}_api_version);
+            b.bleapp_version = id(${prefix}_bleapp_version);
+            b.os_version = id(${prefix}_os_version);
+            b.rtapp_version = id(${prefix}_rtapp_version);
+            b.board_version = id(${prefix}_board_version);
+            b.door_ajar = id(${prefix}_door_ajar);
+            // Dishwasher-specific
+            b.wash_cycle_on = id(${prefix}_wash_cycle_on);
+            b.heated_dry = id(${prefix}_heated_dry);
+            b.extended_dry = id(${prefix}_extended_dry);
+            b.high_temp_wash = id(${prefix}_high_temp_wash);
+            b.sani_rinse = id(${prefix}_sani_rinse);
+            b.rinse_aid_low = id(${prefix}_rinse_aid_low);
+            b.softener_low = id(${prefix}_softener_low);
+            b.light_on = id(${prefix}_light_on);
+            b.remote_ready = id(${prefix}_remote_ready);
+            b.delay_start = id(${prefix}_delay_start);
+            b.wash_status = id(${prefix}_wash_status);
+            b.wash_cycle = id(${prefix}_wash_cycle);
+            b.wash_time_remaining = id(${prefix}_wash_time_remaining);
+            b.wash_cycle_end_time = id(${prefix}_wash_cycle_end_time);
 
 sensor:
   - platform: template
@@ -117,11 +156,6 @@ text_sensor:
     id: ${prefix}_wash_cycle_end_time
     icon: "mdi:clock-end"
 
-globals:
-  - id: ${prefix}_wash_end_time_str
-    type: std::string
-    restore_value: false
-
 script:
   - id: ${prefix}_parse_json
     mode: single
@@ -157,7 +191,8 @@ script:
             for (const auto &k : s.data_keys)
               ESP_LOGI("szg-debug", "[${appliance_name}] key=%s", k.c_str());
           }
-          // PIN confirmation (unlock_channel response)
+          // PIN confirmation (unlock_channel response). Stays in YAML -
+          // see subzero_fridge.yaml's parse_json comment.
           if (s.common.pin_confirmed) {
             const std::string &pin = *s.common.pin_confirmed;
             id(${prefix}_stored_pin) = pin;
@@ -166,48 +201,16 @@ script:
             ESP_LOGI("szg", "[${appliance_name}] PIN confirmed: %s", pin.c_str());
             id(${prefix}_debug).publish_state("PIN confirmed! Channel unlocked.");
           }
-          // --- Dishwasher sensors ---
-          if (s.door_ajar)                id(${prefix}_door_ajar).publish_state(*s.door_ajar);
-          if (s.wash_cycle_on)            id(${prefix}_wash_cycle_on).publish_state(*s.wash_cycle_on);
-          if (s.heated_dry_on)            id(${prefix}_heated_dry).publish_state(*s.heated_dry_on);
-          if (s.extended_dry_on)          id(${prefix}_extended_dry).publish_state(*s.extended_dry_on);
-          if (s.high_temp_wash_on)        id(${prefix}_high_temp_wash).publish_state(*s.high_temp_wash_on);
-          if (s.sani_rinse_on)            id(${prefix}_sani_rinse).publish_state(*s.sani_rinse_on);
-          if (s.rinse_aid_low)            id(${prefix}_rinse_aid_low).publish_state(*s.rinse_aid_low);
-          if (s.softener_low)             id(${prefix}_softener_low).publish_state(*s.softener_low);
-          if (s.light_on)                 id(${prefix}_light_on).publish_state(*s.light_on);
-          if (s.remote_ready)             id(${prefix}_remote_ready).publish_state(*s.remote_ready);
-          if (s.delay_start_timer_active) id(${prefix}_delay_start).publish_state(*s.delay_start_timer_active);
-          if (s.wash_status)              id(${prefix}_wash_status).publish_state(*s.wash_status);
-          if (s.wash_cycle)               id(${prefix}_wash_cycle).publish_state(*s.wash_cycle);
-          if (s.wash_cycle_end_time) {
-            id(${prefix}_wash_end_time_str) = *s.wash_cycle_end_time;
-            id(${prefix}_wash_cycle_end_time).publish_state(*s.wash_cycle_end_time);
-          }
+          // Human-friendly wash-status log; pre-dispatch so the values
+          // we log match what's about to land in HA.
           if (s.wash_time_remaining_min) {
-            id(${prefix}_wash_time_remaining).publish_state(*s.wash_time_remaining_min);
             ESP_LOGI("szg", "[${appliance_name}] Wash ends %s, ~%d min remaining",
                      s.wash_cycle_end_time ? s.wash_cycle_end_time->c_str() : "?",
                      *s.wash_time_remaining_min);
           }
-          // Clear remaining time when cycle ends (stateful - stays in lambda)
-          if (s.wash_cycle_on && !*s.wash_cycle_on) {
-            if (id(${prefix}_wash_time_remaining).state > 0)
-              id(${prefix}_wash_time_remaining).publish_state(0);
-          }
-          // --- Common ---
-          if (s.common.service_required)  id(${prefix}_svc_required).publish_state(*s.common.service_required);
-          if (s.common.appliance_model)   id(${prefix}_model).publish_state(*s.common.appliance_model);
-          if (s.common.uptime)            id(${prefix}_uptime).publish_state(*s.common.uptime);
-          if (s.common.appliance_serial)  id(${prefix}_serial).publish_state(*s.common.appliance_serial);
-          if (s.common.appliance_type)    id(${prefix}_appliance_type).publish_state(*s.common.appliance_type);
-          if (s.common.diagnostic_status) id(${prefix}_diag_status).publish_state(*s.common.diagnostic_status);
-          if (s.common.build_date)        id(${prefix}_build_date).publish_state(*s.common.build_date);
-          if (s.common.version.fw)        id(${prefix}_fw_version).publish_state(*s.common.version.fw);
-          if (s.common.version.api)       id(${prefix}_api_version).publish_state(*s.common.version.api);
-          if (s.common.version.bleapp)    id(${prefix}_bleapp_version).publish_state(*s.common.version.bleapp);
-          if (s.common.version.os)        id(${prefix}_os_version).publish_state(*s.common.version.os);
-          if (s.common.version.rtapp)     id(${prefix}_rtapp_version).publish_state(*s.common.version.rtapp);
-          if (s.common.version.appliance) id(${prefix}_board_version).publish_state(*s.common.version.appliance);
+          // Sensor publishes (including the "clear wash_time_remaining
+          // when cycle stops" stateful hook). See dispatch.h for the
+          // field-to-method mapping; bus pointers wired in on_boot.
+          esphome::subzero_protocol::dispatch_dishwasher(s, id(${prefix}_bus));
           id(${prefix}_poll_ok) = true;
           id(${prefix}_fast_retries) = 0;

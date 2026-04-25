@@ -54,6 +54,9 @@ add_executable(protocol_tests
   protocol_test.cpp
   buffer_test.cpp
   sanitize_test.cpp
+  commands_test.cpp
+  gatt_handles_test.cpp
+  dispatch_test.cpp
 )
 target_link_libraries(protocol_tests PRIVATE
   subzero_protocol
