@@ -154,50 +154,21 @@ script:
     mode: single
     then:
       - lambda: |-
-          auto &buf = id(${prefix}_json_buf);
-          size_t start = buf.find('{');
-          if (start == std::string::npos) { buf.clear(); return; }
-          if (start > 0) buf.erase(0, start);
+          auto msg = id(${prefix}_json_buf).take_message();
+          if (!msg) return;
           bool dbg = id(${prefix}_debug_mode);
-          ESP_LOGI("szg", "[${appliance_name}] Parsing JSON (%d bytes)", (int)buf.size());
-          // Raw buf may contain non-UTF-8 bytes from ACL fragment corruption.
-          // Anything we log from buf MUST be sanitized first: the log message
-          // is sent to HA as a protobuf `string` (UTF-8 required) and a
-          // high-bit byte (0x80-0xFF) that isn't part of a valid multi-byte
-          // sequence crashes HA's protobuf decoder, which caches the bad
-          // event and loops. Allow printable ASCII plus \t \n \r (all valid
-          // UTF-8 and harmless in protobuf); everything else becomes '?'.
-          // Keeping \n unsanitized means the normal protocol terminator at
-          // the end of every response no longer triggers a nuisance '?' -
-          // so any '?' that now appears is a real signal of corruption.
-          auto sanitize = [](const std::string &s, size_t off, size_t len) {
-            std::string out(s, off, len);
-            for (char &c : out) {
-              unsigned char u = c;
-              bool ok = (u >= 0x20 && u <= 0x7E) || u == 0x09 || u == 0x0A || u == 0x0D;
-              if (!ok) c = '?';
-            }
-            return out;
-          };
+          ESP_LOGI("szg", "[${appliance_name}] Parsing JSON (%d bytes)", (int)msg->size());
           if (dbg) {
-            // Chunked so the full payload survives the per-line log budget.
-            // Grep `Response\[` and concatenate to reassemble - used for fixture
-            // capture. Gated on debug mode so normal operation never logs raw
-            // buf contents.
-            const size_t CHUNK = 400;
-            size_t total = (buf.size() + CHUNK - 1) / CHUNK;
-            for (size_t i = 0; i < total; i++) {
-              size_t off = i * CHUNK;
-              size_t len = std::min(CHUNK, buf.size() - off);
-              ESP_LOGI("szg", "[${appliance_name}] Response[%d/%d]: %s",
-                       (int)(i + 1), (int)total, sanitize(buf, off, len).c_str());
-            }
+            esphome::subzero_protocol::chunk_for_log(*msg,
+              [](size_t idx, size_t total, const std::string &chunk) {
+                ESP_LOGI("szg", "[${appliance_name}] Response[%d/%d]: %s",
+                         (int)idx, (int)total, chunk.c_str());
+              });
           }
-          auto s = esphome::subzero_protocol::parse_dishwasher(buf);
+          auto s = esphome::subzero_protocol::parse_dishwasher(*msg);
           if (!s.valid) {
             ESP_LOGW("szg", "[${appliance_name}] Parse failed or status!=0, skipping (%s...)",
-                     sanitize(buf, 0, std::min<size_t>(80, buf.size())).c_str());
-            buf.clear();
+                     esphome::subzero_protocol::sanitize_for_log(*msg, 0, std::min<size_t>(80, msg->size())).c_str());
             return;
           }
           if (dbg) {
@@ -257,19 +228,11 @@ script:
           if (s.common.version.rtapp)     id(${prefix}_rtapp_version).publish_state(*s.common.version.rtapp);
           if (s.common.version.appliance) id(${prefix}_board_version).publish_state(*s.common.version.appliance);
           id(${prefix}_poll_ok) = true;
-          // Clear poll_in_flight + reset unanswered_polls only on a real
-          // poll response, not on pushes. Pushes prove the connection is
-          // alive but don't prove the command channel is responding.
-          // first_poll_done gates push_only_after_first_poll's early-return.
-          // fw_85_detected drives "auto" mode (rare on dishwashers but
-          // included for parity).
-          if (s.is_poll) {
-            id(${prefix}_poll_in_flight) = false;
-            id(${prefix}_unanswered_polls) = 0;
-            id(${prefix}_first_poll_done) = true;
-            if (s.common.version.fw && *s.common.version.fw == "8.5") {
-              id(${prefix}_fw_85_detected) = true;
-            }
-          }
-          id(${prefix}_fast_retries) = 0;
-          buf.clear();
+          // Post-parse state-machine mutation. See poll_state.h for invariants.
+          esphome::subzero_protocol::apply_parse_result(
+              id(${prefix}_poll_in_flight),
+              id(${prefix}_unanswered_polls),
+              id(${prefix}_first_poll_done),
+              id(${prefix}_fw_85_detected),
+              id(${prefix}_fast_retries),
+              s);

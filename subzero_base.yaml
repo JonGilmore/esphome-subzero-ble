@@ -80,7 +80,7 @@ globals:
     type: int
     initial_value: "0"
   - id: ${prefix}_json_buf
-    type: std::string
+    type: esphome::subzero_protocol::JsonBuffer
     restore_value: false
   - id: ${prefix}_stored_pin
     type: std::string
@@ -248,19 +248,9 @@ sensor:
     notify: true
     update_interval: never
     lambda: |-
-      auto &buf = id(${prefix}_json_buf);
-      if (buf.capacity() < 2048) buf.reserve(2048);
-      if (buf.size() > 4096) { buf.clear(); return {}; }
-      buf.append((char*)x.data(), x.size());
-      // Any notification = connection alive (resets zombie detection)
+      // Any notification = connection alive (resets zombie detection).
       id(${prefix}_poll_ok) = true;
-      int depth = 0;
-      bool complete = false;
-      for (char c : buf) {
-        if (c == '{') depth++;
-        else if (c == '}') { depth--; if (depth == 0) { complete = true; break; } }
-      }
-      if (complete) {
+      if (id(${prefix}_json_buf).feed(x.data(), x.size())) {
         id(${prefix}_parse_json).execute();
       }
       return {};
