@@ -434,9 +434,12 @@ script:
           if (s.common.version.rtapp)     id(${prefix}_rtapp_version).publish_state(*s.common.version.rtapp);
           if (s.common.version.appliance) id(${prefix}_board_version).publish_state(*s.common.version.appliance);
           id(${prefix}_poll_ok) = true;
-          // Clear poll_in_flight only on a real poll response, not on pushes.
-          // Pushes prove the connection is alive but don't prove the poll
-          // command channel is responding.
-          if (s.is_poll) id(${prefix}_poll_in_flight) = false;
+          // Clear poll_in_flight + reset unanswered_polls only on a real
+          // poll response, not on pushes. Pushes prove the connection is
+          // alive but don't prove the command channel is responding.
+          if (s.is_poll) {
+            id(${prefix}_poll_in_flight) = false;
+            id(${prefix}_unanswered_polls) = 0;
+          }
           id(${prefix}_fast_retries) = 0;
           buf.clear();

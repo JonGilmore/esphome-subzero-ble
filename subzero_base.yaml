@@ -77,6 +77,15 @@ globals:
   - id: ${prefix}_poll_in_flight
     type: bool
     initial_value: "false"
+  # Counts consecutive periodic_poll cycles that took the subscribe-retry
+  # branch (poll_in_flight stayed true). Reset on any valid is_poll parse
+  # and on disconnect. When >= 3, the session is wedged at a level even
+  # subscribe (unlock_channel) can't unstick - force a reconnect via
+  # client->disconnect(). auto_connect: true brings the connection back
+  # from scratch.
+  - id: ${prefix}_unanswered_polls
+    type: int
+    initial_value: "0"
   - id: ${prefix}_debug_mode
     type: bool
     initial_value: "false"
@@ -141,6 +150,7 @@ ble_client:
         - lambda: |-
             id(${prefix}_json_buf).clear();
             id(${prefix}_poll_in_flight) = false;
+            id(${prefix}_unanswered_polls) = 0;
             id(${prefix}_post_bond).stop();
             id(${prefix}_subscribe).stop();
             id(${prefix}_fast_reconnect).stop();
@@ -500,21 +510,34 @@ script:
           id(${prefix}_poll_ok) = false;
           // Clear any stale partial JSON from interrupted previous transfer
           id(${prefix}_json_buf).clear();
-          // Recovery path: if poll_in_flight is still set from the previous
-          // tick, the previous get_async went unanswered. Either:
-          //  - cold-boot race: subscribe ran but unlock_channel got lost
-          //    under concurrent BLE traffic, leaving the session
-          //    half-initialized (the appliance never produces ANYTHING)
-          //  - fw 8.5 unlock-session expired (session-based; pushes keep
-          //    flowing but command channel goes silent within ~1 minute)
-          // Re-run subscribe (CCCD writes are idempotent, unlock is
-          // re-doable, get_async will be re-issued at the end). The
-          // unlock_channel response is small (40 bytes, single fragment,
-          // not vulnerable to ACL drops) so it parses cleanly as
-          // is_poll=true and clears poll_in_flight. Once the session is
-          // refreshed, the next periodic tick takes the bare-poll path.
+          // Recovery ladder when poll_in_flight is still set from the
+          // previous tick (the previous get_async went unanswered):
+          //
+          //   Tick 1: run subscribe to re-issue unlock_channel + get_async.
+          //           Handles cold-boot races and most fw 8.5 unlock-expiry
+          //           cases - the unlock response is small (single fragment,
+          //           not ACL-vulnerable) so it parses cleanly as is_poll
+          //           and clears poll_in_flight + unanswered_polls.
+          //   Tick 2-3: same. Some sessions take a couple of refreshes.
+          //   Tick 4 (unanswered_polls >= 3): escalate to a full reconnect.
+          //           At this point the session is wedged at a level even
+          //           unlock_channel can't unstick - we never even saw the
+          //           unlock response come back across multiple retries.
+          //           auto_connect: true brings the connection back from
+          //           scratch. Counter resets on any valid is_poll parse.
           if (id(${prefix}_poll_in_flight)) {
-            ESP_LOGW("szg", "[${appliance_name}] Previous poll unanswered - re-running subscribe to refresh session");
+            id(${prefix}_unanswered_polls) += 1;
+            if (id(${prefix}_unanswered_polls) >= 3) {
+              ESP_LOGW("szg", "[${appliance_name}] %d subscribe retries unanswered - session wedged, forcing reconnect",
+                id(${prefix}_unanswered_polls));
+              id(${prefix}_unanswered_polls) = 0;
+              id(${prefix}_poll_in_flight) = false;
+              id(${prefix}_debug).publish_state("Session wedged, reconnecting...");
+              client->disconnect();
+              return;
+            }
+            ESP_LOGW("szg", "[${appliance_name}] Previous poll unanswered (%d/3) - re-running subscribe to refresh session",
+              id(${prefix}_unanswered_polls));
             id(${prefix}_subscribe).execute();
             return;
           }

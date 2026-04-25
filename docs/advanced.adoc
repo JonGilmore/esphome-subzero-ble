@@ -140,7 +140,9 @@ Two distinct conditions land the same appliance in the same state - bonded and c
 
 When `periodic_poll` fires and finds `poll_in_flight` still `true` from the previous tick, the previous poll went unanswered. Instead of writing another bare `get_async` into the void, it runs `_subscribe.execute()` - which re-writes CCCDs (idempotent), re-issues `unlock_channel`, and writes `get_async` again. The `unlock_channel` response is small (40 bytes, single fragment, not vulnerable to ACL drops) so it parses cleanly and clears `poll_in_flight`. Next tick takes the bare-poll path again.
 
-For the false-positive scenario the prior unlock-expiry detector hit (a push interleaving with a poll on fw 8.5 makes the poll's brace-balance never reach zero, so we never get an `is_poll=true` parse): re-running subscribe is the right response anyway. It refreshes the session and the next attempt either succeeds or repeats the cycle - no reconnect loop, no false positives.
+`unanswered_polls` is a small int counter that increments each time the subscribe-retry branch fires. It resets to 0 on any valid `is_poll` parse and on disconnect. When it reaches 3 (= 3 minutes of subscribe-retries that produced no poll response - not even an `unlock_channel` reply), the session is wedged at a level even subscribe can't unstick (we never even saw the unlock response come back). At that point the script calls `client->disconnect()` and `auto_connect: true` brings the connection back from scratch. This is intentionally faster than zombie detection (15 min) because zombie won't fire as long as pushes keep flowing.
+
+For the false-positive scenario the prior unlock-expiry detector hit (a push interleaving with a poll on fw 8.5 makes the poll's brace-balance never reach zero, so we never get an `is_poll=true` parse): re-running subscribe is the right response anyway. The unlock response on retry parses cleanly and clears the counter. We only escalate to reconnect if even unlock_channel goes silent - which is the genuinely-stuck case where reconnecting is correct.
 
 The `Log Debug Info` button on each appliance also calls `_subscribe.execute()` for the same reason: a bare `get_async` from the button doesn't work on a stale-unlock fw 8.5 appliance. Going through subscribe refreshes the session first.
 
@@ -153,12 +155,14 @@ The `Log Debug Info` button on each appliance also calls `_subscribe.execute()` 
 [source]
 ----
 [I][szg:XXX]: [Left Dishwasher] Periodic poll (miss=2, retries=0)
-[W][szg:XXX]: [Wall Oven] Previous poll unanswered - re-running subscribe to refresh session
+[W][szg:XXX]: [Wall Oven] Previous poll unanswered (1/3) - re-running subscribe to refresh session
+[W][szg:XXX]: [Wall Oven] 3 subscribe retries unanswered - session wedged, forcing reconnect
 ----
 
 * `miss` - zombie counter (0-15, reconnect at 15 = 15 min of total silence)
 * `retries` - fast-reconnect retry counter (0-3, bond clear at 3; see below)
-* `Previous poll unanswered` - subscribe-retry path firing (poll_in_flight stayed `true` across a tick); on fw 8.5 appliances this is normal once per ~minute as the unlock session refreshes
+* `Previous poll unanswered (N/3)` - subscribe-retry path firing (poll_in_flight stayed `true` across a tick); on fw 8.5 appliances this is normal once per ~minute as the unlock session refreshes
+* `subscribe retries unanswered - session wedged` - escalation to reconnect after 3 subscribe-retries with no poll response
 
 === Fast Reconnect + Bond Clear
 
