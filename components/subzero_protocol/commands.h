@@ -115,8 +115,8 @@ inline std::string build_display_pin(int duration_seconds = 30) {
 // below instead of build_set directly when possible).
 inline std::string build_set(const std::string &key,
                              const std::string &json_value) {
-  return "{\"cmd\":\"set\",\"params\":{\"" +
-         detail::escape_json_string(key) + "\":" + json_value + "}}\n";
+  return "{\"cmd\":\"set\",\"params\":{\"" + detail::escape_json_string(key) +
+         "\":" + json_value + "}}\n";
 }
 
 inline std::string build_set_bool(const std::string &key, bool value) {

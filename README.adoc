@@ -453,15 +453,11 @@ In addition to the read-only sensors above, several properties are exposed as **
 | Range (Oven 2)
 | Oven 2 Light, Oven 2 Set Temperature, Oven 2 Probe Set Temperature
 | Same as above for the second cavity (gated by `hide_oven2`)
-
-| Dishwasher
-| Light
-| Toggle the interior light
 |===
 
 IMPORTANT: **Oven Set Temperature only adjusts an already-running cycle.** The appliance silently ignores writes to `cav_set_temp` / `cav2_set_temp` when the cavity is off. To use this entity, first start a cook mode (Bake, Roast, etc.) at the appliance's front panel - once the oven is actively heating, HA can adjust the target temperature from there. Writing it from the off state does **not** turn the oven on. Probe Set Temperature behaves the same way (probe must be inserted with the appliance running in a probe-aware mode). This is an appliance-side restriction, not a limitation of the integration.
 
-NOTE: **Fridge / freezer / wine / drawer / crisper set temperatures are intentionally read-only for now.** The appliance acks `set` writes on those properties (status:0) but the setpoint never actually changes - likely an appliance-side guard mode similar to the oven's "must be in a cook mode" behavior. Until that's understood, the fridge set-temp entities stay as read-only sensors so a misclick can't risk altering a running zone.
+NOTE: **Fridge set temperatures and dishwasher light are intentionally read-only for now.** The appliance acks `set` writes on those properties (status:0) but the actual state never changes - likely the same appliance-side guard mode as the oven's "must be in a cook mode" requirement, applied more broadly. Until that's understood, those entities stay as read-only sensors so a misclick can't risk altering a running appliance.
 
 NOTE: Writes go to the **D5** control channel (the same one used for unlocking and pairing). The appliance must be connected and paired - if the connection is down or the pairing window is closed (status 302), writes are dropped silently and the entity reverts on the next poll. The standard pairing flow is unchanged.
 

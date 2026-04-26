@@ -120,8 +120,11 @@ public:
   void set_softener_low_sensor(esphome::binary_sensor::BinarySensor *s) {
     bus_.softener_low = s;
   }
-  // Writable: Light is a Switch (HA toggles → set light_on=true/false on D5).
-  void set_light_on_switch(esphome::switch_::Switch *s) { bus_.light_on = s; }
+  // Read-only: dishwasher light_on can't actually be toggled via `set`
+  // (appliance acks but doesn't honor the write). Stays a binary_sensor.
+  void set_light_on_sensor(esphome::binary_sensor::BinarySensor *s) {
+    bus_.light_on = s;
+  }
   void set_remote_ready_sensor(esphome::binary_sensor::BinarySensor *s) {
     bus_.remote_ready = s;
   }

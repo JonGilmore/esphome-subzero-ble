@@ -257,17 +257,15 @@ DISHWASHER_BINARY_SENSORS = [
      {CONF_DEVICE_CLASS: DEVICE_CLASS_PROBLEM}, None),
     ("softener_low", "Softener Low", "set_softener_low_sensor",
      {CONF_DEVICE_CLASS: DEVICE_CLASS_PROBLEM}, "hide_softener"),
-    # light_on moved to DISHWASHER_WRITABLE_SWITCHES — it's a Switch now.
+    # Read-only: writing `set light_on` on dishwashers acks (status:0)
+    # but the appliance does not actually toggle the light. Same guard
+    # behavior as fridge set-temps — see FRIDGE_SENSORS comment above.
+    ("light_on", "Light", "set_light_on_sensor", {CONF_ICON: "mdi:lightbulb"}, None),
     ("remote_ready", "Remote Ready", "set_remote_ready_sensor", {CONF_ICON: "mdi:remote"}, None),
     ("delay_start", "Delay Start", "set_delay_start_sensor", {CONF_ICON: "mdi:timer-sand"}, None),
 ]
 
-DISHWASHER_WRITABLE_SWITCHES = [
-    # (suffix, name_suffix, setter, property_key, kwargs, hide_key)
-    ("light_on", "Light", "set_light_on_switch", "light_on",
-     {CONF_ICON: "mdi:lightbulb"}, None),
-]
-
+DISHWASHER_WRITABLE_SWITCHES: list = []
 DISHWASHER_WRITABLE_NUMBERS: list = []
 
 DISHWASHER_SENSORS = [

@@ -133,17 +133,15 @@ TEST(Commands, SetIntNegative) {
 TEST(Commands, SetStringEscapesQuotes) {
   // Keep the wire format well-formed even with hostile/odd inputs - same
   // discipline as build_unlock_channel for PINs.
-  EXPECT_EQ(
-      build_set_string("ap_ssid", "my\"ssid"),
-      "{\"cmd\":\"set\",\"params\":{\"ap_ssid\":\"my\\\"ssid\"}}\n");
+  EXPECT_EQ(build_set_string("ap_ssid", "my\"ssid"),
+            "{\"cmd\":\"set\",\"params\":{\"ap_ssid\":\"my\\\"ssid\"}}\n");
 }
 
 TEST(Commands, SetStringEmptyClearsCloudToken) {
   // The "BT-only mode" diagnostic action — clearing remote_svc_reg_token
   // deregisters the appliance from Azure IoT Hub.
-  EXPECT_EQ(
-      build_set_string("remote_svc_reg_token", ""),
-      "{\"cmd\":\"set\",\"params\":{\"remote_svc_reg_token\":\"\"}}\n");
+  EXPECT_EQ(build_set_string("remote_svc_reg_token", ""),
+            "{\"cmd\":\"set\",\"params\":{\"remote_svc_reg_token\":\"\"}}\n");
 }
 
 TEST(Commands, SetGenericAcceptsRawJsonValue) {

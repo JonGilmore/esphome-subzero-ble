@@ -171,7 +171,8 @@ struct DishwasherBus : CommonBus {
   esphome::binary_sensor::BinarySensor *sani_rinse = nullptr;
   esphome::binary_sensor::BinarySensor *rinse_aid_low = nullptr;
   esphome::binary_sensor::BinarySensor *softener_low = nullptr;
-  esphome::switch_::Switch *light_on = nullptr;
+  // Read-only: writing `set light_on` doesn't actually toggle the light.
+  esphome::binary_sensor::BinarySensor *light_on = nullptr;
   esphome::binary_sensor::BinarySensor *remote_ready = nullptr;
   esphome::binary_sensor::BinarySensor *delay_start = nullptr;
 
