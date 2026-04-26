@@ -21,10 +21,9 @@
 // -Wunused-{parameter,variable,lambda-capture}.
 namespace esphome {
 namespace subzero_appliance {
-template <typename... Args>
-inline void hub_log_noop(Args &&.../*unused*/) {}
-}  // namespace subzero_appliance
-}  // namespace esphome
+template <typename... Args> inline void hub_log_noop(Args &&.../*unused*/) {}
+} // namespace subzero_appliance
+} // namespace esphome
 // Variadic-only form (no `,##` GNU extension) — every call site already
 // passes at least a tag + format string, so __VA_ARGS__ is always non-empty.
 #define HUB_LOGI(...) ::esphome::subzero_appliance::hub_log_noop(__VA_ARGS__)
