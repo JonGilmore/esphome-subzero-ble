@@ -377,13 +377,13 @@ RANGE_WRITABLE_NUMBERS = [
      {**NUMBER_KWARGS, CONF_ICON: "mdi:thermometer-check"}, None),
     ("probe_set_temp", "Probe Set Temperature", "set_probe_set_temp_number",
      "cav_probe_set_temp", 100, 200, 1,
-     {**NUMBER_KWARGS, CONF_ICON: "mdi:thermometer-probe-off"}, None),
+     {**NUMBER_KWARGS, CONF_ICON: "mdi:thermometer-probe"}, None),
     ("cav2_set_temp", "Oven 2 Set Temperature", "set_cav2_set_temp_number",
      "cav2_set_temp", 200, 550, 1,
      {**NUMBER_KWARGS, CONF_ICON: "mdi:thermometer-check"}, "hide_oven2"),
     ("cav2_probe_set_temp", "Oven 2 Probe Set Temperature",
      "set_cav2_probe_set_temp_number", "cav2_probe_set_temp", 100, 200, 1,
-     {**NUMBER_KWARGS, CONF_ICON: "mdi:thermometer-probe-off"}, "hide_oven2"),
+     {**NUMBER_KWARGS, CONF_ICON: "mdi:thermometer-probe"}, "hide_oven2"),
 ]
 
 RANGE_TEXT_SENSORS = [
