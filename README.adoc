@@ -448,7 +448,7 @@ In addition to the read-only sensors above, several properties are exposed as **
 
 | Range
 | Oven Light, Oven Set Temperature, Probe Set Temperature
-| Toggle the oven cavity light, adjust the oven target temperature (100-550°F), adjust the meat probe target temperature (100-200°F)
+| Toggle the oven cavity light, adjust the oven target temperature (200-550°F - the appliance won't accept lower), adjust the meat probe target temperature (100-200°F)
 
 | Range (Oven 2)
 | Oven 2 Light, Oven 2 Set Temperature, Oven 2 Probe Set Temperature

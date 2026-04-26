@@ -364,19 +364,22 @@ RANGE_WRITABLE_SWITCHES = [
      {CONF_ICON: "mdi:lightbulb"}, "hide_oven2"),
 ]
 
-# Range temp ranges: most Wolf ovens go 100-550°F, probe target 100-200°F.
-# Step is 1°F to allow precise setpoints (the appliance UI typically rounds
-# to 5° but we let the user pick whatever).
+# Wolf ovens (both wall and range cavities) won't accept a target below
+# 200°F - confirmed on the SO3050PESP wall oven, and consistent with the
+# minimum settable temperature on every Wolf oven manual we've checked.
+# Upper bound 550°F covers the Roast/Broil ranges. Probe targets go
+# 100-200°F (food internal temp). Step is 1°F so the user can pick any
+# value the appliance accepts; the front panel typically rounds to 5°.
 RANGE_WRITABLE_NUMBERS = [
     # (suffix, name_suffix, setter, property_key, min, max, step, kwargs, hide_key)
     ("cav_set_temp", "Oven Set Temperature", "set_cav_set_temp_number",
-     "cav_set_temp", 100, 550, 1,
+     "cav_set_temp", 200, 550, 1,
      {**NUMBER_KWARGS, CONF_ICON: "mdi:thermometer-check"}, None),
     ("probe_set_temp", "Probe Set Temperature", "set_probe_set_temp_number",
      "cav_probe_set_temp", 100, 200, 1,
      {**NUMBER_KWARGS, CONF_ICON: "mdi:thermometer-probe-off"}, None),
     ("cav2_set_temp", "Oven 2 Set Temperature", "set_cav2_set_temp_number",
-     "cav2_set_temp", 100, 550, 1,
+     "cav2_set_temp", 200, 550, 1,
      {**NUMBER_KWARGS, CONF_ICON: "mdi:thermometer-check"}, "hide_oven2"),
     ("cav2_probe_set_temp", "Oven 2 Probe Set Temperature",
      "set_cav2_probe_set_temp_number", "cav2_probe_set_temp", 100, 200, 1,
