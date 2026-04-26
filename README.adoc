@@ -446,13 +446,9 @@ In addition to the read-only sensors above, several properties are exposed as **
 |===
 | Appliance | Entity | Property
 
-| Fridge
-| Set Temperature, Freezer Set Temperature, Wine Zone Upper/Lower Set Temperature, Refrigerator Drawer Set Temperature, Crisper Drawer Set Temperature
-| Whichever zones your model exposes (gated by the same `hide_X` flags as the read sensors)
-
 | Range
 | Oven Light, Oven Set Temperature, Probe Set Temperature
-| Toggle the oven cavity light, set the oven target temperature (100-550°F), set the meat probe target temperature (100-200°F)
+| Toggle the oven cavity light, adjust the oven target temperature (100-550°F), adjust the meat probe target temperature (100-200°F)
 
 | Range (Oven 2)
 | Oven 2 Light, Oven 2 Set Temperature, Oven 2 Probe Set Temperature
@@ -462,6 +458,10 @@ In addition to the read-only sensors above, several properties are exposed as **
 | Light
 | Toggle the interior light
 |===
+
+IMPORTANT: **Oven Set Temperature only adjusts an already-running cycle.** The appliance silently ignores writes to `cav_set_temp` / `cav2_set_temp` when the cavity is off. To use this entity, first start a cook mode (Bake, Roast, etc.) at the appliance's front panel - once the oven is actively heating, HA can adjust the target temperature from there. Writing it from the off state does **not** turn the oven on. Probe Set Temperature behaves the same way (probe must be inserted with the appliance running in a probe-aware mode). This is an appliance-side restriction, not a limitation of the integration.
+
+NOTE: **Fridge / freezer / wine / drawer / crisper set temperatures are intentionally read-only for now.** The appliance acks `set` writes on those properties (status:0) but the setpoint never actually changes - likely an appliance-side guard mode similar to the oven's "must be in a cook mode" behavior. Until that's understood, the fridge set-temp entities stay as read-only sensors so a misclick can't risk altering a running zone.
 
 NOTE: Writes go to the **D5** control channel (the same one used for unlocking and pairing). The appliance must be connected and paired - if the connection is down or the pairing window is closed (status 302), writes are dropped silently and the entity reverts on the next poll. The standard pairing flow is unchanged.
 

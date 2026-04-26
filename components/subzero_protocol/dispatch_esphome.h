@@ -118,16 +118,19 @@ struct FridgeBus : CommonBus {
   esphome::binary_sensor::BinarySensor *wine_temp_alert = nullptr;
   esphome::binary_sensor::BinarySensor *air_filter_on = nullptr;
 
-  // Set temps are writable via HA — exposed as Numbers, not read-only
-  // Sensors. `set` writes to D5 and the appliance pushes the new value
-  // back, which lands here via publish_set_temp(float) and updates the
-  // Number's state.
-  esphome::number::Number *set_temp = nullptr;
-  esphome::number::Number *frz_set_temp = nullptr;
-  esphome::number::Number *ref2_set_temp = nullptr;
-  esphome::number::Number *wine_set_temp = nullptr;
-  esphome::number::Number *wine2_set_temp = nullptr;
-  esphome::number::Number *crisp_set_temp = nullptr;
+  // Set-temps are read-only Sensors for now. Writing them via `set`
+  // doesn't appear to work on the fridges we've tested — the appliance
+  // accepts the write (status:0) but the setpoint never actually
+  // changes. Suspect this needs an "edit mode" on the front panel
+  // first, similar to how oven cav_set_temp only accepts writes once
+  // the oven is in an active cook mode. Keep these read-only until
+  // that's understood.
+  esphome::sensor::Sensor *set_temp = nullptr;
+  esphome::sensor::Sensor *frz_set_temp = nullptr;
+  esphome::sensor::Sensor *ref2_set_temp = nullptr;
+  esphome::sensor::Sensor *wine_set_temp = nullptr;
+  esphome::sensor::Sensor *wine2_set_temp = nullptr;
+  esphome::sensor::Sensor *crisp_set_temp = nullptr;
   esphome::sensor::Sensor *air_filter_pct = nullptr;
   esphome::sensor::Sensor *water_filter_pct = nullptr;
 

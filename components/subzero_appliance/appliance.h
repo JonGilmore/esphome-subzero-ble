@@ -57,22 +57,23 @@ public:
     bus_.air_filter_on = s;
   }
 
-  // Writable set-temps — Number entities. See ApplianceSetNumber.
-  void set_set_temp_number(esphome::number::Number *n) { bus_.set_temp = n; }
-  void set_frz_set_temp_number(esphome::number::Number *n) {
-    bus_.frz_set_temp = n;
+  // Set-temps are read-only Sensors. See FRIDGE_SENSORS comment in
+  // __init__.py for why they're not yet exposed as writable Numbers.
+  void set_set_temp_sensor(esphome::sensor::Sensor *s) { bus_.set_temp = s; }
+  void set_frz_set_temp_sensor(esphome::sensor::Sensor *s) {
+    bus_.frz_set_temp = s;
   }
-  void set_ref2_set_temp_number(esphome::number::Number *n) {
-    bus_.ref2_set_temp = n;
+  void set_ref2_set_temp_sensor(esphome::sensor::Sensor *s) {
+    bus_.ref2_set_temp = s;
   }
-  void set_wine_set_temp_number(esphome::number::Number *n) {
-    bus_.wine_set_temp = n;
+  void set_wine_set_temp_sensor(esphome::sensor::Sensor *s) {
+    bus_.wine_set_temp = s;
   }
-  void set_wine2_set_temp_number(esphome::number::Number *n) {
-    bus_.wine2_set_temp = n;
+  void set_wine2_set_temp_sensor(esphome::sensor::Sensor *s) {
+    bus_.wine2_set_temp = s;
   }
-  void set_crisp_set_temp_number(esphome::number::Number *n) {
-    bus_.crisp_set_temp = n;
+  void set_crisp_set_temp_sensor(esphome::sensor::Sensor *s) {
+    bus_.crisp_set_temp = s;
   }
   void set_air_filter_pct_sensor(esphome::sensor::Sensor *s) {
     bus_.air_filter_pct = s;

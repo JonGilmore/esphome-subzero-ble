@@ -197,11 +197,29 @@ TEMP_KWARGS = {
 }
 
 FRIDGE_SENSORS = [
-    # Note: set_temp / frz_set_temp / wine_set_temp / wine2_set_temp /
-    # ref2_set_temp / crisp_set_temp moved to FRIDGE_WRITABLE_NUMBERS —
-    # they're now Number entities (HA can both read AND write the
-    # setpoint). The publish-back path to keep HA in sync after pushes
-    # is identical; only the entity type changed.
+    # Set-temps are read-only Sensors. Writing them via `set` does NOT
+    # appear to work on the fridges we've tested — the appliance accepts
+    # the write (status:0) but never actually changes the setpoint, and
+    # the user has no recourse if a typo'd value somehow does take. Until
+    # we understand the appliance's set-temp guard mode (suspect: needs
+    # some "edit mode" enabled at the front panel first, similar to oven
+    # cav_set_temp requiring an active cook mode), keep these read-only.
+    ("set_temp", "Set Temperature", "set_set_temp_sensor",
+     {**TEMP_KWARGS, CONF_ICON: "mdi:thermometer"}, None),
+    ("frz_set_temp", "Freezer Set Temperature", "set_frz_set_temp_sensor",
+     {**TEMP_KWARGS, CONF_ICON: "mdi:snowflake-thermometer"}, "hide_freezer"),
+    ("wine_set_temp", "Wine Zone Upper Set Temperature",
+     "set_wine_set_temp_sensor",
+     {**TEMP_KWARGS, CONF_ICON: "mdi:glass-wine"}, "hide_wine"),
+    ("wine2_set_temp", "Wine Zone Lower Set Temperature",
+     "set_wine2_set_temp_sensor",
+     {**TEMP_KWARGS, CONF_ICON: "mdi:glass-wine"}, "hide_wine"),
+    ("ref2_set_temp", "Refrigerator Drawer Set Temperature",
+     "set_ref2_set_temp_sensor",
+     {**TEMP_KWARGS, CONF_ICON: "mdi:thermometer"}, "hide_ref_drawer"),
+    ("crisp_set_temp", "Crisper Drawer Set Temperature",
+     "set_crisp_set_temp_sensor",
+     {**TEMP_KWARGS, CONF_ICON: "mdi:thermometer"}, "hide_crisper"),
     ("air_filter_pct", "Air Filter Remaining", "set_air_filter_pct_sensor",
      {CONF_UNIT_OF_MEASUREMENT: UNIT_PERCENT, "state_class": STATE_CLASS_MEASUREMENT,
       "accuracy_decimals": 0, CONF_ICON: "mdi:air-filter"}, "hide_air_filter"),
@@ -222,28 +240,9 @@ NUMBER_KWARGS = {
     CONF_MODE: "box",
 }
 
-FRIDGE_WRITABLE_NUMBERS = [
-    # Fresh food zone — the always-present setpoint on every fridge.
-    ("set_temp", "Set Temperature", "set_set_temp_number", "set_temp",
-     34, 45, 1, {**NUMBER_KWARGS, CONF_ICON: "mdi:thermometer"}, None),
-    ("frz_set_temp", "Freezer Set Temperature", "set_frz_set_temp_number",
-     "frz_set_temp", -10, 5, 1,
-     {**NUMBER_KWARGS, CONF_ICON: "mdi:snowflake-thermometer"}, "hide_freezer"),
-    ("wine_set_temp", "Wine Zone Upper Set Temperature",
-     "set_wine_set_temp_number", "wine_set_temp", 40, 65, 1,
-     {**NUMBER_KWARGS, CONF_ICON: "mdi:glass-wine"}, "hide_wine"),
-    ("wine2_set_temp", "Wine Zone Lower Set Temperature",
-     "set_wine2_set_temp_number", "wine2_set_temp", 40, 65, 1,
-     {**NUMBER_KWARGS, CONF_ICON: "mdi:glass-wine"}, "hide_wine"),
-    ("ref2_set_temp", "Refrigerator Drawer Set Temperature",
-     "set_ref2_set_temp_number", "ref2_set_temp", 33, 45, 1,
-     {**NUMBER_KWARGS, CONF_ICON: "mdi:thermometer"}, "hide_ref_drawer"),
-    ("crisp_set_temp", "Crisper Drawer Set Temperature",
-     "set_crisp_set_temp_number", "crisp_set_temp", 30, 45, 1,
-     {**NUMBER_KWARGS, CONF_ICON: "mdi:thermometer"}, "hide_crisper"),
-]
-
-FRIDGE_WRITABLE_SWITCHES: list = []  # none yet — sabbath_on writability unconfirmed
+# Fridge has no writable numbers yet — see comment on FRIDGE_SENSORS above.
+FRIDGE_WRITABLE_NUMBERS: list = []
+FRIDGE_WRITABLE_SWITCHES: list = []  # sabbath_on writability also unconfirmed
 
 DISHWASHER_BINARY_SENSORS = [
     ("door_ajar", "Door", "set_door_ajar_sensor", {CONF_DEVICE_CLASS: DEVICE_CLASS_DOOR}, None),
