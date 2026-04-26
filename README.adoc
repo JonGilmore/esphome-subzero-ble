@@ -35,17 +35,17 @@ pip install esphome
 
 === 2. Create Your Config
 
-Create a YAML file (e.g. `subzero.yaml`). The `packages:` block pulls the appliance package directly from this GitHub repo at compile time - no cloning required.
+Create a YAML file (e.g. `subzero.yaml`). The `external_components:` block pulls the native `subzero_appliance` component directly from this GitHub repo at compile time - no cloning required. Each appliance is then declared as a single `subzero_appliance:` entry that creates its full set of sensors, switches, numbers, buttons, and the diagnostic Status text sensor.
 
-Choose the package file for your appliance type:
+Pick the appropriate `type:` for your appliance:
 
 [cols="1,1"]
 |===
-| Appliance Type | Package File
+| Appliance | type:
 
-| Sub-Zero refrigerator/freezer | `subzero_fridge.yaml`
-| Cove dishwasher | `subzero_dishwasher.yaml`
-| Wolf range/oven | `subzero_range.yaml`
+| Sub-Zero refrigerator/freezer | `fridge`
+| Cove dishwasher | `dishwasher`
+| Wolf range/oven | `range`
 |===
 
 .Sub-Zero Refrigerator (complete example)
@@ -55,19 +55,8 @@ external_components:                          # <1>
   - source:
       type: git
       url: https://github.com/JonGilmore/esphome-subzero-ble
-      ref: v3.0.0
-    components: [patch_acl_reassembly, subzero_protocol]
-
-packages:
-  - url: https://github.com/JonGilmore/esphome-subzero-ble
-    ref: v3.0.0 # use latest tag, or main
-    files:
-      - path: subzero_fridge.yaml
-        vars:
-          prefix: "szg"
-          appliance_name: "Kitchen Fridge"
-          appliance_mac: "00:06:80:XX:XX:XX"  # <2>
-          appliance_pin: "123456"             # <3>
+      ref: v3.0.0 # use latest tag, or main
+    components: [patch_acl_reassembly, subzero_protocol, subzero_appliance]
 
 esphome:
   name: my-subzero
@@ -102,153 +91,170 @@ wifi:
   fast_connect: true
   power_save_mode: none
 
+esp32_ble:
+  io_capability: keyboard_only
+  max_connections: 5
+
 esp32_ble_tracker:
-----
-<1> Pulls the C++ parser and ACL-reassembly patch components. Keep the `ref:` matching the one in `packages:` below so the components and YAML come from the same release.
-<2> Your appliance's BLE MAC address (Sub-Zero MACs typically start with `00:06:80`)
-<3> The 6-digit PIN from your appliance (see <<pairing>> below)
+  scan_parameters:
+    active: false
 
-.Cove Dishwasher (external_components + packages blocks)
+ble_client:                                   # <2>
+  - mac_address: "00:06:80:XX:XX:XX"
+    id: kitchen_fridge_ble
+    name: "SZG Kitchen Fridge"
+    auto_connect: true
+
+subzero_appliance:                            # <3>
+  - type: fridge
+    id: kitchen_fridge
+    ble_client_id: kitchen_fridge_ble
+    name: "Kitchen Fridge"
+    pin: "123456"                             # <4>
+----
+<1> Pulls the C++ parser, ACL-reassembly patch, and the `subzero_appliance` native component. All three must be loaded.
+<2> One `ble_client` per appliance, with the appliance's BLE MAC address (Sub-Zero MACs typically start with `00:06:80`). `auto_connect: true` keeps reconnecting on failure.
+<3> The native `subzero_appliance` component creates ~30 read-only sensors plus writable Numbers (set temps), Switches (lights), and 8 control/diagnostic buttons.
+<4> The 6-digit PIN from your appliance (see <<pairing>> below). `mode: password` masks it in the HA UI.
+
+.Cove Dishwasher (subzero_appliance + ble_client blocks)
 [source,yaml]
 ----
-external_components:
-  - source:
-      type: git
-      url: https://github.com/JonGilmore/esphome-subzero-ble
-      ref: v3.0.0
-    components: [patch_acl_reassembly, subzero_protocol]
+ble_client:
+  - mac_address: "00:06:80:XX:XX:XX"
+    id: dishwasher_ble
+    name: "SZG Dishwasher"
+    auto_connect: true
 
-packages:
-  - url: https://github.com/JonGilmore/esphome-subzero-ble
-    ref: v3.0.0 # use latest tag, or main
-    files:
-      - path: subzero_dishwasher.yaml
-        vars:
-          prefix: "szg"
-          appliance_name: "Dishwasher"
-          appliance_mac: "00:06:80:XX:XX:XX"
-          appliance_pin: "123456"
+subzero_appliance:
+  - type: dishwasher
+    id: dishwasher
+    ble_client_id: dishwasher_ble
+    name: "Dishwasher"
+    pin: "123456"
 ----
 
-.Wolf Range (external_components + packages blocks)
+.Wolf Range (subzero_appliance + ble_client blocks)
 [source,yaml]
 ----
-external_components:
-  - source:
-      type: git
-      url: https://github.com/JonGilmore/esphome-subzero-ble
-      ref: v3.0.0
-    components: [patch_acl_reassembly, subzero_protocol]
+ble_client:
+  - mac_address: "00:06:80:XX:XX:XX"
+    id: kitchen_range_ble
+    name: "SZG Kitchen Range"
+    auto_connect: true
 
-packages:
-  - url: https://github.com/JonGilmore/esphome-subzero-ble
-    ref: v3.0.0 # use latest tag, or main
-    files:
-      - path: subzero_range.yaml
-        vars:
-          prefix: "szg"
-          appliance_name: "Kitchen Range"
-          appliance_mac: "00:06:80:XX:XX:XX"
-          appliance_pin: "123456"
+subzero_appliance:
+  - type: range
+    id: kitchen_range
+    ble_client_id: kitchen_range_ble
+    name: "Kitchen Range"
+    pin: "123456"
+    # hide_oven2: false  # uncomment for dual-oven appliances
 ----
 
 .Multiple Appliances
 [source,yaml]
 ----
-external_components:
-  - source:
-      type: git
-      url: https://github.com/JonGilmore/esphome-subzero-ble
-      ref: v3.0.0
-    components: [patch_acl_reassembly, subzero_protocol]
+ble_client:
+  - mac_address: "00:06:80:XX:XX:XX"
+    id: main_fridge_ble
+    name: "SZG Main Fridge"
+    auto_connect: true
+  - mac_address: "00:06:80:YY:YY:YY"
+    id: kitchen_range_ble
+    name: "SZG Kitchen Range"
+    auto_connect: true
 
-packages:
-  - url: https://github.com/JonGilmore/esphome-subzero-ble
-    ref: v3.0.0 # use latest tag, or main
-    files:
-      - path: subzero_fridge.yaml
-        vars:
-          prefix: "szg"
-          appliance_name: "Main Fridge"
-          appliance_mac: "00:06:80:XX:XX:XX"
-          appliance_pin: "123456"
-      - path: subzero_range.yaml
-        vars:
-          prefix: "szg2"
-          appliance_name: "Kitchen Range"
-          appliance_mac: "00:06:80:YY:YY:YY"
-          appliance_pin: "654321"
+subzero_appliance:
+  - type: fridge
+    id: main_fridge
+    ble_client_id: main_fridge_ble
+    name: "Main Fridge"
+    pin: "123456"
+    poll_offset: 0s                # <1>
+  - type: range
+    id: kitchen_range
+    ble_client_id: kitchen_range_ble
+    name: "Kitchen Range"
+    pin: "654321"
+    poll_offset: 5s                # <1>
 ----
+<1> When running multiple appliances on one ESP32, stagger their poll cycles with `poll_offset` (default `0s`) - e.g. `0s / 5s / 10s` - to avoid concurrent-bonding races on the shared BLE radio. See link:docs/advanced.adoc#reconnect-logic[Reconnect Logic].
 
-NOTE: Use a unique `prefix` for each appliance (e.g. `szg`, `szg2`, `szg3`). The base package sets `max_connections: 5` in `esp32_ble`, which supports up to 5 appliances on one ESP32. If you need more, add `esp32_ble: max_connections: 6` (or higher) to your device YAML. See link:docs/advanced.adoc#ble-stack-tuning[BLE Stack Tuning] for additional `sdkconfig_options` when running 2+ concurrent connections.
+NOTE: `esp32_ble: max_connections: 5` supports up to 5 concurrent appliances on one ESP32. Bump it (and see link:docs/advanced.adoc#ble-stack-tuning[BLE Stack Tuning] for additional `sdkconfig_options`) if you need more.
 
-TIP: Pin to a release tag (e.g. `ref: v3.0.0`) for stability, or use `ref: main` to track the latest changes
+TIP: Pin to a release tag (e.g. `ref: v3.0.0`) for stability, or use `ref: main` to track the latest changes. The minimal copy-paste examples in `wolf-minimal-fridge.yaml`, `wolf-minimal-range.yaml`, and `cove-minimal-dishwasher.yaml` in the repo root track `main` and are a known-good starting point.
 
 ==== Fridge-Only Options
 
-For units without a freezer or ice maker, you can hide irrelevant sensors:
+For units without a freezer or ice maker, you can hide irrelevant sensors. The `hide_X` flags are inline options on the `subzero_appliance:` entry:
 
 [source,yaml]
 ----
-vars:
-  prefix: "szg"
-  appliance_name: "Basement Fridge"
-  appliance_mac: "00:06:80:XX:XX:XX"
-  appliance_pin: "123456"
-  hide_freezer: "true"
-  hide_ice_maker: "true"
+subzero_appliance:
+  - type: fridge
+    id: basement_fridge
+    ble_client_id: basement_fridge_ble
+    name: "Basement Fridge"
+    pin: "123456"
+    hide_freezer: true
+    hide_ice_maker: true
 ----
 
 [cols="1,1,2"]
 |===
 | Option | Default | Hides
 
-| `hide_freezer` | `"false"` | Freezer Set Temperature, Freezer Door
-| `hide_ice_maker` | `"false"` | Ice Maker
-| `hide_sabbath` | `"false"` | Sabbath Mode
-| `hide_wine` | `"true"` | Wine Door, Wine Zone Upper Set Temperature, Wine Zone Lower Set Temperature, Wine Temperature Alert
-| `hide_ref_drawer` | `"true"` | Refrigerator Drawer Set Temperature, Refrigerator Drawer Door
-| `hide_crisper` | `"true"` | Crisper Drawer Set Temperature
-| `hide_air_filter` | `"true"` | Air Filter, Air Filter Remaining
-| `hide_water_filter` | `"true"` | Water Filter Remaining
-| `hide_softener` | `"true"` | Water softener on a dishwasher
+| `hide_freezer` | `false` | Freezer Set Temperature, Freezer Door
+| `hide_ice_maker` | `false` | Ice Maker
+| `hide_sabbath` | `false` | Sabbath Mode
+| `hide_wine` | `true` | Wine Door, Wine Zone Upper/Lower Set Temperature, Wine Temperature Alert
+| `hide_ref_drawer` | `true` | Refrigerator Drawer Set Temperature, Refrigerator Drawer Door
+| `hide_crisper` | `true` | Crisper Drawer Set Temperature
+| `hide_air_filter` | `true` | Air Filter, Air Filter Remaining
+| `hide_water_filter` | `true` | Water Filter Remaining
+| `hide_softener` | `true` | Water Softener Low (dishwasher only)
+| `hide_oven2` | `true` | All Oven 2 sensors (range only - for dual-oven)
 |===
 
 .Fridge with Refrigerator Drawer (e.g. PRO3650G)
 [source,yaml]
 ----
-vars:
-  prefix: "szg"
-  appliance_name: "Fridge"
-  appliance_mac: "00:06:80:XX:XX:XX"
-  appliance_pin: "123456"
-  hide_ref_drawer: "false"
+subzero_appliance:
+  - type: fridge
+    id: fridge
+    ble_client_id: fridge_ble
+    name: "Fridge"
+    pin: "123456"
+    hide_ref_drawer: false
 ----
 
 .Fridge with Crisper & Filters (e.g. DEC3650RID)
 [source,yaml]
 ----
-vars:
-  prefix: "szg"
-  appliance_name: "Fridge"
-  appliance_mac: "00:06:80:XX:XX:XX"
-  appliance_pin: "123456"
-  hide_crisper: "false"
-  hide_air_filter: "false"
-  hide_water_filter: "false"
+subzero_appliance:
+  - type: fridge
+    id: fridge
+    ble_client_id: fridge_ble
+    name: "Fridge"
+    pin: "123456"
+    hide_crisper: false
+    hide_air_filter: false
+    hide_water_filter: false
 ----
 
 .Wine Fridge (dual-zone, no freezer or ice maker)
 [source,yaml]
 ----
-vars:
-  prefix: "szg"
-  appliance_name: "Wine Fridge"
-  appliance_mac: "00:06:80:XX:XX:XX"
-  appliance_pin: "123456"
-  hide_freezer: "true"
-  hide_ice_maker: "true"
-  hide_wine: "false"
+subzero_appliance:
+  - type: fridge
+    id: wine_fridge
+    ble_client_id: wine_fridge_ble
+    name: "Wine Fridge"
+    pin: "123456"
+    hide_freezer: true
+    hide_ice_maker: true
+    hide_wine: false
 ----
 
 === 3. Compile and Flash
@@ -300,8 +306,8 @@ TIP: Sub-Zero appliance BLE MAC addresses typically start with `00:06:80`. You c
 | *Most sensors stuck at "unknown" / Status sensor reads "Pairing required"*
 | The appliance returned `status: 302` to the unlock attempt. This usually means its PIN rotated - some appliances assign a new pairing key after a power cycle, factory reset, or when the official app re-pairs. Press the *Start Pairing* button for that appliance in HA, watch the appliance display for the new 6-digit PIN, then enter it into the appliance's *PIN* text input in HA. The next poll cycle will pick up full state. (You'll also see `[szg:###]: [Appliance] Pairing rejected (status 302)` in the ESPHome logs.)
 
-| *Sensors stop updating on a fridge or wall oven after ~20-25 min*
-| The BLE unlock session on fw 8.5 appliances expires after ~20-25 min. Poll responses stop, but push notifications continue. Zombie detection kicks in after 15 minutes of total silence (no polls AND no pushes) and forces a reconnect. If only polls fall silent while pushes keep arriving, the integration waits for the next state change to land, then catches up on the following reconnect cycle. See link:docs/advanced.adoc#reconnect-logic[Reconnect Logic].
+| *Poll-only sensors (model, uptime, version, diagnostic_status) only refresh every few minutes on a fridge or wall oven*
+| Normal for fw 8.5 appliances. After the first poll on each connection, repeat polls go silent within the same BLE session, so the integration's zombie detector forces a reconnect every ~3 missed cycles (~3 min). Each reconnect lands a fresh full-state poll which refreshes those fields. Push notifications (door, light, setpoint changes, etc.) continue between cycles, so live state stays current. See link:docs/advanced.adoc#reconnect-logic[Reconnect Logic].
 
 | *Dishwasher disconnects after ~10 seconds*
 | Normal for Cove dishwashers. The integration uses a fast reconnect path with cached GATT handles to complete polling within the connection window.
@@ -431,6 +437,45 @@ For ranges with two ovens, enable the second oven sensors using `hide_oven2: "fa
 
 | `hide_oven2` | `"true"` | All Oven 2 sensors (temperature, door, light, probe, cook mode, etc.)
 |===
+
+=== Writable Entities
+
+In addition to the read-only sensors above, several properties are exposed as **writable** entities - HA's Number entity for setpoints (with up/down controls and an input field) and HA's Switch entity for toggleable booleans. Writing to one of these sends a `set` command to the appliance over BLE; the appliance acks and pushes the new value back, which keeps the entity state in sync if the value is also changed from the appliance's front panel or the official Sub-Zero app.
+
+[cols="1,1,2"]
+|===
+| Appliance | Entity | Property
+
+| Fridge
+| Set Temperature, Freezer Set Temperature, Wine Zone Upper/Lower Set Temperature, Refrigerator Drawer Set Temperature, Crisper Drawer Set Temperature
+| Whichever zones your model exposes (gated by the same `hide_X` flags as the read sensors)
+
+| Range
+| Oven Light, Oven Set Temperature, Probe Set Temperature
+| Toggle the oven cavity light, set the oven target temperature (100-550°F), set the meat probe target temperature (100-200°F)
+
+| Range (Oven 2)
+| Oven 2 Light, Oven 2 Set Temperature, Oven 2 Probe Set Temperature
+| Same as above for the second cavity (gated by `hide_oven2`)
+
+| Dishwasher
+| Light
+| Toggle the interior light
+|===
+
+NOTE: Writes go to the **D5** control channel (the same one used for unlocking and pairing). The appliance must be connected and paired - if the connection is down or the pairing window is closed (status 302), writes are dropped silently and the entity reverts on the next poll. The standard pairing flow is unchanged.
+
+=== "Clear Cloud Token" Diagnostic Button
+
+A diagnostic button per appliance (hidden by default in the HA UI under "Diagnostic") sends `set remote_svc_reg_token=""` to the appliance, which deregisters it from the official Sub-Zero Azure IoT Hub. After pressing this button:
+
+* The official Sub-Zero/Wolf/Cove mobile app will no longer be able to reach the appliance over the cloud
+* The app will fall back to attempting BLE connections, which will fail because this integration's ESP32 owns the single BLE connection slot
+* In effect, the appliance becomes "owned" by HA - useful if you want to fully decouple from the manufacturer's cloud
+
+This is reversible: the official app can re-register the appliance with cloud during a normal pairing flow.
+
+WARNING: Pressing this button will break any existing automations or shortcuts that the user (or their family members) have set up in the official app. Only do this if you understand the trade-off.
 
 === Diagnostics (All Appliances)
 

@@ -57,21 +57,22 @@ public:
     bus_.air_filter_on = s;
   }
 
-  void set_set_temp_sensor(esphome::sensor::Sensor *s) { bus_.set_temp = s; }
-  void set_frz_set_temp_sensor(esphome::sensor::Sensor *s) {
-    bus_.frz_set_temp = s;
+  // Writable set-temps — Number entities. See ApplianceSetNumber.
+  void set_set_temp_number(esphome::number::Number *n) { bus_.set_temp = n; }
+  void set_frz_set_temp_number(esphome::number::Number *n) {
+    bus_.frz_set_temp = n;
   }
-  void set_ref2_set_temp_sensor(esphome::sensor::Sensor *s) {
-    bus_.ref2_set_temp = s;
+  void set_ref2_set_temp_number(esphome::number::Number *n) {
+    bus_.ref2_set_temp = n;
   }
-  void set_wine_set_temp_sensor(esphome::sensor::Sensor *s) {
-    bus_.wine_set_temp = s;
+  void set_wine_set_temp_number(esphome::number::Number *n) {
+    bus_.wine_set_temp = n;
   }
-  void set_wine2_set_temp_sensor(esphome::sensor::Sensor *s) {
-    bus_.wine2_set_temp = s;
+  void set_wine2_set_temp_number(esphome::number::Number *n) {
+    bus_.wine2_set_temp = n;
   }
-  void set_crisp_set_temp_sensor(esphome::sensor::Sensor *s) {
-    bus_.crisp_set_temp = s;
+  void set_crisp_set_temp_number(esphome::number::Number *n) {
+    bus_.crisp_set_temp = n;
   }
   void set_air_filter_pct_sensor(esphome::sensor::Sensor *s) {
     bus_.air_filter_pct = s;
@@ -118,9 +119,8 @@ public:
   void set_softener_low_sensor(esphome::binary_sensor::BinarySensor *s) {
     bus_.softener_low = s;
   }
-  void set_light_on_sensor(esphome::binary_sensor::BinarySensor *s) {
-    bus_.light_on = s;
-  }
+  // Writable: Light is a Switch (HA toggles → set light_on=true/false on D5).
+  void set_light_on_switch(esphome::switch_::Switch *s) { bus_.light_on = s; }
   void set_remote_ready_sensor(esphome::binary_sensor::BinarySensor *s) {
     bus_.remote_ready = s;
   }
@@ -165,7 +165,8 @@ public:
   void set_cav_at_set_temp_sensor(esphome::binary_sensor::BinarySensor *s) {
     bus_.cav_at_set_temp = s;
   }
-  void set_cav_light_on_sensor(esphome::binary_sensor::BinarySensor *s) {
+  // Writable: Oven Light is a Switch.
+  void set_cav_light_on_switch(esphome::switch_::Switch *s) {
     bus_.cav_light_on = s;
   }
   void set_cav_remote_ready_sensor(esphome::binary_sensor::BinarySensor *s) {
@@ -192,8 +193,9 @@ public:
 
   // Primary cavity numeric / mode
   void set_cav_temp_sensor(esphome::sensor::Sensor *s) { bus_.cav_temp = s; }
-  void set_cav_set_temp_sensor(esphome::sensor::Sensor *s) {
-    bus_.cav_set_temp = s;
+  // Writable: cav_set_temp is a Number (HA writes target temp).
+  void set_cav_set_temp_number(esphome::number::Number *n) {
+    bus_.cav_set_temp = n;
   }
   void set_cav_cook_mode_sensor(esphome::sensor::Sensor *s) {
     bus_.cav_cook_mode = s;
@@ -204,8 +206,9 @@ public:
   void set_probe_temp_sensor(esphome::sensor::Sensor *s) {
     bus_.probe_temp = s;
   }
-  void set_probe_set_temp_sensor(esphome::sensor::Sensor *s) {
-    bus_.probe_set_temp = s;
+  // Writable: probe_set_temp is a Number.
+  void set_probe_set_temp_number(esphome::number::Number *n) {
+    bus_.probe_set_temp = n;
   }
 
   // Kitchen timers
@@ -244,7 +247,8 @@ public:
   void set_cav2_at_set_temp_sensor(esphome::binary_sensor::BinarySensor *s) {
     bus_.cav2_at_set_temp = s;
   }
-  void set_cav2_light_on_sensor(esphome::binary_sensor::BinarySensor *s) {
+  // Writable: Oven 2 Light is a Switch.
+  void set_cav2_light_on_switch(esphome::switch_::Switch *s) {
     bus_.cav2_light_on = s;
   }
   void set_cav2_remote_ready_sensor(esphome::binary_sensor::BinarySensor *s) {
@@ -267,8 +271,9 @@ public:
     bus_.cav2_cook_timer_done = s;
   }
   void set_cav2_temp_sensor(esphome::sensor::Sensor *s) { bus_.cav2_temp = s; }
-  void set_cav2_set_temp_sensor(esphome::sensor::Sensor *s) {
-    bus_.cav2_set_temp = s;
+  // Writable: cav2_set_temp is a Number.
+  void set_cav2_set_temp_number(esphome::number::Number *n) {
+    bus_.cav2_set_temp = n;
   }
   void set_cav2_cook_mode_sensor(esphome::sensor::Sensor *s) {
     bus_.cav2_cook_mode = s;
@@ -276,8 +281,9 @@ public:
   void set_cav2_probe_temp_sensor(esphome::sensor::Sensor *s) {
     bus_.cav2_probe_temp = s;
   }
-  void set_cav2_probe_set_temp_sensor(esphome::sensor::Sensor *s) {
-    bus_.cav2_probe_set_temp = s;
+  // Writable: cav2_probe_set_temp is a Number.
+  void set_cav2_probe_set_temp_number(esphome::number::Number *n) {
+    bus_.cav2_probe_set_temp = n;
   }
 
 protected:

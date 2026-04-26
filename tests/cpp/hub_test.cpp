@@ -515,6 +515,65 @@ TEST_F(HubFixture, PinConfirmedFromParse_UpdatesStoredPinAndCallback) {
 // Restart-style timeouts (mode: restart)
 // =============================================================================
 
+// =============================================================================
+// `set` writes (HA -> appliance via D5)
+// =============================================================================
+
+TEST_F(HubFixture, WriteSetBool_GoesToD5WithCorrectJson) {
+  hub_.set_stored_pin("12345");
+  run_to_ready_();
+  transport_.clear_writes();
+  hub_.write_set_bool("cav_light_on", true);
+  ASSERT_EQ(transport_.write_count(), 1u);
+  EXPECT_EQ(transport_.write_at(0).handle, 0x10u); // D5 in our test fixture
+  std::string body(transport_.write_at(0).bytes.begin(),
+                   transport_.write_at(0).bytes.end());
+  EXPECT_EQ(body, "{\"cmd\":\"set\",\"params\":{\"cav_light_on\":true}}\n");
+}
+
+TEST_F(HubFixture, WriteSetInt_FormatsAsBareNumber) {
+  hub_.set_stored_pin("12345");
+  run_to_ready_();
+  transport_.clear_writes();
+  hub_.write_set_int("set_temp", 38);
+  ASSERT_EQ(transport_.write_count(), 1u);
+  std::string body(transport_.write_at(0).bytes.begin(),
+                   transport_.write_at(0).bytes.end());
+  EXPECT_EQ(body, "{\"cmd\":\"set\",\"params\":{\"set_temp\":38}}\n");
+}
+
+TEST_F(HubFixture, WriteSetString_QuotesAndEscapes) {
+  hub_.set_stored_pin("12345");
+  run_to_ready_();
+  transport_.clear_writes();
+  hub_.write_set_string("ap_ssid", "my\"net");
+  ASSERT_EQ(transport_.write_count(), 1u);
+  std::string body(transport_.write_at(0).bytes.begin(),
+                   transport_.write_at(0).bytes.end());
+  EXPECT_EQ(body, "{\"cmd\":\"set\",\"params\":{\"ap_ssid\":\"my\\\"net\"}}\n");
+}
+
+TEST_F(HubFixture, WriteSet_NoOpWhenD5HandleMissing) {
+  // Pre-subscribe state — d5_handle_ stays 0. Writes must not land.
+  hub_.set_stored_pin("12345");
+  // No run_to_ready_() here.
+  transport_.clear_writes();
+  hub_.write_set_bool("cav_light_on", true);
+  hub_.write_set_int("set_temp", 38);
+  hub_.write_set_string("ap_ssid", "iot");
+  EXPECT_EQ(transport_.write_count(), 0u);
+}
+
+TEST_F(HubFixture, WriteSet_NoOpWhenPinNotConfirmed) {
+  // Force pin_confirmed_ false (e.g. after a stale-bond reset).
+  hub_.set_stored_pin("12345");
+  run_to_ready_();
+  hub_.set_pin_confirmed(false);
+  transport_.clear_writes();
+  hub_.write_set_bool("cav_light_on", true);
+  EXPECT_EQ(transport_.write_count(), 0u);
+}
+
 TEST_F(HubFixture, PostBondRestart_CancelsPriorPostBond) {
   // Re-entering handle_connected during an in-flight post_bond should
   // not double-fire stages. The YAML's `mode: restart` semantics are

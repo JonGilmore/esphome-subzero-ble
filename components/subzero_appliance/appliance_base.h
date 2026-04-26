@@ -11,6 +11,7 @@
 #include "esphome/components/binary_sensor/binary_sensor.h"
 #include "esphome/components/ble_client/ble_client.h"
 #include "esphome/components/button/button.h"
+#include "esphome/components/number/number.h"
 #include "esphome/components/sensor/sensor.h"
 #include "esphome/components/switch/switch.h"
 #include "esphome/components/text/text.h"
@@ -117,6 +118,19 @@ public:
     hub()->set_stored_pin(pin);
   }
 
+  // Used by ApplianceSetSwitch / ApplianceSetNumber when HA writes a
+  // value. Forwards directly to the hub which handles JSON-formatting
+  // and the D5 write.
+  void write_set_bool(const std::string &key, bool value) {
+    hub()->write_set_bool(key, value);
+  }
+  void write_set_int(const std::string &key, int value) {
+    hub()->write_set_int(key, value);
+  }
+  void write_set_string(const std::string &key, const std::string &value) {
+    hub()->write_set_string(key, value);
+  }
+
   // ---- Button actions (called from ApplianceButton::press_action) ----
 
   // Connect: reset hub state and trigger ble_client connect.
@@ -131,6 +145,15 @@ public:
   // Reset: full pairing wipe — clear bond + handles + state, then
   // disconnect and let auto_connect re-pair on the next session.
   void press_reset_pairing();
+  // Clear cloud token: sends `set remote_svc_reg_token=""` to deregister
+  // the appliance from Azure IoT Hub, forcing the official app to fall
+  // back to BLE for everything (which then fights us for the single
+  // connection slot — diagnostic only). Verified mechanism via HCI snoop
+  // 2026-04-26: the app's `isBluetoothOnlyMode` flips false once any
+  // token is present.
+  void press_clear_cloud_token() {
+    write_set_string("remote_svc_reg_token", "");
+  }
 
 protected:
   // Subclass plug-in points
@@ -163,6 +186,7 @@ enum class ApplianceButtonKind {
   kPoll,
   kLogDebugInfo,
   kResetPairing,
+  kClearCloudToken,
 };
 
 class ApplianceButton : public esphome::button::Button {
@@ -196,6 +220,9 @@ protected:
     case ApplianceButtonKind::kResetPairing:
       parent_->press_reset_pairing();
       break;
+    case ApplianceButtonKind::kClearCloudToken:
+      parent_->press_clear_cloud_token();
+      break;
     }
   }
 
@@ -222,6 +249,54 @@ protected:
 
 private:
   ApplianceBase *parent_ = nullptr;
+};
+
+// Switch subclass for writable boolean properties (cav_light_on, sabbath_on,
+// dishwasher light_on, etc.). One class powers all of them — the property
+// key is wired in by Python codegen. write_state forwards to the hub via
+// `set` on D5; the appliance acks then pushes the new value back on D6,
+// which our normal read pipeline catches and publishes back via the
+// dispatch bus, keeping the switch in sync. publish_state happens here too
+// so the UI updates instantly without waiting for the round-trip echo.
+class ApplianceSetSwitch : public esphome::switch_::Switch {
+public:
+  void set_parent(ApplianceBase *p) { parent_ = p; }
+  void set_property_key(const std::string &k) { property_key_ = k; }
+
+protected:
+  void write_state(bool state) override {
+    if (parent_ != nullptr && !property_key_.empty()) {
+      parent_->write_set_bool(property_key_, state);
+    }
+    this->publish_state(state);
+  }
+
+private:
+  ApplianceBase *parent_ = nullptr;
+  std::string property_key_;
+};
+
+// Number subclass for writable numeric properties (set_temp, frz_set_temp,
+// kitchen_timer_duration, etc.). Sub-Zero's protocol uses integers for all
+// the writable numerics we've observed (temps in whole degrees F, timer
+// durations in whole seconds), so control() rounds the float to int before
+// formatting. publish_state echoes back so the UI updates instantly.
+class ApplianceSetNumber : public esphome::number::Number {
+public:
+  void set_parent(ApplianceBase *p) { parent_ = p; }
+  void set_property_key(const std::string &k) { property_key_ = k; }
+
+protected:
+  void control(float value) override {
+    if (parent_ != nullptr && !property_key_.empty()) {
+      parent_->write_set_int(property_key_, static_cast<int>(value));
+    }
+    this->publish_state(value);
+  }
+
+private:
+  ApplianceBase *parent_ = nullptr;
+  std::string property_key_;
 };
 
 // Text input subclass for the PIN field. esphome::text::Text is abstract
