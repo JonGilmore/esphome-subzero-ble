@@ -92,6 +92,10 @@ public:
 
   // ---- BleTransport interface ----
   bool connected() const override { return connected_; }
+  void connect() override {
+    ++connect_count_;
+    connected_ = true;
+  }
   void disconnect() override {
     ++disconnect_count_;
     connected_ = false;
@@ -136,6 +140,7 @@ public:
   // Helpers for assertions
   std::size_t write_count() const { return writes_.size(); }
   const WriteCall &write_at(std::size_t i) const { return writes_.at(i); }
+  std::size_t connect_count() const { return connect_count_; }
   std::size_t disconnect_count() const { return disconnect_count_; }
   std::size_t mtu_request_count() const { return mtu_request_count_; }
   std::size_t encryption_request_count() const {
@@ -171,6 +176,7 @@ private:
   std::vector<std::uint16_t> notify_subscribed_handles_;
   BleResult next_write_result_ = BleResult::kOk;
 
+  std::size_t connect_count_ = 0;
   std::size_t disconnect_count_ = 0;
   std::size_t mtu_request_count_ = 0;
   std::size_t encryption_request_count_ = 0;

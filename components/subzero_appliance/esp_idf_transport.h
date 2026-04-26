@@ -31,6 +31,11 @@ public:
     return client_ != nullptr && client_->connected();
   }
 
+  void connect() override {
+    if (client_ != nullptr)
+      client_->connect();
+  }
+
   void disconnect() override {
     if (client_ != nullptr)
       client_->disconnect();

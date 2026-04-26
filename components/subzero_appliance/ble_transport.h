@@ -50,6 +50,9 @@ public:
   // Connection state — checked before each command write.
   virtual bool connected() const = 0;
 
+  // Initiate connection (used by press_connect).
+  virtual void connect() = 0;
+
   // Initiate disconnect (auto_connect will bring it back).
   virtual void disconnect() = 0;
 

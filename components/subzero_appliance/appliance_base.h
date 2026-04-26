@@ -1,0 +1,192 @@
+#pragma once
+
+#ifdef USE_ESP32
+
+#include "esp_idf_transport.h"
+#include "esphome_scheduler.h"
+#include "hub.h"
+
+#include "../subzero_protocol/dispatch_esphome.h"
+
+#include "esphome/components/ble_client/ble_client.h"
+#include "esphome/components/binary_sensor/binary_sensor.h"
+#include "esphome/components/button/button.h"
+#include "esphome/components/sensor/sensor.h"
+#include "esphome/components/switch/switch.h"
+#include "esphome/components/text/text.h"
+#include "esphome/components/text_sensor/text_sensor.h"
+#include "esphome/core/component.h"
+
+#include <string>
+
+namespace esphome {
+namespace subzero_appliance {
+
+// Common base for FridgeAppliance / DishwasherAppliance / RangeAppliance.
+//
+// Inherits from Component (for setup() + set_interval()) and
+// BLEClientNode (for gattc_event_handler routing). Holds all the
+// state-machine collaborators (hub, transport, scheduler) plus the
+// callback wiring for the status text sensor and PIN text input.
+//
+// Subclasses provide:
+//   * `hub()` — pointer to their typed `*Hub` (FridgeHub etc.)
+//   * `common_bus()` — pointer to the type's bus (which inherits CommonBus)
+//   * `wire_bus_()` — sets the typed bus pointer on their hub
+class ApplianceBase : public esphome::Component, public esphome::ble_client::BLEClientNode {
+ public:
+  // ---- Configuration setters (called from Python codegen) ----
+
+  void set_pin(const std::string &pin) { pending_pin_ = pin; }
+  void set_appliance_name(const std::string &name) { name_str_ = name; }
+  void set_poll_offset_ms(std::uint32_t ms) { poll_offset_ms_ = ms; }
+
+  // Status / PIN entities
+  void set_status_text_sensor(esphome::text_sensor::TextSensor *s) { status_ts_ = s; }
+  void set_pin_input(esphome::text::Text *t) { pin_input_ = t; }
+
+  // CommonBus setters — match the fields on subzero_protocol::CommonBus.
+  // Subclass's bus inherits CommonBus, so writing through common_bus()
+  // hits the right (shared) members regardless of appliance type.
+  void set_sabbath_on_sensor(esphome::binary_sensor::BinarySensor *s) { common_bus()->sabbath_on = s; }
+  void set_svc_required_sensor(esphome::binary_sensor::BinarySensor *s) { common_bus()->svc_required = s; }
+  void set_model_sensor(esphome::text_sensor::TextSensor *s) { common_bus()->model = s; }
+  void set_uptime_sensor(esphome::text_sensor::TextSensor *s) { common_bus()->uptime = s; }
+  void set_serial_sensor(esphome::text_sensor::TextSensor *s) { common_bus()->serial = s; }
+  void set_appliance_type_sensor(esphome::text_sensor::TextSensor *s) { common_bus()->appliance_type = s; }
+  void set_diag_status_sensor(esphome::text_sensor::TextSensor *s) { common_bus()->diag_status = s; }
+  void set_build_date_sensor(esphome::text_sensor::TextSensor *s) { common_bus()->build_date = s; }
+  void set_fw_version_sensor(esphome::text_sensor::TextSensor *s) { common_bus()->fw_version = s; }
+  void set_api_version_sensor(esphome::text_sensor::TextSensor *s) { common_bus()->api_version = s; }
+  void set_bleapp_version_sensor(esphome::text_sensor::TextSensor *s) { common_bus()->bleapp_version = s; }
+  void set_os_version_sensor(esphome::text_sensor::TextSensor *s) { common_bus()->os_version = s; }
+  void set_rtapp_version_sensor(esphome::text_sensor::TextSensor *s) { common_bus()->rtapp_version = s; }
+  void set_board_version_sensor(esphome::text_sensor::TextSensor *s) { common_bus()->board_version = s; }
+
+  // ---- ESPHome lifecycle ----
+
+  void setup() override;
+  float get_setup_priority() const override;
+
+  // ---- BLE event routing ----
+
+  void gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t gattc_if,
+                           esp_ble_gattc_cb_param_t *param) override;
+  void gap_event_handler(esp_gap_ble_cb_event_t event,
+                         esp_ble_gap_cb_param_t *param) override;
+
+  // ---- Forwarded setters that need access to hub() ----
+
+  // Used by ApplianceDebugSwitch::write_state.
+  void set_debug_mode(bool enabled) { hub()->set_debug_mode(enabled); }
+
+  // ---- Button actions (called from ApplianceButton::press_action) ----
+
+  // Connect: reset hub state and trigger ble_client connect.
+  void press_connect();
+  // Disconnect: drop the BLE link (auto_connect will bring it back).
+  void press_disconnect();
+  // Pairing flow
+  void press_start_pairing() { hub()->press_start_pairing(); }
+  void press_submit_pin() { hub()->press_submit_pin(); }
+  void press_poll() { hub()->press_poll(); }
+  void press_log_debug_info() { hub()->press_log_debug_info(); }
+  // Reset: full pairing wipe — clear bond + handles + state, then
+  // disconnect and let auto_connect re-pair on the next session.
+  void press_reset_pairing();
+
+ protected:
+  // Subclass plug-in points
+  virtual SubzeroHub *hub() = 0;
+  virtual esphome::subzero_protocol::CommonBus *common_bus() = 0;
+  virtual void wire_bus_() = 0;
+
+  // Collaborators owned by this component (lifetime = ours)
+  EspIdfTransport transport_;
+  EsphomeScheduler scheduler_;
+
+  // Config (set from Python codegen)
+  std::string pending_pin_;
+  std::string name_str_;
+  std::uint32_t poll_offset_ms_ = 0;
+
+  // Entity refs (set from Python codegen)
+  esphome::text_sensor::TextSensor *status_ts_ = nullptr;
+  esphome::text::Text *pin_input_ = nullptr;
+};
+
+// One Button subclass for all 7 button actions. Python codegen
+// instantiates 7 of these per appliance, sets the appropriate action
+// kind, and registers each with HA via button.new_button.
+enum class ApplianceButtonKind {
+  kConnect,
+  kDisconnect,
+  kStartPairing,
+  kSubmitPin,
+  kPoll,
+  kLogDebugInfo,
+  kResetPairing,
+};
+
+class ApplianceButton : public esphome::button::Button {
+ public:
+  void set_parent(ApplianceBase *p) { parent_ = p; }
+  void set_kind(ApplianceButtonKind k) { kind_ = k; }
+
+ protected:
+  void press_action() override {
+    if (parent_ == nullptr) return;
+    switch (kind_) {
+      case ApplianceButtonKind::kConnect:
+        parent_->press_connect();
+        break;
+      case ApplianceButtonKind::kDisconnect:
+        parent_->press_disconnect();
+        break;
+      case ApplianceButtonKind::kStartPairing:
+        parent_->press_start_pairing();
+        break;
+      case ApplianceButtonKind::kSubmitPin:
+        parent_->press_submit_pin();
+        break;
+      case ApplianceButtonKind::kPoll:
+        parent_->press_poll();
+        break;
+      case ApplianceButtonKind::kLogDebugInfo:
+        parent_->press_log_debug_info();
+        break;
+      case ApplianceButtonKind::kResetPairing:
+        parent_->press_reset_pairing();
+        break;
+    }
+  }
+
+ private:
+  ApplianceBase *parent_ = nullptr;
+  ApplianceButtonKind kind_ = ApplianceButtonKind::kConnect;
+};
+
+// Switch subclass for the Debug Mode toggle.
+class ApplianceDebugSwitch : public esphome::switch_::Switch {
+ public:
+  void set_parent(ApplianceBase *p) { parent_ = p; }
+
+ protected:
+  void write_state(bool state) override {
+    if (parent_ != nullptr) {
+      // Forward to the hub via ApplianceBase. The switch's own state is
+      // tracked by ESPHome; this just propagates to the hub's debug flag.
+      // (ApplianceBase has hub() but it's protected; expose via setter.)
+      parent_->set_debug_mode(state);
+    }
+    this->publish_state(state);
+  }
+
+ private:
+  ApplianceBase *parent_ = nullptr;
+};
+
+}  // namespace subzero_appliance
+}  // namespace esphome
+
+#endif  // USE_ESP32

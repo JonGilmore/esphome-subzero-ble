@@ -10,19 +10,8 @@ external_components:
   - source:
       type: git
       url: https://github.com/JonGilmore/esphome-subzero-ble
-      ref: v2.1.0
+      ref: main
     components: [patch_acl_reassembly, subzero_protocol, subzero_appliance]
-
-packages:
-  - url: https://github.com/JonGilmore/esphome-subzero-ble
-    ref: v2.1.0
-    files:
-      - path: subzero_range.yaml
-        vars:
-          prefix: "szg"
-          appliance_name: "Kitchen Range"
-          appliance_mac: !secret kitchen_range_mac
-          appliance_pin: !secret kitchen_range_pin
 
 esphome:
   name: ${name}
@@ -56,3 +45,25 @@ wifi:
   password: !secret wifi_password
   fast_connect: true
   power_save_mode: none
+
+esp32_ble:
+  io_capability: keyboard_only
+  max_connections: 5
+
+esp32_ble_tracker:
+  scan_parameters:
+    active: false
+
+ble_client:
+  - mac_address: !secret kitchen_range_mac
+    id: kitchen_range_ble
+    name: "SZG Kitchen Range"
+    auto_connect: true
+
+subzero_appliance:
+  - type: range
+    id: kitchen_range
+    ble_client_id: kitchen_range_ble
+    name: "Kitchen Range"
+    pin: !secret kitchen_range_pin
+    # hide_oven2: false  # uncomment for dual-oven appliances

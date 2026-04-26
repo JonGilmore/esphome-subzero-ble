@@ -15,10 +15,6 @@
 !cove-minimal-dishwasher.yaml
 !wolf-minimal-range.yaml
 !wolf-minimal-fridge.yaml
-!subzero_fridge.yaml
-!subzero_dishwasher.yaml
-!subzero_range.yaml
-!subzero_base.yaml
 !components/
 !components/patch_acl_reassembly/
 !components/patch_acl_reassembly/**
