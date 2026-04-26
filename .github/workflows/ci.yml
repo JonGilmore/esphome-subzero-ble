@@ -60,7 +60,7 @@ jobs:
           # PRs: use the source branch name. Pushes: use the commit SHA.
           # Use | as sed delimiter — branch names may contain / (e.g. fix/foo).
           REF="${GITHUB_HEAD_REF:-$GITHUB_SHA}"
-          sed -i "s|ref: v[0-9]*\.[0-9]*\.[0-9]*|ref: ${REF}|" \
+          sed -i -E "s|ref: (v[0-9]+\.[0-9]+\.[0-9]+|main)|ref: ${REF}|" \
             cove-minimal-dishwasher.yaml wolf-minimal-range.yaml wolf-minimal-fridge.yaml
 
       - name: Validate configs
@@ -109,7 +109,7 @@ jobs:
         run: |
           # Use | as sed delimiter — branch names may contain / (e.g. fix/foo).
           REF="${GITHUB_HEAD_REF:-$GITHUB_SHA}"
-          sed -i "s|ref: v[0-9]*\.[0-9]*\.[0-9]*|ref: ${REF}|" "${{ matrix.file }}"
+          sed -i -E "s|ref: (v[0-9]+\.[0-9]+\.[0-9]+|main)|ref: ${REF}|" "${{ matrix.file }}"
 
       - name: Compile ${{ matrix.file }}
         run: esphome compile "${{ matrix.file }}"
