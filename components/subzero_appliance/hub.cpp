@@ -15,11 +15,22 @@
 #define HUB_LOGD(tag, ...) ESP_LOGD(tag, __VA_ARGS__)
 #else
 // Host build: ESPHome's logger headers aren't available. Stub the macros
-// so unit tests don't need to mock the log infrastructure.
-#define HUB_LOGI(tag, ...) (void)0
-#define HUB_LOGW(tag, ...) (void)0
-#define HUB_LOGE(tag, ...) (void)0
-#define HUB_LOGD(tag, ...) (void)0
+// via a no-op template that "uses" every argument so callers (including
+// the chunked-log lambda's idx/total/chunk params and the
+// transport_->write result captured into `err`) don't trip
+// -Wunused-{parameter,variable,lambda-capture}.
+namespace esphome {
+namespace subzero_appliance {
+template <typename... Args>
+inline void hub_log_noop(Args &&.../*unused*/) {}
+}  // namespace subzero_appliance
+}  // namespace esphome
+// Variadic-only form (no `,##` GNU extension) — every call site already
+// passes at least a tag + format string, so __VA_ARGS__ is always non-empty.
+#define HUB_LOGI(...) ::esphome::subzero_appliance::hub_log_noop(__VA_ARGS__)
+#define HUB_LOGW(...) ::esphome::subzero_appliance::hub_log_noop(__VA_ARGS__)
+#define HUB_LOGE(...) ::esphome::subzero_appliance::hub_log_noop(__VA_ARGS__)
+#define HUB_LOGD(...) ::esphome::subzero_appliance::hub_log_noop(__VA_ARGS__)
 #endif
 
 namespace esphome {
