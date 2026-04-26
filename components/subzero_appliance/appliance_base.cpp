@@ -80,7 +80,7 @@ void ApplianceBase::gattc_event_handler(esp_gattc_cb_event_t event,
       // is idempotent for a not-yet-connected state (clears handles + flags
       // we never set), so calling it here is safe even when the previous
       // state was already disconnected.
-      HUB_LOGW("ble", "[%s] GATT open failed (status=%d)", name_str_.c_str(),
+      ESP_LOGW(TAG, "[%s] GATT open failed (status=%d)", name_str_.c_str(),
                static_cast<int>(param->open.status));
       h->handle_disconnected();
     }
