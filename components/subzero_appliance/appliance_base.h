@@ -8,8 +8,8 @@
 
 #include "../subzero_protocol/dispatch_esphome.h"
 
-#include "esphome/components/ble_client/ble_client.h"
 #include "esphome/components/binary_sensor/binary_sensor.h"
+#include "esphome/components/ble_client/ble_client.h"
 #include "esphome/components/button/button.h"
 #include "esphome/components/sensor/sensor.h"
 #include "esphome/components/switch/switch.h"
@@ -33,8 +33,9 @@ namespace subzero_appliance {
 //   * `hub()` — pointer to their typed `*Hub` (FridgeHub etc.)
 //   * `common_bus()` — pointer to the type's bus (which inherits CommonBus)
 //   * `wire_bus_()` — sets the typed bus pointer on their hub
-class ApplianceBase : public esphome::Component, public esphome::ble_client::BLEClientNode {
- public:
+class ApplianceBase : public esphome::Component,
+                      public esphome::ble_client::BLEClientNode {
+public:
   // ---- Configuration setters (called from Python codegen) ----
 
   void set_pin(const std::string &pin) { pending_pin_ = pin; }
@@ -42,26 +43,56 @@ class ApplianceBase : public esphome::Component, public esphome::ble_client::BLE
   void set_poll_offset_ms(std::uint32_t ms) { poll_offset_ms_ = ms; }
 
   // Status / PIN entities
-  void set_status_text_sensor(esphome::text_sensor::TextSensor *s) { status_ts_ = s; }
+  void set_status_text_sensor(esphome::text_sensor::TextSensor *s) {
+    status_ts_ = s;
+  }
   void set_pin_input(esphome::text::Text *t) { pin_input_ = t; }
 
   // CommonBus setters — match the fields on subzero_protocol::CommonBus.
   // Subclass's bus inherits CommonBus, so writing through common_bus()
   // hits the right (shared) members regardless of appliance type.
-  void set_sabbath_on_sensor(esphome::binary_sensor::BinarySensor *s) { common_bus()->sabbath_on = s; }
-  void set_svc_required_sensor(esphome::binary_sensor::BinarySensor *s) { common_bus()->svc_required = s; }
-  void set_model_sensor(esphome::text_sensor::TextSensor *s) { common_bus()->model = s; }
-  void set_uptime_sensor(esphome::text_sensor::TextSensor *s) { common_bus()->uptime = s; }
-  void set_serial_sensor(esphome::text_sensor::TextSensor *s) { common_bus()->serial = s; }
-  void set_appliance_type_sensor(esphome::text_sensor::TextSensor *s) { common_bus()->appliance_type = s; }
-  void set_diag_status_sensor(esphome::text_sensor::TextSensor *s) { common_bus()->diag_status = s; }
-  void set_build_date_sensor(esphome::text_sensor::TextSensor *s) { common_bus()->build_date = s; }
-  void set_fw_version_sensor(esphome::text_sensor::TextSensor *s) { common_bus()->fw_version = s; }
-  void set_api_version_sensor(esphome::text_sensor::TextSensor *s) { common_bus()->api_version = s; }
-  void set_bleapp_version_sensor(esphome::text_sensor::TextSensor *s) { common_bus()->bleapp_version = s; }
-  void set_os_version_sensor(esphome::text_sensor::TextSensor *s) { common_bus()->os_version = s; }
-  void set_rtapp_version_sensor(esphome::text_sensor::TextSensor *s) { common_bus()->rtapp_version = s; }
-  void set_board_version_sensor(esphome::text_sensor::TextSensor *s) { common_bus()->board_version = s; }
+  void set_sabbath_on_sensor(esphome::binary_sensor::BinarySensor *s) {
+    common_bus()->sabbath_on = s;
+  }
+  void set_svc_required_sensor(esphome::binary_sensor::BinarySensor *s) {
+    common_bus()->svc_required = s;
+  }
+  void set_model_sensor(esphome::text_sensor::TextSensor *s) {
+    common_bus()->model = s;
+  }
+  void set_uptime_sensor(esphome::text_sensor::TextSensor *s) {
+    common_bus()->uptime = s;
+  }
+  void set_serial_sensor(esphome::text_sensor::TextSensor *s) {
+    common_bus()->serial = s;
+  }
+  void set_appliance_type_sensor(esphome::text_sensor::TextSensor *s) {
+    common_bus()->appliance_type = s;
+  }
+  void set_diag_status_sensor(esphome::text_sensor::TextSensor *s) {
+    common_bus()->diag_status = s;
+  }
+  void set_build_date_sensor(esphome::text_sensor::TextSensor *s) {
+    common_bus()->build_date = s;
+  }
+  void set_fw_version_sensor(esphome::text_sensor::TextSensor *s) {
+    common_bus()->fw_version = s;
+  }
+  void set_api_version_sensor(esphome::text_sensor::TextSensor *s) {
+    common_bus()->api_version = s;
+  }
+  void set_bleapp_version_sensor(esphome::text_sensor::TextSensor *s) {
+    common_bus()->bleapp_version = s;
+  }
+  void set_os_version_sensor(esphome::text_sensor::TextSensor *s) {
+    common_bus()->os_version = s;
+  }
+  void set_rtapp_version_sensor(esphome::text_sensor::TextSensor *s) {
+    common_bus()->rtapp_version = s;
+  }
+  void set_board_version_sensor(esphome::text_sensor::TextSensor *s) {
+    common_bus()->board_version = s;
+  }
 
   // ---- ESPHome lifecycle ----
 
@@ -101,7 +132,7 @@ class ApplianceBase : public esphome::Component, public esphome::ble_client::BLE
   // disconnect and let auto_connect re-pair on the next session.
   void press_reset_pairing();
 
- protected:
+protected:
   // Subclass plug-in points
   virtual SubzeroHub *hub() = 0;
   virtual esphome::subzero_protocol::CommonBus *common_bus() = 0;
@@ -135,49 +166,50 @@ enum class ApplianceButtonKind {
 };
 
 class ApplianceButton : public esphome::button::Button {
- public:
+public:
   void set_parent(ApplianceBase *p) { parent_ = p; }
   void set_kind(ApplianceButtonKind k) { kind_ = k; }
 
- protected:
+protected:
   void press_action() override {
-    if (parent_ == nullptr) return;
+    if (parent_ == nullptr)
+      return;
     switch (kind_) {
-      case ApplianceButtonKind::kConnect:
-        parent_->press_connect();
-        break;
-      case ApplianceButtonKind::kDisconnect:
-        parent_->press_disconnect();
-        break;
-      case ApplianceButtonKind::kStartPairing:
-        parent_->press_start_pairing();
-        break;
-      case ApplianceButtonKind::kSubmitPin:
-        parent_->press_submit_pin();
-        break;
-      case ApplianceButtonKind::kPoll:
-        parent_->press_poll();
-        break;
-      case ApplianceButtonKind::kLogDebugInfo:
-        parent_->press_log_debug_info();
-        break;
-      case ApplianceButtonKind::kResetPairing:
-        parent_->press_reset_pairing();
-        break;
+    case ApplianceButtonKind::kConnect:
+      parent_->press_connect();
+      break;
+    case ApplianceButtonKind::kDisconnect:
+      parent_->press_disconnect();
+      break;
+    case ApplianceButtonKind::kStartPairing:
+      parent_->press_start_pairing();
+      break;
+    case ApplianceButtonKind::kSubmitPin:
+      parent_->press_submit_pin();
+      break;
+    case ApplianceButtonKind::kPoll:
+      parent_->press_poll();
+      break;
+    case ApplianceButtonKind::kLogDebugInfo:
+      parent_->press_log_debug_info();
+      break;
+    case ApplianceButtonKind::kResetPairing:
+      parent_->press_reset_pairing();
+      break;
     }
   }
 
- private:
+private:
   ApplianceBase *parent_ = nullptr;
   ApplianceButtonKind kind_ = ApplianceButtonKind::kConnect;
 };
 
 // Switch subclass for the Debug Mode toggle.
 class ApplianceDebugSwitch : public esphome::switch_::Switch {
- public:
+public:
   void set_parent(ApplianceBase *p) { parent_ = p; }
 
- protected:
+protected:
   void write_state(bool state) override {
     if (parent_ != nullptr) {
       // Forward to the hub via ApplianceBase. The switch's own state is
@@ -188,7 +220,7 @@ class ApplianceDebugSwitch : public esphome::switch_::Switch {
     this->publish_state(state);
   }
 
- private:
+private:
   ApplianceBase *parent_ = nullptr;
 };
 
@@ -197,10 +229,10 @@ class ApplianceDebugSwitch : public esphome::switch_::Switch {
 // to the hub's stored_pin and publish the state back so the HA UI
 // reflects what was entered.
 class AppliancePinText : public esphome::text::Text {
- public:
+public:
   void set_parent(ApplianceBase *p) { parent_ = p; }
 
- protected:
+protected:
   void control(const std::string &value) override {
     if (parent_ != nullptr && !value.empty()) {
       parent_->set_stored_pin_from_user(value);
@@ -208,11 +240,11 @@ class AppliancePinText : public esphome::text::Text {
     this->publish_state(value);
   }
 
- private:
+private:
   ApplianceBase *parent_ = nullptr;
 };
 
-}  // namespace subzero_appliance
-}  // namespace esphome
+} // namespace subzero_appliance
+} // namespace esphome
 
-#endif  // USE_ESP32
+#endif // USE_ESP32
