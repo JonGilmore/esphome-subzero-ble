@@ -80,6 +80,12 @@ class ApplianceBase : public esphome::Component, public esphome::ble_client::BLE
   // Used by ApplianceDebugSwitch::write_state.
   void set_debug_mode(bool enabled) { hub()->set_debug_mode(enabled); }
 
+  // Used by AppliancePinText::control when the user types a new PIN
+  // into the HA text input.
+  void set_stored_pin_from_user(const std::string &pin) {
+    hub()->set_stored_pin(pin);
+  }
+
   // ---- Button actions (called from ApplianceButton::press_action) ----
 
   // Connect: reset hub state and trigger ble_client connect.
@@ -180,6 +186,26 @@ class ApplianceDebugSwitch : public esphome::switch_::Switch {
       parent_->set_debug_mode(state);
     }
     this->publish_state(state);
+  }
+
+ private:
+  ApplianceBase *parent_ = nullptr;
+};
+
+// Text input subclass for the PIN field. esphome::text::Text is abstract
+// (control() is pure virtual); we override it to forward the new value
+// to the hub's stored_pin and publish the state back so the HA UI
+// reflects what was entered.
+class AppliancePinText : public esphome::text::Text {
+ public:
+  void set_parent(ApplianceBase *p) { parent_ = p; }
+
+ protected:
+  void control(const std::string &value) override {
+    if (parent_ != nullptr && !value.empty()) {
+      parent_->set_stored_pin_from_user(value);
+    }
+    this->publish_state(value);
   }
 
  private:

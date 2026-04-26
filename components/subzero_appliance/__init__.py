@@ -92,6 +92,7 @@ ApplianceButton = subzero_appliance_ns.class_("ApplianceButton", button.Button)
 ApplianceDebugSwitch = subzero_appliance_ns.class_(
     "ApplianceDebugSwitch", switch.Switch
 )
+AppliancePinText = subzero_appliance_ns.class_("AppliancePinText", text.Text)
 ApplianceButtonKind = subzero_appliance_ns.enum("ApplianceButtonKind", is_class=True)
 
 CONF_PIN_INPUT = "pin_input_id"
@@ -524,16 +525,19 @@ async def to_code(config):
         cg.add(getattr(var, setter)(ts))
 
     # ---- PIN text input ----
-    # text.text_schema() expects a class arg.
+    # esphome::text::Text is abstract (control() is pure virtual); use
+    # our AppliancePinText concrete subclass so the new() expression in
+    # the generated main.cpp resolves.
     pin_cfg_raw = {
-        CONF_ID: _entity_id(parent_id, "pin_input", text.Text),
+        CONF_ID: _entity_id(parent_id, "pin_input", AppliancePinText),
         CONF_NAME: f"{name} PIN",
         CONF_ICON: "mdi:key-variant",
         CONF_ENTITY_CATEGORY: ENTITY_CATEGORY_CONFIG,
         CONF_MODE: "text",
     }
-    pin_cfg = text.text_schema(text.Text)(pin_cfg_raw)
+    pin_cfg = text.text_schema(AppliancePinText)(pin_cfg_raw)
     pin_var = await text.new_text(pin_cfg, min_length=0, max_length=10)
+    cg.add(pin_var.set_parent(var))
     cg.add(var.set_pin_input(pin_var))
 
     # ---- Debug switch ----
