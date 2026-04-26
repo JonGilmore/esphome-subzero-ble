@@ -58,9 +58,11 @@ jobs:
         run: |
           # Point package refs to the code under test instead of a published tag.
           # PRs: use the source branch name. Pushes: use the commit SHA.
-          # Use | as sed delimiter — branch names may contain / (e.g. fix/foo).
+          # Use # as sed delimiter — branch names may contain / (so | was used
+          # before), but extended-regex alternation also needs |, which GNU
+          # sed eats as the delimiter. # is safe in both pattern and replacement.
           REF="${GITHUB_HEAD_REF:-$GITHUB_SHA}"
-          sed -i -E "s|ref: (v[0-9]+\.[0-9]+\.[0-9]+|main)|ref: ${REF}|" \
+          sed -i -E "s#ref: (v[0-9]+\.[0-9]+\.[0-9]+|main)#ref: ${REF}#" \
             cove-minimal-dishwasher.yaml wolf-minimal-range.yaml wolf-minimal-fridge.yaml
 
       - name: Validate configs
@@ -107,9 +109,11 @@ jobs:
 
       - name: Patch package refs for CI
         run: |
-          # Use | as sed delimiter — branch names may contain / (e.g. fix/foo).
+          # Use # as sed delimiter — branch names may contain / (so | was used
+          # before), but extended-regex alternation also needs |, which GNU
+          # sed eats as the delimiter. # is safe in both pattern and replacement.
           REF="${GITHUB_HEAD_REF:-$GITHUB_SHA}"
-          sed -i -E "s|ref: (v[0-9]+\.[0-9]+\.[0-9]+|main)|ref: ${REF}|" "${{ matrix.file }}"
+          sed -i -E "s#ref: (v[0-9]+\.[0-9]+\.[0-9]+|main)#ref: ${REF}#" "${{ matrix.file }}"
 
       - name: Compile ${{ matrix.file }}
         run: esphome compile "${{ matrix.file }}"
