@@ -106,51 +106,17 @@ ble_client:                                   # <2>
     auto_connect: true
 
 subzero_appliance:                            # <3>
-  - type: fridge
+  - type: fridge # or `dishwasher` or `range` # <4>
     id: kitchen_fridge
     ble_client_id: kitchen_fridge_ble
     name: "Kitchen Fridge"
-    pin: "123456"                             # <4>
+    pin: "123456"                             # <5>
 ----
 <1> Pulls the C++ parser, ACL-reassembly patch, and the `subzero_appliance` native component. All three must be loaded.
 <2> One `ble_client` per appliance, with the appliance's BLE MAC address (Sub-Zero MACs typically start with `00:06:80`). `auto_connect: true` keeps reconnecting on failure.
 <3> The native `subzero_appliance` component creates ~30 read-only sensors plus writable Numbers (set temps), Switches (lights), and 8 control/diagnostic buttons.
-<4> The 6-digit PIN from your appliance (see <<pairing>> below). `mode: password` masks it in the HA UI.
-
-.Cove Dishwasher (subzero_appliance + ble_client blocks)
-[source,yaml]
-----
-ble_client:
-  - mac_address: "00:06:80:XX:XX:XX"
-    id: dishwasher_ble
-    name: "SZG Dishwasher"
-    auto_connect: true
-
-subzero_appliance:
-  - type: dishwasher
-    id: dishwasher
-    ble_client_id: dishwasher_ble
-    name: "Dishwasher"
-    pin: "123456"
-----
-
-.Wolf Range (subzero_appliance + ble_client blocks)
-[source,yaml]
-----
-ble_client:
-  - mac_address: "00:06:80:XX:XX:XX"
-    id: kitchen_range_ble
-    name: "SZG Kitchen Range"
-    auto_connect: true
-
-subzero_appliance:
-  - type: range
-    id: kitchen_range
-    ble_client_id: kitchen_range_ble
-    name: "Kitchen Range"
-    pin: "123456"
-    # hide_oven2: false  # uncomment for dual-oven appliances
-----
+<4> The type of appliance - valid types are fridge, dishwasher, range
+<5> The 6-digit PIN from your appliance (see <<pairing>> below). `mode: password` masks it in the HA UI.
 
 .Multiple Appliances
 [source,yaml]
