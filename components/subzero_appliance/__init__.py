@@ -533,7 +533,10 @@ async def to_code(config):
         CONF_NAME: f"{name} PIN",
         CONF_ICON: "mdi:key-variant",
         CONF_ENTITY_CATEGORY: ENTITY_CATEGORY_CONFIG,
-        CONF_MODE: "text",
+        # PIN entries are masked in the UI (PASSWORD mode). Sub-Zero PINs
+        # aren't high-security, but plaintext display in HA dashboards is
+        # gratuitous — mask is the obvious default for a key-icon field.
+        CONF_MODE: "password",
     }
     pin_cfg = text.text_schema(AppliancePinText)(pin_cfg_raw)
     pin_var = await text.new_text(pin_cfg, min_length=0, max_length=10)

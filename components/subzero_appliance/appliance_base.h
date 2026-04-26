@@ -234,10 +234,16 @@ public:
 
 protected:
   void control(const std::string &value) override {
+    // Only publish when the hub actually accepts the value. Otherwise
+    // an empty user-submit would push "" to HA while the hub keeps the
+    // old PIN — the UI text field and the actual stored PIN would
+    // desync. With this guard, an empty submit is silently ignored:
+    // HA re-syncs to the server-side value (the previous PIN) and the
+    // hub stays consistent.
     if (parent_ != nullptr && !value.empty()) {
       parent_->set_stored_pin_from_user(value);
+      this->publish_state(value);
     }
-    this->publish_state(value);
   }
 
 private:

@@ -111,6 +111,13 @@ void ApplianceBase::gap_event_handler(esp_gap_ble_cb_event_t event,
 }
 
 void ApplianceBase::press_connect() {
+  // Reset hub state FIRST (clears phase_ to 0, zeros handles, drops
+  // pending timeouts), then ask the transport to (re)dial. The order
+  // matters: if we called transport_.connect() first and the BLEClient
+  // happened to be already-connected (e.g. user double-pressed Connect),
+  // BLEClient::connect() short-circuits via internal duplicate-detection
+  // and we'd end up with stale handles in the hub. Reset-then-connect
+  // ensures the next on_connect callback enters the cold-discovery path.
   hub()->press_connect();
   transport_.connect();
 }
