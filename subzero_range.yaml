@@ -30,12 +30,14 @@ substitutions:
 packages:
   base: !include subzero_base.yaml
 
-# Sensor-publishing bus for the range dispatcher. Pointers populated in
-# on_boot below; dispatch_range() in parse_json then routes every parsed-
-# state field to the right entity.
+# Per-appliance hub + sensor-publishing bus. See subzero_fridge.yaml's
+# matching block for the wiring pattern.
 globals:
   - id: ${prefix}_bus
     type: esphome::subzero_protocol::RangeBus
+    restore_value: false
+  - id: ${prefix}_hub
+    type: esphome::subzero_appliance::RangeHub
     restore_value: false
 
 esphome:
@@ -104,6 +106,30 @@ esphome:
             b.cav2_cook_mode = id(${prefix}_cav2_cook_mode);
             b.cav2_probe_temp = id(${prefix}_cav2_probe_temp);
             b.cav2_probe_set_temp = id(${prefix}_cav2_probe_set_temp);
+            // Hub wiring
+            id(${prefix}_transport).set_client(id(${prefix}_appliance));
+            id(${prefix}_scheduler).set_component(id(${prefix}_appliance));
+            auto& hub = id(${prefix}_hub);
+            hub.set_transport(&id(${prefix}_transport));
+            hub.set_scheduler(&id(${prefix}_scheduler));
+            hub.set_name("${appliance_name}");
+            hub.set_bus(&b);
+            hub.set_stored_pin(id(${prefix}_stored_pin));
+            hub.set_pin_confirmed(id(${prefix}_pin_confirmed));
+            hub.set_status_callback([](const std::string& s) {
+              id(${prefix}_debug).publish_state(s);
+            });
+            hub.set_pin_input_callback([](const std::string& p) {
+              id(${prefix}_stored_pin) = p;
+              id(${prefix}_pin_confirmed) = true;
+              id(${prefix}_pin_input).publish_state(p);
+            });
+            hub.set_subscribe_callback([]() {
+              uint16_t d5 = id(${prefix}_hub).d5_handle();
+              uint16_t d6 = id(${prefix}_hub).d6_handle();
+              if (d5 > 0) id(${prefix}_d5_notify)->handle = d5;
+              if (d6 > 0) id(${prefix}_d6_notify)->handle = d6;
+            });
 sensor:
   - platform: template
     name: "${appliance_name} Oven Temperature"
@@ -357,54 +383,6 @@ text_sensor:
     id: ${prefix}_ktimer2_end_time
     icon: "mdi:clock-end"
 
-script:
-  - id: ${prefix}_parse_json
-    mode: single
-    then:
-      - lambda: |-
-          auto msg = id(${prefix}_json_buf).take_message();
-          if (!msg) return;
-          bool dbg = id(${prefix}_debug_mode);
-          ESP_LOGI("szg", "[${appliance_name}] Parsing JSON (%d bytes)", (int)msg->size());
-          if (dbg) {
-            esphome::subzero_protocol::chunk_for_log(*msg,
-              [](size_t idx, size_t total, const std::string &chunk) {
-                ESP_LOGI("szg", "[${appliance_name}] Response[%d/%d]: %s",
-                         (int)idx, (int)total, chunk.c_str());
-              });
-          }
-          auto s = esphome::subzero_protocol::parse_range(*msg);
-          if (!s.valid) {
-            // status 302 = appliance rejected unlock_channel because its
-            // pairing window is closed. Most often happens after a power
-            // cycle that rotated the PIN. User must press Start Pairing
-            // and re-enter the PIN now shown on the appliance.
-            if (msg->find("\"status\":302") != std::string::npos) {
-              ESP_LOGE("szg", "[${appliance_name}] Pairing rejected (status 302). The PIN has likely changed - press 'Start Pairing' on the appliance and enter the new PIN in HA.");
-              id(${prefix}_debug).publish_state("Pairing required - press Start Pairing and re-enter PIN");
-              return;
-            }
-            ESP_LOGW("szg", "[${appliance_name}] Parse failed or status!=0, skipping (%s...)",
-                     esphome::subzero_protocol::sanitize_for_log(*msg, 0, std::min<size_t>(80, msg->size())).c_str());
-            return;
-          }
-          if (dbg) {
-            for (const auto &k : s.data_keys)
-              ESP_LOGI("szg-debug", "[${appliance_name}] key=%s", k.c_str());
-          }
-          // PIN confirmation (unlock_channel response). Stays in YAML -
-          // see subzero_fridge.yaml's parse_json comment.
-          if (s.common.pin_confirmed) {
-            const std::string &pin = *s.common.pin_confirmed;
-            id(${prefix}_stored_pin) = pin;
-            id(${prefix}_pin_confirmed) = true;
-            id(${prefix}_pin_input).publish_state(pin);
-            ESP_LOGI("szg", "[${appliance_name}] PIN confirmed: %s", pin.c_str());
-            id(${prefix}_debug).publish_state("PIN confirmed! Channel unlocked.");
-          }
-          // Sensor publishes - every parser field is routed to its
-          // corresponding entity by dispatch_range. See dispatch.h for
-          // the field-to-method mapping; bus pointers wired in on_boot.
-          esphome::subzero_protocol::dispatch_range(s, id(${prefix}_bus));
-          id(${prefix}_poll_ok) = true;
-          id(${prefix}_fast_retries) = 0;
+# parse_json script removed in Phase 3 - RangeHub::parse_and_dispatch_
+# now handles JSON parsing, status-302 detection, PIN confirmation, and
+# dispatch through the RangeBus. See subzero_fridge.yaml's matching note.
