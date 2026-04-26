@@ -91,6 +91,16 @@ public:
   // YAML; this method handles all the in-process cleanup.
   void press_reset_pairing();
 
+  // ---- Property writes (HA -> appliance via `set` on D5) ----
+  //
+  // All three forward to write_set_property_(); the type-specific
+  // overloads exist so callers don't have to JSON-format the value
+  // themselves. No-ops when the channel isn't open (d5_handle_ == 0)
+  // or PIN isn't confirmed — same guard as write_unlock_channel_.
+  void write_set_bool(const std::string &key, bool value);
+  void write_set_int(const std::string &key, int value);
+  void write_set_string(const std::string &key, const std::string &value);
+
   // ---- Configuration setters (called once at boot) ----
 
   // The PIN in the HA text input. on_value writes through this.
@@ -182,6 +192,8 @@ private:
   void log_chunked_debug_(const std::string &msg);
   void write_unlock_channel_(std::uint16_t handle);
   void write_get_async_(std::uint16_t handle);
+  void write_set_property_(const std::string &key,
+                           const std::string &json_value);
   void update_handles_from_db_();
 
   // ---- collaborators (non-owning pointers, lifetime owned by caller) ----

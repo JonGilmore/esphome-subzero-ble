@@ -39,6 +39,7 @@ from esphome.components import (
     binary_sensor,
     ble_client,
     button,
+    number,
     sensor,
     switch,
     text,
@@ -71,6 +72,7 @@ AUTO_LOAD = [
     "binary_sensor",
     "button",
     "json",
+    "number",
     "sensor",
     "subzero_protocol",
     "switch",
@@ -92,6 +94,8 @@ ApplianceButton = subzero_appliance_ns.class_("ApplianceButton", button.Button)
 ApplianceDebugSwitch = subzero_appliance_ns.class_(
     "ApplianceDebugSwitch", switch.Switch
 )
+ApplianceSetSwitch = subzero_appliance_ns.class_("ApplianceSetSwitch", switch.Switch)
+ApplianceSetNumber = subzero_appliance_ns.class_("ApplianceSetNumber", number.Number)
 AppliancePinText = subzero_appliance_ns.class_("AppliancePinText", text.Text)
 ApplianceButtonKind = subzero_appliance_ns.enum("ApplianceButtonKind", is_class=True)
 
@@ -153,6 +157,13 @@ BUTTON_DEFINITIONS = [
     ("kLogDebugInfo", "{name} Log Debug Info", "mdi:bug-play", ENTITY_CATEGORY_DIAGNOSTIC),
     ("kDisconnect", "Disconnect {name}", "mdi:bluetooth-off", None),
     ("kResetPairing", "Reset {name} Pairing", "mdi:bluetooth-settings", ENTITY_CATEGORY_CONFIG),
+    # Diagnostic: deregister the appliance from Azure IoT Hub by sending
+    # `set remote_svc_reg_token=""`. After that, the official app can no
+    # longer reach the appliance over cloud — it will fall back to BLE
+    # and fight us for the single connection slot. Useful only if you
+    # specifically want to disable the cloud path.
+    ("kClearCloudToken", "{name} Clear Cloud Token (BT-Only)",
+     "mdi:cloud-off-outline", ENTITY_CATEGORY_DIAGNOSTIC),
 ]
 
 # Per-type sensor descriptors. Each entry: (suffix, name_suffix, setter, kwargs, hide_key_or_None).
@@ -186,17 +197,28 @@ TEMP_KWARGS = {
 }
 
 FRIDGE_SENSORS = [
+    # Set-temps are read-only Sensors. Writing them via `set` does NOT
+    # appear to work on the fridges we've tested — the appliance accepts
+    # the write (status:0) but never actually changes the setpoint, and
+    # the user has no recourse if a typo'd value somehow does take. Until
+    # we understand the appliance's set-temp guard mode (suspect: needs
+    # some "edit mode" enabled at the front panel first, similar to oven
+    # cav_set_temp requiring an active cook mode), keep these read-only.
     ("set_temp", "Set Temperature", "set_set_temp_sensor",
      {**TEMP_KWARGS, CONF_ICON: "mdi:thermometer"}, None),
     ("frz_set_temp", "Freezer Set Temperature", "set_frz_set_temp_sensor",
      {**TEMP_KWARGS, CONF_ICON: "mdi:snowflake-thermometer"}, "hide_freezer"),
-    ("wine_set_temp", "Wine Zone Upper Set Temperature", "set_wine_set_temp_sensor",
+    ("wine_set_temp", "Wine Zone Upper Set Temperature",
+     "set_wine_set_temp_sensor",
      {**TEMP_KWARGS, CONF_ICON: "mdi:glass-wine"}, "hide_wine"),
-    ("wine2_set_temp", "Wine Zone Lower Set Temperature", "set_wine2_set_temp_sensor",
+    ("wine2_set_temp", "Wine Zone Lower Set Temperature",
+     "set_wine2_set_temp_sensor",
      {**TEMP_KWARGS, CONF_ICON: "mdi:glass-wine"}, "hide_wine"),
-    ("ref2_set_temp", "Refrigerator Drawer Set Temperature", "set_ref2_set_temp_sensor",
+    ("ref2_set_temp", "Refrigerator Drawer Set Temperature",
+     "set_ref2_set_temp_sensor",
      {**TEMP_KWARGS, CONF_ICON: "mdi:thermometer"}, "hide_ref_drawer"),
-    ("crisp_set_temp", "Crisper Drawer Set Temperature", "set_crisp_set_temp_sensor",
+    ("crisp_set_temp", "Crisper Drawer Set Temperature",
+     "set_crisp_set_temp_sensor",
      {**TEMP_KWARGS, CONF_ICON: "mdi:thermometer"}, "hide_crisper"),
     ("air_filter_pct", "Air Filter Remaining", "set_air_filter_pct_sensor",
      {CONF_UNIT_OF_MEASUREMENT: UNIT_PERCENT, "state_class": STATE_CLASS_MEASUREMENT,
@@ -205,6 +227,22 @@ FRIDGE_SENSORS = [
      {CONF_UNIT_OF_MEASUREMENT: UNIT_PERCENT, "state_class": STATE_CLASS_MEASUREMENT,
       "accuracy_decimals": 0, CONF_ICON: "mdi:water-percent"}, "hide_water_filter"),
 ]
+
+# Writable numbers — entry shape: (suffix, name_suffix, setter, property_key,
+# min, max, step, kwargs, hide_key). Default min/max are conservative ranges
+# from typical Sub-Zero appliance manuals; user can tweak via HA's UI by
+# selecting whatever value they want within the range. The appliance is
+# the ultimate source of truth and will reject out-of-range writes (which
+# would surface as `status:N` parse failures, logged but not crash).
+NUMBER_KWARGS = {
+    CONF_UNIT_OF_MEASUREMENT: UNIT_FAHRENHEIT,
+    CONF_DEVICE_CLASS: DEVICE_CLASS_TEMPERATURE,
+    CONF_MODE: "box",
+}
+
+# Fridge has no writable numbers yet — see comment on FRIDGE_SENSORS above.
+FRIDGE_WRITABLE_NUMBERS: list = []
+FRIDGE_WRITABLE_SWITCHES: list = []  # sabbath_on writability also unconfirmed
 
 DISHWASHER_BINARY_SENSORS = [
     ("door_ajar", "Door", "set_door_ajar_sensor", {CONF_DEVICE_CLASS: DEVICE_CLASS_DOOR}, None),
@@ -219,10 +257,16 @@ DISHWASHER_BINARY_SENSORS = [
      {CONF_DEVICE_CLASS: DEVICE_CLASS_PROBLEM}, None),
     ("softener_low", "Softener Low", "set_softener_low_sensor",
      {CONF_DEVICE_CLASS: DEVICE_CLASS_PROBLEM}, "hide_softener"),
+    # Read-only: writing `set light_on` on dishwashers acks (status:0)
+    # but the appliance does not actually toggle the light. Same guard
+    # behavior as fridge set-temps — see FRIDGE_SENSORS comment above.
     ("light_on", "Light", "set_light_on_sensor", {CONF_ICON: "mdi:lightbulb"}, None),
     ("remote_ready", "Remote Ready", "set_remote_ready_sensor", {CONF_ICON: "mdi:remote"}, None),
     ("delay_start", "Delay Start", "set_delay_start_sensor", {CONF_ICON: "mdi:timer-sand"}, None),
 ]
+
+DISHWASHER_WRITABLE_SWITCHES: list = []
+DISHWASHER_WRITABLE_NUMBERS: list = []
 
 DISHWASHER_SENSORS = [
     ("wash_status", "Wash Status", "set_wash_status_sensor",
@@ -245,7 +289,7 @@ RANGE_BINARY_SENSORS = [
     ("cav_unit_on", "Oven", "set_cav_unit_on_sensor", {CONF_ICON: "mdi:stove"}, None),
     ("cav_at_set_temp", "Oven At Temperature", "set_cav_at_set_temp_sensor",
      {CONF_ICON: "mdi:thermometer-check"}, None),
-    ("cav_light_on", "Oven Light", "set_cav_light_on_sensor", {CONF_ICON: "mdi:lightbulb"}, None),
+    # cav_light_on moved to RANGE_WRITABLE_SWITCHES.
     ("cav_remote_ready", "Oven Remote Ready", "set_cav_remote_ready_sensor",
      {CONF_ICON: "mdi:remote"}, None),
     ("cav_probe_on", "Probe Inserted", "set_cav_probe_on_sensor",
@@ -278,8 +322,7 @@ RANGE_BINARY_SENSORS = [
      {CONF_DEVICE_CLASS: DEVICE_CLASS_DOOR}, "hide_oven2"),
     ("cav2_at_set_temp", "Oven 2 At Temperature", "set_cav2_at_set_temp_sensor",
      {CONF_ICON: "mdi:thermometer-check"}, "hide_oven2"),
-    ("cav2_light_on", "Oven 2 Light", "set_cav2_light_on_sensor",
-     {CONF_ICON: "mdi:lightbulb"}, "hide_oven2"),
+    # cav2_light_on moved to RANGE_WRITABLE_SWITCHES.
     ("cav2_remote_ready", "Oven 2 Remote Ready", "set_cav2_remote_ready_sensor",
      {CONF_ICON: "mdi:remote"}, "hide_oven2"),
     ("cav2_probe_on", "Oven 2 Probe Inserted", "set_cav2_probe_on_sensor",
@@ -297,26 +340,50 @@ RANGE_BINARY_SENSORS = [
 RANGE_SENSORS = [
     ("cav_temp", "Oven Temperature", "set_cav_temp_sensor",
      {**TEMP_KWARGS, CONF_ICON: "mdi:thermometer"}, None),
-    ("cav_set_temp", "Oven Set Temperature", "set_cav_set_temp_sensor",
-     {**TEMP_KWARGS, CONF_ICON: "mdi:thermometer-check"}, None),
+    # cav_set_temp / probe_set_temp / cav2_set_temp / cav2_probe_set_temp
+    # moved to RANGE_WRITABLE_NUMBERS.
     ("cav_cook_mode", "Cook Mode", "set_cav_cook_mode_sensor",
      {CONF_ICON: "mdi:stove", "accuracy_decimals": 0}, None),
     ("cav_gourmet_recipe", "Gourmet Recipe", "set_cav_gourmet_recipe_sensor",
      {CONF_ICON: "mdi:chef-hat", "accuracy_decimals": 0}, None),
     ("probe_temp", "Probe Temperature", "set_probe_temp_sensor",
      {**TEMP_KWARGS, CONF_ICON: "mdi:thermometer-probe"}, None),
-    ("probe_set_temp", "Probe Set Temperature", "set_probe_set_temp_sensor",
-     {**TEMP_KWARGS, CONF_ICON: "mdi:thermometer-probe-off"}, None),
     ("cav2_temp", "Oven 2 Temperature", "set_cav2_temp_sensor",
      {**TEMP_KWARGS, CONF_ICON: "mdi:thermometer"}, "hide_oven2"),
-    ("cav2_set_temp", "Oven 2 Set Temperature", "set_cav2_set_temp_sensor",
-     {**TEMP_KWARGS, CONF_ICON: "mdi:thermometer-check"}, "hide_oven2"),
     ("cav2_cook_mode", "Oven 2 Cook Mode", "set_cav2_cook_mode_sensor",
      {CONF_ICON: "mdi:stove", "accuracy_decimals": 0}, "hide_oven2"),
     ("cav2_probe_temp", "Oven 2 Probe Temperature", "set_cav2_probe_temp_sensor",
      {**TEMP_KWARGS, CONF_ICON: "mdi:thermometer-probe"}, "hide_oven2"),
-    ("cav2_probe_set_temp", "Oven 2 Probe Set Temperature", "set_cav2_probe_set_temp_sensor",
-     {**TEMP_KWARGS, CONF_ICON: "mdi:thermometer-probe-off"}, "hide_oven2"),
+]
+
+RANGE_WRITABLE_SWITCHES = [
+    # (suffix, name_suffix, setter, property_key, kwargs, hide_key)
+    ("cav_light_on", "Oven Light", "set_cav_light_on_switch", "cav_light_on",
+     {CONF_ICON: "mdi:lightbulb"}, None),
+    ("cav2_light_on", "Oven 2 Light", "set_cav2_light_on_switch", "cav2_light_on",
+     {CONF_ICON: "mdi:lightbulb"}, "hide_oven2"),
+]
+
+# Wolf ovens (both wall and range cavities) won't accept a target below
+# 200°F - confirmed on the SO3050PESP wall oven, and consistent with the
+# minimum settable temperature on every Wolf oven manual we've checked.
+# Upper bound 550°F covers the Roast/Broil ranges. Probe targets go
+# 100-200°F (food internal temp). Step is 1°F so the user can pick any
+# value the appliance accepts; the front panel typically rounds to 5°.
+RANGE_WRITABLE_NUMBERS = [
+    # (suffix, name_suffix, setter, property_key, min, max, step, kwargs, hide_key)
+    ("cav_set_temp", "Oven Set Temperature", "set_cav_set_temp_number",
+     "cav_set_temp", 200, 550, 1,
+     {**NUMBER_KWARGS, CONF_ICON: "mdi:thermometer-check"}, None),
+    ("probe_set_temp", "Probe Set Temperature", "set_probe_set_temp_number",
+     "cav_probe_set_temp", 100, 200, 1,
+     {**NUMBER_KWARGS, CONF_ICON: "mdi:thermometer-probe"}, None),
+    ("cav2_set_temp", "Oven 2 Set Temperature", "set_cav2_set_temp_number",
+     "cav2_set_temp", 200, 550, 1,
+     {**NUMBER_KWARGS, CONF_ICON: "mdi:thermometer-check"}, "hide_oven2"),
+    ("cav2_probe_set_temp", "Oven 2 Probe Set Temperature",
+     "set_cav2_probe_set_temp_number", "cav2_probe_set_temp", 100, 200, 1,
+     {**NUMBER_KWARGS, CONF_ICON: "mdi:thermometer-probe"}, "hide_oven2"),
 ]
 
 RANGE_TEXT_SENSORS = [
@@ -448,6 +515,47 @@ def _resolve_hidden(config, hide_key):
     return bool(config.get(hide_key, False))
 
 
+async def _build_set_switch(parent_id, parent_var, suffix, name_suffix,
+                            property_key, kwargs, hidden):
+    """Instantiates an ApplianceSetSwitch HA entity, wires the parent +
+    property_key, and registers it. Caller binds the bus pointer via the
+    setter on `parent_var` (e.g. `parent_var.set_cav_light_on_switch(s)`).
+    """
+    cfg_raw = {
+        CONF_ID: _entity_id(parent_id, suffix, ApplianceSetSwitch),
+        CONF_NAME: name_suffix,
+    }
+    cfg_raw.update(kwargs)
+    if hidden:
+        cfg_raw[CONF_INTERNAL] = True
+    cfg = switch.switch_schema(ApplianceSetSwitch)(cfg_raw)
+    sw = await switch.new_switch(cfg)
+    cg.add(sw.set_parent(parent_var))
+    cg.add(sw.set_property_key(property_key))
+    return sw
+
+
+async def _build_set_number(parent_id, parent_var, suffix, name_suffix,
+                            property_key, min_value, max_value, step,
+                            kwargs, hidden):
+    """Instantiates an ApplianceSetNumber HA entity, wires the parent +
+    property_key, and registers it with min/max/step traits."""
+    cfg_raw = {
+        CONF_ID: _entity_id(parent_id, suffix, ApplianceSetNumber),
+        CONF_NAME: name_suffix,
+    }
+    cfg_raw.update(kwargs)
+    if hidden:
+        cfg_raw[CONF_INTERNAL] = True
+    cfg = number.number_schema(ApplianceSetNumber)(cfg_raw)
+    n = await number.new_number(
+        cfg, min_value=min_value, max_value=max_value, step=step,
+    )
+    cg.add(n.set_parent(parent_var))
+    cg.add(n.set_property_key(property_key))
+    return n
+
+
 # ----------------------------------------------------------------------
 # to_code
 # ----------------------------------------------------------------------
@@ -491,14 +599,20 @@ async def to_code(config):
         bs_list = FRIDGE_BINARY_SENSORS
         s_list = FRIDGE_SENSORS
         ts_list = []
+        sw_list = FRIDGE_WRITABLE_SWITCHES
+        n_list = FRIDGE_WRITABLE_NUMBERS
     elif type_ == "dishwasher":
         bs_list = DISHWASHER_BINARY_SENSORS
         s_list = DISHWASHER_SENSORS
         ts_list = DISHWASHER_TEXT_SENSORS
+        sw_list = DISHWASHER_WRITABLE_SWITCHES
+        n_list = DISHWASHER_WRITABLE_NUMBERS
     else:  # range
         bs_list = RANGE_BINARY_SENSORS
         s_list = RANGE_SENSORS
         ts_list = RANGE_TEXT_SENSORS
+        sw_list = RANGE_WRITABLE_SWITCHES
+        n_list = RANGE_WRITABLE_NUMBERS
 
     for suffix, name_suffix, setter, kwargs, hide_key in bs_list:
         cfg = _build_binary_sensor_config(
@@ -523,6 +637,23 @@ async def to_code(config):
         )
         ts = await text_sensor.new_text_sensor(cfg)
         cg.add(getattr(var, setter)(ts))
+
+    # Writable switches — HA-toggled booleans that send `set` on D5.
+    for suffix, name_suffix, setter, prop_key, kwargs, hide_key in sw_list:
+        sw = await _build_set_switch(
+            parent_id, var, suffix, f"{name} {name_suffix}", prop_key, kwargs,
+            _resolve_hidden(config, hide_key),
+        )
+        cg.add(getattr(var, setter)(sw))
+
+    # Writable numbers — HA-set numerics (set temps, etc.) that send `set`.
+    for (suffix, name_suffix, setter, prop_key, mn, mx, step,
+         kwargs, hide_key) in n_list:
+        n = await _build_set_number(
+            parent_id, var, suffix, f"{name} {name_suffix}", prop_key,
+            mn, mx, step, kwargs, _resolve_hidden(config, hide_key),
+        )
+        cg.add(getattr(var, setter)(n))
 
     # ---- PIN text input ----
     # esphome::text::Text is abstract (control() is pure virtual); use

@@ -100,5 +100,37 @@ inline std::string build_display_pin(int duration_seconds = 30) {
          std::to_string(duration_seconds) + "}}\n";
 }
 
+// `set` writes a single property on the appliance. Sent on D5 (control
+// channel) — the appliance acks with `{"status":0,"resp":{}}` and within
+// ~1s pushes a `msg_types:2` notification on D6 echoing the new value,
+// which our normal read pipeline picks up.
+//
+// Verified verbs from official-app HCI snoop (2026-04-26): bool fields
+// like `cav_light_on`, integer fields like `kitchen_timer_duration`,
+// string fields like `remote_svc_reg_token` and the WiFi triplet
+// (`ap_ssid`/`ap_pass`/`ap_enc`).
+//
+// `json_value` is the already-formatted JSON literal (no quotes for
+// numbers/bools, quotes + escaping for strings — use the typed helpers
+// below instead of build_set directly when possible).
+inline std::string build_set(const std::string &key,
+                             const std::string &json_value) {
+  return "{\"cmd\":\"set\",\"params\":{\"" + detail::escape_json_string(key) +
+         "\":" + json_value + "}}\n";
+}
+
+inline std::string build_set_bool(const std::string &key, bool value) {
+  return build_set(key, value ? "true" : "false");
+}
+
+inline std::string build_set_int(const std::string &key, int value) {
+  return build_set(key, std::to_string(value));
+}
+
+inline std::string build_set_string(const std::string &key,
+                                    const std::string &value) {
+  return build_set(key, "\"" + detail::escape_json_string(value) + "\"");
+}
+
 } // namespace subzero_protocol
 } // namespace esphome

@@ -54,10 +54,13 @@ NOTE: We previously misdiagnosed "fw 8.5 unlock session expiry" as the cause of 
 
 === Firmware Versions
 
-| Firmware | API | Models | Indication Fragment Size | CCCD Property |
-|----------|-----|--------|--------------------------|---------------|
-| fw 8.5 | API 5.4 | Sub-Zero 313, Wolf SO3050PESP, DEU2450R | ~40 bytes (fragmented) | INDICATE only (0x2A) |
-| fw 2.27 | API 5.5 | Wolf DF36450GSP, Cove DW2450, Sub-Zero IW30R | ~244 bytes (mostly single-fragment) | NOTIFY + INDICATE (0x3E) |
+[cols="1,1,3,2,2", options="header"]
+|===
+| Firmware | API | Models | Indication Fragment Size | CCCD Property
+
+| fw 8.5 | API 5.4 | Sub-Zero 313, Wolf SO3050PESP, DEU2450R | ~40 bytes (fragmented) | INDICATE only (0x2A)
+| fw 2.27 | API 5.5 | Wolf DF36450GSP, Cove DW2450, Sub-Zero IW30R | ~244 bytes (mostly single-fragment) | NOTIFY + INDICATE (0x3E)
+|===
 
 The fragment size difference matters because fw 8.5 is more sensitive to the ESP-IDF Bluedroid HCI bug (see <<ACL Fragment Drops>> below). The CCCD property difference matters because the official app writes 0x0001 (notifications) on fw 2.27 vs 0x0002 (indications) on fw 8.5. Our integration writes 0x0002 universally - safe on both firmware versions, since fw 2.27 chars also support indications.
 

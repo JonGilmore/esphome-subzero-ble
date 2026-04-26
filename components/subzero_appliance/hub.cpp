@@ -650,5 +650,37 @@ void SubzeroHub::write_get_async_(std::uint16_t handle) {
                     cmd.size());
 }
 
+void SubzeroHub::write_set_property_(const std::string &key,
+                                     const std::string &json_value) {
+  if (transport_ == nullptr)
+    return;
+  // `set` requires the control channel to be unlocked. d5_handle_ is
+  // populated after subscribe completes; pin_confirmed_ flips true when
+  // the unlock_channel response lands. Drop the write if either guard
+  // fails — the alternative is queueing, which adds complexity for no
+  // visible UX win (HA will retry on the next user action).
+  if (d5_handle_ == 0 || !pin_confirmed_)
+    return;
+  std::string cmd = esphome::subzero_protocol::build_set(key, json_value);
+  transport_->write(d5_handle_,
+                    reinterpret_cast<const std::uint8_t *>(cmd.data()),
+                    cmd.size());
+}
+
+void SubzeroHub::write_set_bool(const std::string &key, bool value) {
+  write_set_property_(key, value ? "true" : "false");
+}
+
+void SubzeroHub::write_set_int(const std::string &key, int value) {
+  write_set_property_(key, std::to_string(value));
+}
+
+void SubzeroHub::write_set_string(const std::string &key,
+                                  const std::string &value) {
+  write_set_property_(
+      key, "\"" + esphome::subzero_protocol::detail::escape_json_string(value) +
+               "\"");
+}
+
 } // namespace subzero_appliance
 } // namespace esphome

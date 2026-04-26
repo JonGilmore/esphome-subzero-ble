@@ -6,6 +6,10 @@
 
 using esphome::subzero_protocol::build_display_pin;
 using esphome::subzero_protocol::build_get_async;
+using esphome::subzero_protocol::build_set;
+using esphome::subzero_protocol::build_set_bool;
+using esphome::subzero_protocol::build_set_int;
+using esphome::subzero_protocol::build_set_string;
 using esphome::subzero_protocol::build_unlock_channel;
 
 TEST(Commands, GetAsyncIsExactWireFormat) {
@@ -100,4 +104,63 @@ TEST(Commands, DisplayPinCustomDuration) {
 TEST(Commands, DisplayPinTerminatesWithNewline) {
   EXPECT_EQ(build_display_pin().back(), '\n');
   EXPECT_EQ(build_display_pin(60).back(), '\n');
+}
+
+TEST(Commands, SetBoolTrueAndFalse) {
+  EXPECT_EQ(build_set_bool("cav_light_on", true),
+            "{\"cmd\":\"set\",\"params\":{\"cav_light_on\":true}}\n");
+  EXPECT_EQ(build_set_bool("cav_light_on", false),
+            "{\"cmd\":\"set\",\"params\":{\"cav_light_on\":false}}\n");
+}
+
+TEST(Commands, SetIntPositive) {
+  EXPECT_EQ(build_set_int("set_temp", 38),
+            "{\"cmd\":\"set\",\"params\":{\"set_temp\":38}}\n");
+}
+
+TEST(Commands, SetIntZeroCancelsTimer) {
+  // Setting kitchen_timer_duration:0 cancels a running timer per HCI snoop.
+  EXPECT_EQ(build_set_int("kitchen_timer_duration", 0),
+            "{\"cmd\":\"set\",\"params\":{\"kitchen_timer_duration\":0}}\n");
+}
+
+TEST(Commands, SetIntNegative) {
+  // Freezer set_temp can be negative on Fahrenheit appliances.
+  EXPECT_EQ(build_set_int("frz_set_temp", -5),
+            "{\"cmd\":\"set\",\"params\":{\"frz_set_temp\":-5}}\n");
+}
+
+TEST(Commands, SetStringEscapesQuotes) {
+  // Keep the wire format well-formed even with hostile/odd inputs - same
+  // discipline as build_unlock_channel for PINs.
+  EXPECT_EQ(build_set_string("ap_ssid", "my\"ssid"),
+            "{\"cmd\":\"set\",\"params\":{\"ap_ssid\":\"my\\\"ssid\"}}\n");
+}
+
+TEST(Commands, SetStringEmptyClearsCloudToken) {
+  // The "BT-only mode" diagnostic action — clearing remote_svc_reg_token
+  // deregisters the appliance from Azure IoT Hub.
+  EXPECT_EQ(build_set_string("remote_svc_reg_token", ""),
+            "{\"cmd\":\"set\",\"params\":{\"remote_svc_reg_token\":\"\"}}\n");
+}
+
+TEST(Commands, SetGenericAcceptsRawJsonValue) {
+  // For the rare composite payloads (e.g. WiFi config sends three keys
+  // in one call). Generic build_set passes the value through verbatim.
+  EXPECT_EQ(build_set("foo", "[1,2,3]"),
+            "{\"cmd\":\"set\",\"params\":{\"foo\":[1,2,3]}}\n");
+}
+
+TEST(Commands, SetTerminatesWithNewline) {
+  EXPECT_EQ(build_set_bool("cav_light_on", true).back(), '\n');
+  EXPECT_EQ(build_set_int("set_temp", 38).back(), '\n');
+  EXPECT_EQ(build_set_string("ap_ssid", "iot").back(), '\n');
+}
+
+TEST(Commands, SetEscapesKeyName) {
+  // Defensive: keys come from C++ string literals in our code, so this
+  // shouldn't fire in practice. But if a key name ever did contain a
+  // quote/backslash, JSON-escape it rather than emitting broken wire data.
+  EXPECT_EQ(build_set_int("a\"b", 1),
+            "{\"cmd\":\"set\",\"params\":{\"a\\\"b\":1}}\n");
 }

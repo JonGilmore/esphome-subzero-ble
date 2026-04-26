@@ -35,7 +35,9 @@
 // instantiate dispatch.h's templates with their own recording bus.
 
 #include "esphome/components/binary_sensor/binary_sensor.h"
+#include "esphome/components/number/number.h"
 #include "esphome/components/sensor/sensor.h"
+#include "esphome/components/switch/switch.h"
 #include "esphome/components/text_sensor/text_sensor.h"
 
 namespace esphome {
@@ -53,6 +55,10 @@ template <typename S, typename V> inline void publish_if(S *s, V v) {
 } // namespace detail
 
 // Common (appliance-agnostic) bus. Inherited by every appliance bus.
+//
+// Writable fields per type are exposed as Switch / Number rather than
+// BinarySensor / Sensor. publish_X(bool/float) signatures stay the same
+// since both flavors accept the same value type.
 struct CommonBus {
   esphome::binary_sensor::BinarySensor *sabbath_on = nullptr;
   esphome::binary_sensor::BinarySensor *svc_required = nullptr;
@@ -112,6 +118,13 @@ struct FridgeBus : CommonBus {
   esphome::binary_sensor::BinarySensor *wine_temp_alert = nullptr;
   esphome::binary_sensor::BinarySensor *air_filter_on = nullptr;
 
+  // Set-temps are read-only Sensors for now. Writing them via `set`
+  // doesn't appear to work on the fridges we've tested — the appliance
+  // accepts the write (status:0) but the setpoint never actually
+  // changes. Suspect this needs an "edit mode" on the front panel
+  // first, similar to how oven cav_set_temp only accepts writes once
+  // the oven is in an active cook mode. Keep these read-only until
+  // that's understood.
   esphome::sensor::Sensor *set_temp = nullptr;
   esphome::sensor::Sensor *frz_set_temp = nullptr;
   esphome::sensor::Sensor *ref2_set_temp = nullptr;
@@ -158,6 +171,7 @@ struct DishwasherBus : CommonBus {
   esphome::binary_sensor::BinarySensor *sani_rinse = nullptr;
   esphome::binary_sensor::BinarySensor *rinse_aid_low = nullptr;
   esphome::binary_sensor::BinarySensor *softener_low = nullptr;
+  // Read-only: writing `set light_on` doesn't actually toggle the light.
   esphome::binary_sensor::BinarySensor *light_on = nullptr;
   esphome::binary_sensor::BinarySensor *remote_ready = nullptr;
   esphome::binary_sensor::BinarySensor *delay_start = nullptr;
@@ -209,7 +223,7 @@ struct RangeBus : CommonBus {
   esphome::binary_sensor::BinarySensor *door_ajar = nullptr;
   esphome::binary_sensor::BinarySensor *cav_unit_on = nullptr;
   esphome::binary_sensor::BinarySensor *cav_at_set_temp = nullptr;
-  esphome::binary_sensor::BinarySensor *cav_light_on = nullptr;
+  esphome::switch_::Switch *cav_light_on = nullptr;
   esphome::binary_sensor::BinarySensor *cav_remote_ready = nullptr;
   esphome::binary_sensor::BinarySensor *cav_probe_on = nullptr;
   esphome::binary_sensor::BinarySensor *cav_probe_at_temp = nullptr;
@@ -219,11 +233,11 @@ struct RangeBus : CommonBus {
   esphome::binary_sensor::BinarySensor *cook_timer_near = nullptr;
 
   esphome::sensor::Sensor *cav_temp = nullptr;
-  esphome::sensor::Sensor *cav_set_temp = nullptr;
+  esphome::number::Number *cav_set_temp = nullptr; // writable
   esphome::sensor::Sensor *cav_cook_mode = nullptr;
   esphome::sensor::Sensor *cav_gourmet_recipe = nullptr;
   esphome::sensor::Sensor *probe_temp = nullptr;
-  esphome::sensor::Sensor *probe_set_temp = nullptr;
+  esphome::number::Number *probe_set_temp = nullptr; // writable
 
   // Kitchen timers (1 + 2)
   esphome::binary_sensor::BinarySensor *ktimer_active = nullptr;
@@ -239,7 +253,7 @@ struct RangeBus : CommonBus {
   esphome::binary_sensor::BinarySensor *cav2_unit_on = nullptr;
   esphome::binary_sensor::BinarySensor *cav2_door_ajar = nullptr;
   esphome::binary_sensor::BinarySensor *cav2_at_set_temp = nullptr;
-  esphome::binary_sensor::BinarySensor *cav2_light_on = nullptr;
+  esphome::switch_::Switch *cav2_light_on = nullptr;
   esphome::binary_sensor::BinarySensor *cav2_remote_ready = nullptr;
   esphome::binary_sensor::BinarySensor *cav2_probe_on = nullptr;
   esphome::binary_sensor::BinarySensor *cav2_probe_at_temp = nullptr;
@@ -248,10 +262,10 @@ struct RangeBus : CommonBus {
   esphome::binary_sensor::BinarySensor *cav2_cook_timer_done = nullptr;
 
   esphome::sensor::Sensor *cav2_temp = nullptr;
-  esphome::sensor::Sensor *cav2_set_temp = nullptr;
+  esphome::number::Number *cav2_set_temp = nullptr; // writable
   esphome::sensor::Sensor *cav2_cook_mode = nullptr;
   esphome::sensor::Sensor *cav2_probe_temp = nullptr;
-  esphome::sensor::Sensor *cav2_probe_set_temp = nullptr;
+  esphome::number::Number *cav2_probe_set_temp = nullptr; // writable
 
   // Primary cavity publishes
   void publish_door_ajar(bool v) { detail::publish_if(door_ajar, v); }

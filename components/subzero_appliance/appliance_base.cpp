@@ -98,7 +98,8 @@ void ApplianceBase::gattc_event_handler(esp_gattc_cb_event_t event,
     std::uint16_t nh = param->notify.handle;
     std::uint16_t d5 = h->d5_handle();
     std::uint16_t d6 = h->d6_handle();
-    if (nh == 0) break;
+    if (nh == 0)
+      break;
     if (d5 != 0 && nh == d5) {
       h->handle_d5_notify(param->notify.value, param->notify.value_len);
     } else if (d6 != 0 && nh == d6) {
