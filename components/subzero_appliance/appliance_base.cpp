@@ -74,6 +74,15 @@ void ApplianceBase::gattc_event_handler(esp_gattc_cb_event_t event,
   case ESP_GATTC_OPEN_EVT:
     if (param->open.status == ESP_GATT_OK) {
       h->handle_connected();
+    } else {
+      // Failed open — log it and route to the hub's disconnect handler
+      // so any pending discovery timeouts get cancelled. handle_disconnected
+      // is idempotent for a not-yet-connected state (clears handles + flags
+      // we never set), so calling it here is safe even when the previous
+      // state was already disconnected.
+      HUB_LOGW("ble", "[%s] GATT open failed (status=%d)", name_str_.c_str(),
+               static_cast<int>(param->open.status));
+      h->handle_disconnected();
     }
     break;
   case ESP_GATTC_DISCONNECT_EVT:
@@ -81,10 +90,18 @@ void ApplianceBase::gattc_event_handler(esp_gattc_cb_event_t event,
     break;
   case ESP_GATTC_NOTIFY_EVT: {
     // Route notification to D5 or D6 handler based on which handle
-    // it arrived on. The hub keeps these handles internally.
-    if (param->notify.handle == h->d5_handle()) {
+    // it arrived on. The hub keeps these handles internally. Defensive
+    // guard: a stray notify with handle 0 (or any case where the hub
+    // hasn't discovered D5/D6 yet, so its handles are still 0) must
+    // NOT match — without this, `param->notify.handle == h->d5_handle()`
+    // succeeds at 0 == 0 and we'd dispatch garbage as a D5 heartbeat.
+    std::uint16_t nh = param->notify.handle;
+    std::uint16_t d5 = h->d5_handle();
+    std::uint16_t d6 = h->d6_handle();
+    if (nh == 0) break;
+    if (d5 != 0 && nh == d5) {
       h->handle_d5_notify(param->notify.value, param->notify.value_len);
-    } else if (param->notify.handle == h->d6_handle()) {
+    } else if (d6 != 0 && nh == d6) {
       h->handle_d6_notify(param->notify.value, param->notify.value_len);
     }
     break;
