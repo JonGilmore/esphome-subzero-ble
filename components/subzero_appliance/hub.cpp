@@ -40,7 +40,7 @@ constexpr const char *kTimeoutSubscribeUnlock = "subscribe_unlock";
 constexpr const char *kTimeoutSubscribeGet = "subscribe_get";
 constexpr const char *kTimeoutFastReconnect = "fast_reconnect";
 constexpr const char *kTimeoutSubmitPinPoll = "submit_pin_poll";
-}  // namespace
+} // namespace
 
 // =============================================================================
 // Lifecycle handlers — translated from the on_connect / on_disconnect /
@@ -48,7 +48,8 @@ constexpr const char *kTimeoutSubmitPinPoll = "submit_pin_poll";
 // =============================================================================
 
 void SubzeroHub::handle_connected() {
-  if (transport_ == nullptr || scheduler_ == nullptr) return;
+  if (transport_ == nullptr || scheduler_ == nullptr)
+    return;
   transport_->request_mtu();
 
   // Fast path: handles cached from a previous (bonded) connection.
@@ -84,7 +85,8 @@ void SubzeroHub::handle_connected() {
 }
 
 void SubzeroHub::handle_disconnected() {
-  if (transport_ == nullptr || scheduler_ == nullptr) return;
+  if (transport_ == nullptr || scheduler_ == nullptr)
+    return;
   json_buf_.clear();
   scheduler_->cancel_timeout(kTimeoutPostBondInitial);
   scheduler_->cancel_timeout(kTimeoutPostBondPostEnc);
@@ -104,8 +106,7 @@ void SubzeroHub::handle_disconnected() {
   if (d5_handle_ > 0 && phase_ >= 1) {
     fast_retries_ += 1;
     if (fast_retries_ >= kStaleBondsThreshold) {
-      HUB_LOGW("ble",
-               "[%s] Stale bond (%d failures), clearing for re-pair",
+      HUB_LOGW("ble", "[%s] Stale bond (%d failures), clearing for re-pair",
                name_.c_str(), fast_retries_);
       transport_->remove_bond();
       clear_handles_();
@@ -113,8 +114,7 @@ void SubzeroHub::handle_disconnected() {
       fast_retries_ = 0;
       publish_status_("Bond cleared, re-pairing on next connect...");
     } else {
-      HUB_LOGI("ble",
-               "[%s] Disconnected (handles cached, d5=%d, retries=%d)",
+      HUB_LOGI("ble", "[%s] Disconnected (handles cached, d5=%d, retries=%d)",
                name_.c_str(), d5_handle_, fast_retries_);
     }
   } else {
@@ -156,12 +156,14 @@ void SubzeroHub::handle_d6_notify(const std::uint8_t *data, std::size_t len) {
 
 void SubzeroHub::process_message_complete_() {
   auto msg = json_buf_.take_message();
-  if (!msg) return;
+  if (!msg)
+    return;
 
   HUB_LOGI("szg", "[%s] Parsing JSON (%d bytes)", name_.c_str(),
            static_cast<int>(msg->size()));
 
-  if (debug_mode_) log_chunked_debug_(*msg);
+  if (debug_mode_)
+    log_chunked_debug_(*msg);
 
   bool ok = parse_and_dispatch_(*msg);
   if (!ok) {
@@ -175,8 +177,7 @@ void SubzeroHub::process_message_complete_() {
           "Pairing required - press Start Pairing and re-enter PIN");
       return;
     }
-    HUB_LOGW("szg",
-             "[%s] Parse failed or status!=0, skipping (%s...)",
+    HUB_LOGW("szg", "[%s] Parse failed or status!=0, skipping (%s...)",
              name_.c_str(),
              esphome::subzero_protocol::sanitize_for_log(
                  *msg, 0, std::min<std::size_t>(80, msg->size()))
@@ -190,7 +191,8 @@ void SubzeroHub::process_message_complete_() {
 void SubzeroHub::on_pin_confirmed_(const std::string &pin) {
   stored_pin_ = pin;
   pin_confirmed_ = true;
-  if (pin_input_cb_) pin_input_cb_(pin);
+  if (pin_input_cb_)
+    pin_input_cb_(pin);
   HUB_LOGI("szg", "[%s] PIN confirmed: %s", name_.c_str(), pin.c_str());
   publish_status_("PIN confirmed! Channel unlocked.");
 }
@@ -200,8 +202,7 @@ void SubzeroHub::log_chunked_debug_(const std::string &msg) {
   esphome::subzero_protocol::chunk_for_log(
       msg, [&nm](std::size_t idx, std::size_t total, const std::string &chunk) {
         HUB_LOGI("szg", "[%s] Response[%d/%d]: %s", nm.c_str(),
-                 static_cast<int>(idx), static_cast<int>(total),
-                 chunk.c_str());
+                 static_cast<int>(idx), static_cast<int>(total), chunk.c_str());
       });
 }
 
@@ -210,13 +211,17 @@ void SubzeroHub::log_chunked_debug_(const std::string &msg) {
 // =============================================================================
 
 void SubzeroHub::do_periodic_poll() {
-  if (transport_ == nullptr) return;
-  if (!pin_confirmed_) return;
+  if (transport_ == nullptr)
+    return;
+  if (!pin_confirmed_)
+    return;
   if (subscribe_running_ || post_bond_running_ || fast_reconnect_running_) {
     return;
   }
-  if (d6_handle_ == 0) return;
-  if (!transport_->connected()) return;
+  if (d6_handle_ == 0)
+    return;
+  if (!transport_->connected())
+    return;
 
   if (poll_ok_) {
     poll_miss_ = 0;
@@ -241,9 +246,9 @@ void SubzeroHub::do_periodic_poll() {
     write_unlock_channel_(d6_handle_);
   }
   std::string cmd = esphome::subzero_protocol::build_get_async();
-  BleResult err = transport_->write(d6_handle_,
-                                    reinterpret_cast<const std::uint8_t *>(cmd.data()),
-                                    cmd.size());
+  BleResult err = transport_->write(
+      d6_handle_, reinterpret_cast<const std::uint8_t *>(cmd.data()),
+      cmd.size());
   if (err != BleResult::kOk) {
     HUB_LOGW("szg", "[%s] D6 write failed (err=%d), forcing reconnect",
              name_.c_str(), static_cast<int>(err));
@@ -251,8 +256,8 @@ void SubzeroHub::do_periodic_poll() {
     transport_->disconnect();
     return;
   }
-  HUB_LOGI("szg", "[%s] Periodic poll D6 (miss=%d, retries=%d)",
-           name_.c_str(), poll_miss_, fast_retries_);
+  HUB_LOGI("szg", "[%s] Periodic poll D6 (miss=%d, retries=%d)", name_.c_str(),
+           poll_miss_, fast_retries_);
 }
 
 // =============================================================================
@@ -269,9 +274,7 @@ void SubzeroHub::start_post_bond_() {
 void SubzeroHub::post_bond_initial_() {
   update_handles_from_db_();
 
-  HUB_LOGI("ble",
-           "[%s] D5 %s. Requesting encryption...",
-           name_.c_str(),
+  HUB_LOGI("ble", "[%s] D5 %s. Requesting encryption...", name_.c_str(),
            d5_handle_ > 0 ? "found immediately" : "not yet visible");
   transport_->request_encryption();
   if (d5_handle_ > 0) {
@@ -286,8 +289,7 @@ void SubzeroHub::post_bond_initial_() {
 
 void SubzeroHub::post_bond_post_encryption_() {
   if (d5_handle_ > 0) {
-    HUB_LOGI("ble",
-             "[%s] Post-encryption: D5 already known, subscribing...",
+    HUB_LOGI("ble", "[%s] Post-encryption: D5 already known, subscribing...",
              name_.c_str());
     post_bond_running_ = false;
     start_subscribe_();
@@ -302,7 +304,8 @@ void SubzeroHub::post_bond_post_encryption_() {
 }
 
 void SubzeroHub::post_bond_trigger_search_() {
-  if (d5_handle_ > 0) return;
+  if (d5_handle_ > 0)
+    return;
   transport_->search_service();
 
   scheduler_->set_timeout(kTimeoutPostBondPoll1, kPostBondPollPeriodMs,
@@ -310,7 +313,8 @@ void SubzeroHub::post_bond_trigger_search_() {
 }
 
 void SubzeroHub::post_bond_poll_attempt_(int attempt) {
-  if (d5_handle_ > 0) return;
+  if (d5_handle_ > 0)
+    return;
   update_handles_from_db_();
   HUB_LOGI("poll", "[%s] Poll %d", name_.c_str(), attempt);
   if (d5_handle_ > 0) {
@@ -324,8 +328,9 @@ void SubzeroHub::post_bond_poll_attempt_(int attempt) {
     publish_status_(status);
     const char *next_name =
         (attempt == 1) ? kTimeoutPostBondPoll2 : kTimeoutPostBondPoll3;
-    scheduler_->set_timeout(next_name, kPostBondPollPeriodMs,
-                            [this, attempt]() { post_bond_poll_attempt_(attempt + 1); });
+    scheduler_->set_timeout(
+        next_name, kPostBondPollPeriodMs,
+        [this, attempt]() { post_bond_poll_attempt_(attempt + 1); });
     return;
   }
   HUB_LOGW("ble", "[%s] No D5 after 20s. Reconnecting...", name_.c_str());
@@ -356,18 +361,23 @@ void SubzeroHub::post_bond_giveup_() {
 void SubzeroHub::update_handles_from_db_() {
   auto entries = transport_->read_gatt_db();
   for (const auto &e : entries) {
-    if (e.type != GattDbEntry::kCharacteristic) continue;
-    if (!e.uuid_is_128bit) continue;
+    if (e.type != GattDbEntry::kCharacteristic)
+      continue;
+    if (!e.uuid_is_128bit)
+      continue;
     switch (e.uuid_first_byte) {
-      case 0xD5:
-        if (d5_handle_ == 0) d5_handle_ = e.handle;
-        break;
-      case 0xD6:
-        if (d6_handle_ == 0) d6_handle_ = e.handle;
-        break;
-      case 0xD7:
-        if (d7_handle_ == 0) d7_handle_ = e.handle;
-        break;
+    case 0xD5:
+      if (d5_handle_ == 0)
+        d5_handle_ = e.handle;
+      break;
+    case 0xD6:
+      if (d6_handle_ == 0)
+        d6_handle_ = e.handle;
+      break;
+    case 0xD7:
+      if (d7_handle_ == 0)
+        d7_handle_ = e.handle;
+      break;
     }
   }
 }
@@ -392,7 +402,8 @@ void SubzeroHub::subscribe_register_and_cccd_() {
   // the YAML uses this to inject discovered handles into ESPHome's
   // ble_client notify sensors (so their lambdas keep firing on fast
   // reconnect with stale GATT cache).
-  if (subscribe_cb_) subscribe_cb_();
+  if (subscribe_cb_)
+    subscribe_cb_();
   HUB_LOGI("ble", "[%s] Injected D5 handle %d", name_.c_str(), d5_handle_);
   if (d6_handle_ > 0) {
     HUB_LOGI("ble", "[%s] Injected D6 handle %d", name_.c_str(), d6_handle_);
@@ -402,8 +413,8 @@ void SubzeroHub::subscribe_register_and_cccd_() {
   HUB_LOGI("ble", "[%s] Subscribe D5 (h=%d)", name_.c_str(), d5_handle_);
   if (d6_handle_ > 0) {
     transport_->register_for_notify(d6_handle_);
-    HUB_LOGI("ble", "[%s] Subscribe D6 (h=%d) for data + pushes",
-             name_.c_str(), d6_handle_);
+    HUB_LOGI("ble", "[%s] Subscribe D6 (h=%d) for data + pushes", name_.c_str(),
+             d6_handle_);
   }
 
   static constexpr std::uint8_t kCccdOn[2] = {0x02, 0x00};
@@ -444,8 +455,10 @@ void SubzeroHub::subscribe_unlock_() {
 
 void SubzeroHub::subscribe_initial_get_() {
   subscribe_running_ = false;
-  if (!pin_confirmed_) return;
-  if (d6_handle_ == 0) return;
+  if (!pin_confirmed_)
+    return;
+  if (d6_handle_ == 0)
+    return;
   poll_ok_ = false;
   write_get_async_(d6_handle_);
   publish_status_("Connected and polling.");
@@ -457,18 +470,12 @@ void SubzeroHub::subscribe_initial_get_() {
 
 void SubzeroHub::start_fast_reconnect_() {
   fast_reconnect_running_ = true;
-  scheduler_->set_timeout(kTimeoutFastReconnect,
-                          poll_offset_ms_,
-                          [this]() {
-                            transport_->request_encryption();
-                            HUB_LOGI("ble",
-                                     "[%s] Fast reconnect: encryption requested",
-                                     name_.c_str());
-                            scheduler_->set_timeout(
-                                kTimeoutFastReconnect,
-                                kFastReconnectEncryptDelayMs,
-                                [this]() { fast_reconnect_subscribe_(); });
-                          });
+  scheduler_->set_timeout(kTimeoutFastReconnect, poll_offset_ms_, [this]() {
+    transport_->request_encryption();
+    HUB_LOGI("ble", "[%s] Fast reconnect: encryption requested", name_.c_str());
+    scheduler_->set_timeout(kTimeoutFastReconnect, kFastReconnectEncryptDelayMs,
+                            [this]() { fast_reconnect_subscribe_(); });
+  });
 }
 
 void SubzeroHub::fast_reconnect_subscribe_() {
@@ -500,22 +507,24 @@ void SubzeroHub::press_connect() {
 }
 
 void SubzeroHub::press_start_pairing() {
-  if (transport_ == nullptr) return;
+  if (transport_ == nullptr)
+    return;
   if (d5_handle_ == 0) {
     publish_status_("ERROR: Not connected. Press Connect first.");
     return;
   }
   std::string cmd = esphome::subzero_protocol::build_display_pin();
-  BleResult err = transport_->write(d5_handle_,
-                                    reinterpret_cast<const std::uint8_t *>(cmd.data()),
-                                    cmd.size());
+  BleResult err = transport_->write(
+      d5_handle_, reinterpret_cast<const std::uint8_t *>(cmd.data()),
+      cmd.size());
   HUB_LOGI("ble", "[%s] display_pin -> D5 err=%d", name_.c_str(),
            static_cast<int>(err));
   publish_status_("Check appliance display for PIN.");
 }
 
 void SubzeroHub::press_submit_pin() {
-  if (transport_ == nullptr || scheduler_ == nullptr) return;
+  if (transport_ == nullptr || scheduler_ == nullptr)
+    return;
   if (d5_handle_ == 0) {
     publish_status_("ERROR: Not connected.");
     return;
@@ -530,13 +539,15 @@ void SubzeroHub::press_submit_pin() {
   publish_status_("Unlock sent...");
   scheduler_->set_timeout(kTimeoutSubmitPinPoll, kSubmitPinPollDelayMs,
                           [this]() {
-                            if (d5_handle_ == 0) return;
+                            if (d5_handle_ == 0)
+                              return;
                             write_get_async_(d5_handle_);
                           });
 }
 
 void SubzeroHub::press_poll() {
-  if (transport_ == nullptr) return;
+  if (transport_ == nullptr)
+    return;
   if (d6_handle_ == 0) {
     publish_status_("ERROR: Not connected");
     return;
@@ -550,21 +561,22 @@ void SubzeroHub::press_poll() {
 }
 
 void SubzeroHub::press_log_debug_info() {
-  if (transport_ == nullptr) return;
+  if (transport_ == nullptr)
+    return;
   if (d6_handle_ == 0) {
     publish_status_("ERROR: Not connected");
     return;
   }
   debug_mode_ = true;
-  HUB_LOGI("ble",
-           "[%s] Log Debug Info: forcing reconnect for fresh unlock",
+  HUB_LOGI("ble", "[%s] Log Debug Info: forcing reconnect for fresh unlock",
            name_.c_str());
   publish_status_("Debug mode ON - reconnecting for fresh poll...");
   transport_->disconnect();
 }
 
 void SubzeroHub::press_reset_pairing() {
-  if (transport_ == nullptr) return;
+  if (transport_ == nullptr)
+    return;
   pin_confirmed_ = false;
   clear_handles_();
   phase_ = 0;
@@ -573,8 +585,7 @@ void SubzeroHub::press_reset_pairing() {
   json_buf_.clear();
   transport_->cache_clean();
   transport_->remove_bond();
-  HUB_LOGW("ble",
-           "[%s] Bond removed, GATT cache cleared, all state reset",
+  HUB_LOGW("ble", "[%s] Bond removed, GATT cache cleared, all state reset",
            name_.c_str());
   publish_status_(
       "Pairing fully reset. Power-cycle appliance, then press Connect.");
@@ -592,7 +603,8 @@ void SubzeroHub::set_stored_pin(const std::string &pin) {
 }
 
 void SubzeroHub::publish_status_(const std::string &text) {
-  if (status_cb_) status_cb_(text);
+  if (status_cb_)
+    status_cb_(text);
 }
 
 void SubzeroHub::clear_handles_() {
@@ -608,23 +620,25 @@ void SubzeroHub::clear_session_state_() {
 }
 
 void SubzeroHub::write_unlock_channel_(std::uint16_t handle) {
-  if (transport_ == nullptr) return;
-  if (stored_pin_.empty() || handle == 0) return;
+  if (transport_ == nullptr)
+    return;
+  if (stored_pin_.empty() || handle == 0)
+    return;
   std::string cmd =
       esphome::subzero_protocol::build_unlock_channel(stored_pin_);
-  transport_->write(handle,
-                    reinterpret_cast<const std::uint8_t *>(cmd.data()),
+  transport_->write(handle, reinterpret_cast<const std::uint8_t *>(cmd.data()),
                     cmd.size());
 }
 
 void SubzeroHub::write_get_async_(std::uint16_t handle) {
-  if (transport_ == nullptr) return;
-  if (handle == 0) return;
+  if (transport_ == nullptr)
+    return;
+  if (handle == 0)
+    return;
   std::string cmd = esphome::subzero_protocol::build_get_async();
-  transport_->write(handle,
-                    reinterpret_cast<const std::uint8_t *>(cmd.data()),
+  transport_->write(handle, reinterpret_cast<const std::uint8_t *>(cmd.data()),
                     cmd.size());
 }
 
-}  // namespace subzero_appliance
-}  // namespace esphome
+} // namespace subzero_appliance
+} // namespace esphome

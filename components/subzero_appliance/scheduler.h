@@ -25,13 +25,12 @@ namespace esphome {
 namespace subzero_appliance {
 
 class Scheduler {
- public:
+public:
   virtual ~Scheduler() = default;
 
   // Schedule `callback` to run after `delay_ms` from now. If a timeout
   // with `name` is already pending, it is cancelled and replaced.
-  virtual void set_timeout(const char *name,
-                           std::uint32_t delay_ms,
+  virtual void set_timeout(const char *name, std::uint32_t delay_ms,
                            std::function<void()> callback) = 0;
 
   // Cancel a pending timeout by name. No-op if no such timeout exists.
@@ -42,5 +41,5 @@ class Scheduler {
   virtual std::uint32_t now_ms() const = 0;
 };
 
-}  // namespace subzero_appliance
-}  // namespace esphome
+} // namespace subzero_appliance
+} // namespace esphome

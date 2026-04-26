@@ -14,14 +14,15 @@ namespace subzero_appliance {
 
 #ifdef USE_ESP32
 class DishwasherHub : public SubzeroHub {
- public:
+public:
   DishwasherHub() = default;
   void set_bus(esphome::subzero_protocol::DishwasherBus *bus) { bus_ = bus; }
 
- protected:
+protected:
   bool parse_and_dispatch_(const std::string &msg) override {
     auto s = esphome::subzero_protocol::parse_dishwasher(msg);
-    if (!s.valid) return false;
+    if (!s.valid)
+      return false;
     if (s.common.pin_confirmed) {
       on_pin_confirmed_(*s.common.pin_confirmed);
     }
@@ -31,10 +32,10 @@ class DishwasherHub : public SubzeroHub {
     return true;
   }
 
- private:
+private:
   esphome::subzero_protocol::DishwasherBus *bus_ = nullptr;
 };
 #endif
 
-}  // namespace subzero_appliance
-}  // namespace esphome
+} // namespace subzero_appliance
+} // namespace esphome

@@ -21,9 +21,9 @@
 // parse_and_dispatch_() to call the right `parse_X(json)` and
 // `dispatch_X(state, bus)` from subzero_protocol.
 
+#include "../subzero_protocol/buffer.h"
 #include "ble_transport.h"
 #include "scheduler.h"
-#include "../subzero_protocol/buffer.h"
 
 #include <cstdint>
 #include <functional>
@@ -33,7 +33,7 @@ namespace esphome {
 namespace subzero_appliance {
 
 class SubzeroHub {
- public:
+public:
   // Default-constructible so the hub can be declared as an ESPHome
   // global variable. Wire up via set_transport/set_scheduler/set_name
   // in on_boot before any handle_* call lands. Tests construct the hub
@@ -138,7 +138,7 @@ class SubzeroHub {
   bool fast_reconnect_running() const { return fast_reconnect_running_; }
   const std::string &stored_pin() const { return stored_pin_; }
 
- protected:
+protected:
   // Subclass hook — called when a complete JSON message has been
   // assembled in json_buf_. Returns true if the parse succeeded
   // (regardless of whether PIN was confirmed); false on parse failure
@@ -155,7 +155,7 @@ class SubzeroHub {
   // and pin_confirmed_, then notifies via pin_input_cb_.
   void on_pin_confirmed_(const std::string &pin);
 
- private:
+private:
   // ---- post_bond stages (translated from the 5-stage YAML script) ----
   void start_post_bond_();
   void post_bond_initial_();
@@ -198,7 +198,7 @@ class SubzeroHub {
   std::uint16_t d6_handle_ = 0;
   std::uint16_t d7_handle_ = 0;
   std::string stored_pin_;
-  bool pin_confirmed_ = true;  // matches YAML's restore_value:true initial
+  bool pin_confirmed_ = true; // matches YAML's restore_value:true initial
   bool poll_ok_ = false;
   int fast_retries_ = 0;
   int poll_miss_ = 0;
@@ -235,5 +235,5 @@ class SubzeroHub {
   static constexpr int kZombiePollMissThreshold = 3;
 };
 
-}  // namespace subzero_appliance
-}  // namespace esphome
+} // namespace subzero_appliance
+} // namespace esphome

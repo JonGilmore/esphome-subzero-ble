@@ -38,13 +38,13 @@ struct GattDbEntry {
 // directly; tests can inject failures.
 enum class BleResult {
   kOk = 0,
-  kFailed,           // generic write/read failure
-  kNotConnected,     // call attempted while disconnected
-  kInvalidHandle,    // handle was 0 / not yet discovered
+  kFailed,        // generic write/read failure
+  kNotConnected,  // call attempted while disconnected
+  kInvalidHandle, // handle was 0 / not yet discovered
 };
 
 class BleTransport {
- public:
+public:
   virtual ~BleTransport() = default;
 
   // Connection state — checked before each command write.
@@ -85,11 +85,9 @@ class BleTransport {
   // ack_required=true uses ESP_GATT_WRITE_TYPE_RSP; false uses
   // WRITE_TYPE_NO_RSP (not currently used by this protocol but kept for
   // future flexibility).
-  virtual BleResult write(std::uint16_t handle,
-                          const std::uint8_t *data,
-                          std::size_t len,
-                          bool ack_required = true) = 0;
+  virtual BleResult write(std::uint16_t handle, const std::uint8_t *data,
+                          std::size_t len, bool ack_required = true) = 0;
 };
 
-}  // namespace subzero_appliance
-}  // namespace esphome
+} // namespace subzero_appliance
+} // namespace esphome

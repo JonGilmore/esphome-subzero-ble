@@ -27,7 +27,7 @@ namespace {
 // Test stub that satisfies SubzeroHub's parse_and_dispatch_ contract.
 // Tests can inspect last_message_ and override return value.
 class TestHub : public SubzeroHub {
- public:
+public:
   TestHub() = default;
 
   // Default: succeed and capture the message.
@@ -49,29 +49,29 @@ class TestHub : public SubzeroHub {
 
 // Fixture base — wires up transport + scheduler + hub + status capture.
 class HubFixture : public ::testing::Test {
- protected:
+protected:
   void SetUp() override {
     hub_.set_transport(&transport_);
     hub_.set_scheduler(&scheduler_);
     hub_.set_name("TestApp");
-    hub_.set_status_callback([this](const std::string &s) {
-      status_log_.push_back(s);
-    });
-    hub_.set_pin_input_callback([this](const std::string &p) {
-      pin_input_log_.push_back(p);
-    });
+    hub_.set_status_callback(
+        [this](const std::string &s) { status_log_.push_back(s); });
+    hub_.set_pin_input_callback(
+        [this](const std::string &p) { pin_input_log_.push_back(p); });
     transport_.set_connected(true);
   }
 
   // Helpers
   bool last_status_contains(const std::string &needle) const {
-    if (status_log_.empty()) return false;
+    if (status_log_.empty())
+      return false;
     return status_log_.back().find(needle) != std::string::npos;
   }
 
   bool any_status_contains(const std::string &needle) const {
     for (const auto &s : status_log_) {
-      if (s.find(needle) != std::string::npos) return true;
+      if (s.find(needle) != std::string::npos)
+        return true;
     }
     return false;
   }
@@ -106,7 +106,7 @@ class HubFixture : public ::testing::Test {
   std::vector<std::string> pin_input_log_;
 };
 
-}  // namespace
+} // namespace
 
 // =============================================================================
 // Cold-boot connection — phase 0 → post_bond → subscribe
@@ -150,11 +150,11 @@ TEST_F(HubFixture, ColdConnect_DishwasherPattern_D5VisiblePreEncryption) {
   // Subscribe stage 1 happens immediately. Should register for notify
   // on D5 + D6 and write CCCD bytes (0x02 0x00) to handle+2 of each.
   ASSERT_GE(transport_.notify_subscribed_handles().size(), 2u);
-  EXPECT_EQ(transport_.notify_subscribed_handles()[0], 0x10);  // D5
-  EXPECT_EQ(transport_.notify_subscribed_handles()[1], 0x12);  // D6
+  EXPECT_EQ(transport_.notify_subscribed_handles()[0], 0x10); // D5
+  EXPECT_EQ(transport_.notify_subscribed_handles()[1], 0x12); // D6
   // CCCD writes — first two writes are CCCDs.
   ASSERT_GE(transport_.write_count(), 2u);
-  EXPECT_EQ(transport_.write_at(0).handle, 0x12);  // D5+2 = 0x12... wait
+  EXPECT_EQ(transport_.write_at(0).handle, 0x12); // D5+2 = 0x12... wait
   // Actually D5=0x10 so D5+2=0x12; D6=0x12 so D6+2=0x14.
   // The test_helpers' make_char_entry put D6 at handle 0x12, but D5+2 is
   // ALSO 0x12 — handle collision in the test fixture. Use less-collide-y
@@ -162,7 +162,8 @@ TEST_F(HubFixture, ColdConnect_DishwasherPattern_D5VisiblePreEncryption) {
   // (Will fix by using full_gatt_db with non-overlapping +2 offsets.)
 }
 
-TEST_F(HubFixture, ColdConnect_DishwasherPatternFixedHandles_FullSubscribeFlow) {
+TEST_F(HubFixture,
+       ColdConnect_DishwasherPatternFixedHandles_FullSubscribeFlow) {
   // Use handles where +2 offsets don't collide.
   hub_.set_stored_pin("99999");
   transport_.set_gatt_db({
@@ -174,14 +175,16 @@ TEST_F(HubFixture, ColdConnect_DishwasherPatternFixedHandles_FullSubscribeFlow) 
   scheduler_.advance_by(500);
   EXPECT_EQ(hub_.d5_handle(), 0x100);
   EXPECT_EQ(hub_.d6_handle(), 0x200);
-  scheduler_.advance_by(1000);  // post-encryption stage
+  scheduler_.advance_by(1000); // post-encryption stage
   // Now in subscribe; CCCDs are at 0x102 and 0x202.
   ASSERT_GE(transport_.write_count(), 2u);
   EXPECT_EQ(transport_.write_at(0).handle, 0x102);
   EXPECT_EQ(transport_.write_at(1).handle, 0x202);
   // Each CCCD payload is exactly {0x02, 0x00} (indications enable).
-  EXPECT_EQ(transport_.write_at(0).bytes, std::vector<std::uint8_t>({0x02, 0x00}));
-  EXPECT_EQ(transport_.write_at(1).bytes, std::vector<std::uint8_t>({0x02, 0x00}));
+  EXPECT_EQ(transport_.write_at(0).bytes,
+            std::vector<std::uint8_t>({0x02, 0x00}));
+  EXPECT_EQ(transport_.write_at(1).bytes,
+            std::vector<std::uint8_t>({0x02, 0x00}));
 
   // Advance 500ms → unlock writes.
   std::size_t writes_before_unlock = transport_.write_count();
@@ -200,22 +203,22 @@ TEST_F(HubFixture, ColdConnect_DishwasherPatternFixedHandles_FullSubscribeFlow) 
 TEST_F(HubFixture, ColdConnect_FridgePattern_D5LandsAfterCacheRefresh) {
   // Fridge case: GATT db is empty until after cache_refresh + search.
   hub_.set_stored_pin("12345");
-  transport_.set_gatt_db({});  // empty initially
+  transport_.set_gatt_db({}); // empty initially
   hub_.handle_connected();
-  scheduler_.advance_by(500);  // post_bond_initial_
+  scheduler_.advance_by(500); // post_bond_initial_
   EXPECT_EQ(hub_.d5_handle(), 0);
   EXPECT_EQ(transport_.encryption_request_count(), 1u);
 
-  scheduler_.advance_by(1000);  // post_bond_post_encryption_
+  scheduler_.advance_by(1000); // post_bond_post_encryption_
   // D5 still not found → cache_refresh requested.
   EXPECT_EQ(transport_.cache_refresh_count(), 1u);
   EXPECT_TRUE(hub_.post_bond_running());
 
-  scheduler_.advance_by(500);  // post_bond_trigger_search_
+  scheduler_.advance_by(500); // post_bond_trigger_search_
   EXPECT_EQ(transport_.search_service_count(), 1u);
 
   // Now simulate the GATT db gaining handles between poll attempts.
-  scheduler_.advance_by(5000);  // poll attempt 1 — db still empty
+  scheduler_.advance_by(5000); // poll attempt 1 — db still empty
   EXPECT_EQ(hub_.d5_handle(), 0);
   EXPECT_TRUE(hub_.post_bond_running());
 
@@ -224,7 +227,7 @@ TEST_F(HubFixture, ColdConnect_FridgePattern_D5LandsAfterCacheRefresh) {
       make_char_entry(0xD5, 0x200),
       make_char_entry(0xD6, 0x300),
   });
-  scheduler_.advance_by(5000);  // poll attempt 2
+  scheduler_.advance_by(5000); // poll attempt 2
   EXPECT_EQ(hub_.d5_handle(), 0x200);
   // Subscribe should now be running.
   EXPECT_FALSE(hub_.post_bond_running());
@@ -238,7 +241,7 @@ TEST_F(HubFixture, ColdConnect_NoD5AfterTimeout_TriggersGiveupReconnect) {
   // Advance through the entire ladder: 500ms + 1000ms + 500ms + 5s + 5s + 5s
   scheduler_.advance_by(500 + 1000 + 500 + 5000 + 5000 + 5000);
   EXPECT_EQ(hub_.d5_handle(), 0);
-  EXPECT_EQ(hub_.phase(), 1);  // reset to 1 by giveup
+  EXPECT_EQ(hub_.phase(), 1); // reset to 1 by giveup
   // Disconnect was requested.
   EXPECT_GE(transport_.disconnect_count(), 1u);
 }
@@ -252,9 +255,9 @@ TEST_F(HubFixture, FastReconnect_SkipsPostBondWhenHandlesCached) {
   hub_.set_stored_pin("12345");
   transport_.set_gatt_db(full_gatt_db());
   hub_.handle_connected();
-  scheduler_.advance_by(2000);  // through post_bond + into subscribe
-  scheduler_.advance_by(500);   // unlock
-  scheduler_.advance_by(1000);  // initial get_async
+  scheduler_.advance_by(2000); // through post_bond + into subscribe
+  scheduler_.advance_by(500);  // unlock
+  scheduler_.advance_by(1000); // initial get_async
   EXPECT_NE(hub_.d5_handle(), 0);
   EXPECT_FALSE(hub_.post_bond_running());
 
@@ -291,14 +294,14 @@ TEST_F(HubFixture, Disconnect_AfterBond_AccumulatesFastRetries) {
   hub_.set_stored_pin("12345");
   transport_.set_gatt_db(full_gatt_db());
   hub_.handle_connected();
-  scheduler_.advance_by(3000);  // through subscribe (incl. initial get_async)
+  scheduler_.advance_by(3000); // through subscribe (incl. initial get_async)
   ASSERT_NE(hub_.d5_handle(), 0);
   ASSERT_GE(hub_.phase(), 1);
 
   hub_.handle_disconnected();
   EXPECT_EQ(hub_.fast_retries(), 1);
   EXPECT_EQ(transport_.remove_bond_count(), 0u);
-  EXPECT_NE(hub_.d5_handle(), 0);  // handles preserved for fast reconnect
+  EXPECT_NE(hub_.d5_handle(), 0); // handles preserved for fast reconnect
 }
 
 TEST_F(HubFixture, Disconnect_ThreeFailures_TriggersBondClear) {
@@ -337,7 +340,7 @@ TEST_F(HubFixture, PeriodicPoll_WritesUnlockAndGetAsyncOnHappyPath) {
   hub_.set_stored_pin("12345");
   transport_.set_gatt_db(full_gatt_db());
   hub_.handle_connected();
-  scheduler_.advance_by(3000);  // through subscribe (incl. initial get_async)
+  scheduler_.advance_by(3000); // through subscribe (incl. initial get_async)
   transport_.clear_writes();
   // poll_ok was set by the initial subscribe path; reset it via a
   // periodic_poll cycle.
@@ -398,7 +401,7 @@ TEST_F(HubFixture, D6Notify_AccumulatesAndDispatchesOnComplete) {
 }
 
 TEST_F(HubFixture, D6Notify_Status302_PublishesPairingRequiredMessage) {
-  hub_.parse_should_succeed_ = false;  // simulate parse failure
+  hub_.parse_should_succeed_ = false; // simulate parse failure
   std::string msg = "{\"status\":302}\n";
   hub_.handle_d6_notify(reinterpret_cast<const std::uint8_t *>(msg.data()),
                         msg.size());
@@ -520,7 +523,7 @@ TEST_F(HubFixture, PostBondRestart_CancelsPriorPostBond) {
   hub_.set_stored_pin("12345");
   hub_.handle_connected();
   EXPECT_TRUE(hub_.post_bond_running());
-  scheduler_.advance_by(250);  // halfway through initial delay
+  scheduler_.advance_by(250); // halfway through initial delay
   std::size_t pending_before = scheduler_.pending_count();
   hub_.handle_connected();
   // Phase increments and a new post_bond chain replaces the prior one.

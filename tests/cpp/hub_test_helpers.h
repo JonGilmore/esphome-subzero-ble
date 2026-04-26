@@ -21,7 +21,7 @@ namespace subzero_appliance {
 // to fire callbacks deterministically.
 // ----------------------------------------------------------------------
 class FakeScheduler : public Scheduler {
- public:
+public:
   struct Pending {
     std::uint32_t fire_at_ms;
     std::function<void()> callback;
@@ -32,9 +32,7 @@ class FakeScheduler : public Scheduler {
     pending_[name] = Pending{now_ms_ + delay_ms, std::move(callback)};
   }
 
-  void cancel_timeout(const char *name) override {
-    pending_.erase(name);
-  }
+  void cancel_timeout(const char *name) override { pending_.erase(name); }
 
   std::uint32_t now_ms() const override { return now_ms_; }
 
@@ -52,14 +50,16 @@ class FakeScheduler : public Scheduler {
           it = cur;
         }
       }
-      if (it == pending_.end()) break;
+      if (it == pending_.end())
+        break;
       now_ms_ = it->second.fire_at_ms;
       // Pop before firing so the callback can re-schedule the same name.
       auto cb = std::move(it->second.callback);
       pending_.erase(it);
       cb();
     }
-    if (now_ms_ < target_ms) now_ms_ = target_ms;
+    if (now_ms_ < target_ms)
+      now_ms_ = target_ms;
   }
 
   // Convenience: advance by N ms.
@@ -71,7 +71,7 @@ class FakeScheduler : public Scheduler {
     return pending_.find(name) != pending_.end();
   }
 
- private:
+private:
   std::uint32_t now_ms_ = 0;
   std::map<std::string, Pending> pending_;
 };
@@ -82,7 +82,7 @@ class FakeScheduler : public Scheduler {
 // recorded write sequence.
 // ----------------------------------------------------------------------
 class MockBleTransport : public BleTransport {
- public:
+public:
   struct WriteCall {
     std::uint16_t handle;
     std::vector<std::uint8_t> bytes;
@@ -92,7 +92,10 @@ class MockBleTransport : public BleTransport {
 
   // ---- BleTransport interface ----
   bool connected() const override { return connected_; }
-  void disconnect() override { ++disconnect_count_; connected_ = false; }
+  void disconnect() override {
+    ++disconnect_count_;
+    connected_ = false;
+  }
   void request_mtu() override { ++mtu_request_count_; }
   void request_encryption() override { ++encryption_request_count_; }
   void remove_bond() override { ++remove_bond_count_; }
@@ -110,10 +113,8 @@ class MockBleTransport : public BleTransport {
     return BleResult::kOk;
   }
 
-  BleResult write(std::uint16_t handle,
-                  const std::uint8_t *data,
-                  std::size_t len,
-                  bool ack_required = true) override {
+  BleResult write(std::uint16_t handle, const std::uint8_t *data,
+                  std::size_t len, bool ack_required = true) override {
     WriteCall c{handle, std::vector<std::uint8_t>(data, data + len),
                 ack_required, next_write_result_};
     writes_.push_back(std::move(c));
@@ -152,16 +153,18 @@ class MockBleTransport : public BleTransport {
   // Was a write to `handle` made whose payload contains substring `needle`?
   bool wrote_command_to(std::uint16_t handle, const std::string &needle) const {
     for (const auto &c : writes_) {
-      if (c.handle != handle) continue;
+      if (c.handle != handle)
+        continue;
       std::string s(c.bytes.begin(), c.bytes.end());
-      if (s.find(needle) != std::string::npos) return true;
+      if (s.find(needle) != std::string::npos)
+        return true;
     }
     return false;
   }
 
   void clear_writes() { writes_.clear(); }
 
- private:
+private:
   bool connected_ = false;
   std::vector<WriteCall> writes_;
   std::vector<GattDbEntry> gatt_db_;
@@ -189,5 +192,5 @@ inline GattDbEntry make_char_entry(std::uint8_t uuid_first_byte,
   return e;
 }
 
-}  // namespace subzero_appliance
-}  // namespace esphome
+} // namespace subzero_appliance
+} // namespace esphome
