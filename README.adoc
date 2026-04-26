@@ -467,10 +467,12 @@ These diagnostic text sensors are exposed under HA's Diagnostic section for ever
 
 | Sub-Zero | DEU2450R | Under-counter refrigerator | Fully working
 | Sub-Zero | 313 | French-door fridge/freezer with ice maker | Fully working
+| Sub-Zero | PRO3650G | Refrigerator/Freezer | Fully working
 | Cove | DW2450 | Dishwasher | Fully working
 | Cove | DW2450WS | Dishwasher (with water softener) | Fully working
 | Wolf | DF36450GSP | Dual-fuel range | Fully working
 | Wolf | SO3050PESP | Wall oven | Fully working
+| Wolf | DO30PM | Double wall oven | Fully working
 | Sub-Zero | IW30R | Wine storage (dual-zone) | Fully working
 | Sub-Zero | IT36CIID | Refrigerator/Freezer with Ice Maker | Fully working
 | Sub-Zero | 48SID | Refrigerator/Freezer with Ice Maker | Fully working

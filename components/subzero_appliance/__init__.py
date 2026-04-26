@@ -147,7 +147,7 @@ COMMON_TEXT_SENSORS = [
      {CONF_ICON: "mdi:calendar-clock", CONF_ENTITY_CATEGORY: ENTITY_CATEGORY_DIAGNOSTIC}),
 ]
 
-# Buttons — same 7 across all appliance types.
+# Buttons — same across all appliance types.
 BUTTON_DEFINITIONS = [
     # (kind, friendly-name format string {name})
     ("kConnect", "Connect to {name}", "mdi:bluetooth-connect", None),
@@ -685,7 +685,7 @@ async def to_code(config):
     debug_sw = await switch.new_switch(debug_sw_cfg)
     cg.add(debug_sw.set_parent(var))
 
-    # ---- Buttons (7) ----
+    # ---- Buttons ----
     for kind_name, name_fmt, icon, entity_category in BUTTON_DEFINITIONS:
         btn_cfg_raw = {
             CONF_ID: _entity_id(
