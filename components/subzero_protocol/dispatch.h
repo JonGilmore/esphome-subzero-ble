@@ -76,8 +76,13 @@ inline void dispatch_fridge(const FridgeState &s, Bus &bus) {
   // Refrigerator drawer
   if (s.ref2_set_temp)
     bus.publish_ref2_set_temp(*s.ref2_set_temp);
+  // Some models (e.g. PRO3650G) wire the main door and drawer to a single
+  // switch and only report ref_door_ajar. Mirror it to the drawer sensor
+  // when the appliance doesn't report ref2_door_ajar separately.
   if (s.ref2_door_ajar)
     bus.publish_ref2_door_ajar(*s.ref2_door_ajar);
+  else if (s.door_ajar)
+    bus.publish_ref2_door_ajar(*s.door_ajar);
   // Wine
   if (s.wine_door_ajar)
     bus.publish_wine_door_ajar(*s.wine_door_ajar);

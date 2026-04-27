@@ -281,6 +281,31 @@ TEST(Dispatch, FridgeFieldsRouted) {
   EXPECT_FLOAT_EQ(rec.floats["water_filter_pct"], 50.0f);
 }
 
+// Some fridges (e.g. PRO3650G) wire the main door and the refrigerator drawer
+// to a single switch and only report ref_door_ajar. The dispatcher mirrors
+// the main-door state to the drawer sensor when ref2_door_ajar is absent,
+// so users who enable hide_ref_drawer=false still get a populated drawer
+// door entity.
+TEST(Dispatch, FridgeRef2DoorMirrorsRefDoorWhenAbsent) {
+  FridgeState s;
+  s.door_ajar = true; // populated from ref_door_ajar at parse time
+  // s.ref2_door_ajar intentionally unset
+  FridgeRecorder rec;
+  dispatch_fridge(s, rec);
+  EXPECT_EQ(rec.bools["door_ajar"], true);
+  EXPECT_EQ(rec.bools["ref2_door_ajar"], true);
+}
+
+TEST(Dispatch, FridgeRef2DoorExplicitWinsOverFallback) {
+  FridgeState s;
+  s.door_ajar = true;
+  s.ref2_door_ajar = false; // explicit drawer signal disagrees with main door
+  FridgeRecorder rec;
+  dispatch_fridge(s, rec);
+  EXPECT_EQ(rec.bools["door_ajar"], true);
+  EXPECT_EQ(rec.bools["ref2_door_ajar"], false);
+}
+
 // =============================================================================
 // Dishwasher dispatch: includes the stateful "clear remaining time when
 // cycle ends" hook which is special-cased in dispatch_dishwasher.
@@ -496,6 +521,44 @@ TEST(Dispatch, FixtureFridgePushDoor) {
   EXPECT_EQ(rec.bools["door_ajar"], true);
   // No firmware version in a push notification.
   EXPECT_TRUE(rec.strings["fw_version"].empty());
+  // Drawer sensor mirrors the main door for shared-switch models.
+  ASSERT_NE(rec.bools.find("ref2_door_ajar"), rec.bools.end());
+  EXPECT_EQ(rec.bools["ref2_door_ajar"], true);
+}
+
+// PRO3650G has a separate refrigerator drawer with its own setpoint
+// (`ref2_set_temp`) but no separate `ref2_door_ajar` — the main door switch
+// covers the drawer too. Verify dispatch produces independent `set_temp` and
+// `ref2_set_temp` publishes, while `ref2_door_ajar` mirrors the main door.
+TEST(Dispatch, FixturePro3650gSeparateDrawerSetTempSharedDoor) {
+  std::string raw =
+      read_file(fs::path(FIXTURES_DIR) / "fridge_pro3650g_d4_full.json");
+  ASSERT_FALSE(raw.empty());
+  auto s = parse_fridge(raw);
+  ASSERT_TRUE(s.valid);
+  ASSERT_TRUE(s.is_poll);
+  // Parser keeps state pristine: drawer door is unset because the JSON
+  // doesn't carry ref2_door_ajar.
+  EXPECT_TRUE(s.ref_set_temp.has_value());
+  EXPECT_TRUE(s.ref2_set_temp.has_value());
+  EXPECT_FALSE(s.ref2_door_ajar.has_value());
+
+  FridgeRecorder rec;
+  dispatch_fridge(s, rec);
+
+  // Main fridge and drawer setpoints publish independently.
+  ASSERT_NE(rec.floats.find("set_temp"), rec.floats.end());
+  ASSERT_NE(rec.floats.find("ref2_set_temp"), rec.floats.end());
+  EXPECT_FLOAT_EQ(rec.floats["set_temp"], 36.0f);
+  EXPECT_FLOAT_EQ(rec.floats["ref2_set_temp"], 36.0f);
+  // Main door state mirrors to the drawer sensor at dispatch time.
+  ASSERT_NE(rec.bools.find("door_ajar"), rec.bools.end());
+  ASSERT_NE(rec.bools.find("ref2_door_ajar"), rec.bools.end());
+  EXPECT_EQ(rec.bools["door_ajar"], false);
+  EXPECT_EQ(rec.bools["ref2_door_ajar"], false);
+  // Freezer remains independent (drawer-style freezer with its own switch).
+  EXPECT_EQ(rec.bools["frz_door_ajar"], true);
+  EXPECT_FLOAT_EQ(rec.floats["frz_set_temp"], -1.0f);
 }
 
 TEST(Dispatch, FixtureDishwasherFullPoll) {

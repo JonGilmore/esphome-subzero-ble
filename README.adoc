@@ -306,7 +306,7 @@ NOTE: Sub-Zero fridge firmware only exposes _set points_ over BLE - actual/measu
 | *Wine Zone Lower Set Temperature* | Lower zone setpoint (°F) _(optional)_
 | *Wine Temperature Alert* | Temperature alert binary sensor _(optional)_
 | *Refrigerator Drawer Set Temperature* | Drawer compartment setpoint (°F) _(optional)_
-| *Refrigerator Drawer Door* | Drawer open/closed binary sensor _(optional)_
+| *Refrigerator Drawer Door* | Drawer open/closed binary sensor _(optional)_. On models that wire the main door and drawer to a single switch (e.g. PRO3650G), this mirrors the Refrigerator Door state.
 | *Crisper Drawer Set Temperature* | Crisper drawer setpoint (°F) _(optional)_
 | *Air Filter* | Air filter on/off binary sensor _(optional)_
 | *Air Filter Remaining* | Air filter life remaining (%) _(optional)_

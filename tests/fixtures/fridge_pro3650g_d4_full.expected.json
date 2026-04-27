@@ -1,0 +1,26 @@
+{
+  "valid": true,
+  "ref_set_temp": 36,
+  "door_ajar": false,
+  "frz_set_temp": -1,
+  "frz_door_ajar": true,
+  "ice_maker_on": true,
+  "ref2_set_temp": 36,
+  "air_filter_on": true,
+  "air_filter_pct_remaining": 97,
+  "water_filter_pct_remaining": 100,
+  "common": {
+    "sabbath_on": false,
+    "service_required": false,
+    "appliance_model": "PRO3650G",
+    "uptime": "50:17:54",
+    "appliance_serial": "3568031",
+    "appliance_type": "1.7.1.1",
+    "diagnostic_status": "0x11111111111",
+    "version": {
+      "fw": "8.5",
+      "api": "5.4",
+      "appliance": "main: 11.16.5975; conf: 0.11.94; ccm: 11.14.5713; uim: N/A"
+    }
+  }
+}
