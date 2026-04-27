@@ -6,7 +6,7 @@ external_components:
   - source:
       type: git
       url: https://github.com/JonGilmore/esphome-subzero-ble
-      ref: main
+      ref: v3.1.0
     components: [patch_acl_reassembly, subzero_protocol, subzero_appliance]
 
 esphome:
