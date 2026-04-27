@@ -12,6 +12,11 @@ on:
           - patch
           - minor
           - major
+      prerelease:
+        description: "Mark as pre-release"
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: write
@@ -49,6 +54,39 @@ jobs:
           echo "version=$NEW" >> "$GITHUB_OUTPUT"
           echo "New version: $NEW"
 
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install ESPHome
+        run: pip install esphome
+
+      - name: Create dummy secrets
+        run: |
+          cat > secrets.yaml <<'EOF'
+          wifi_ssid: "test-ssid"
+          wifi_password: "test-password"
+          right_dishwasher_mac: "00:06:80:00:00:01"
+          right_dishwasher_pin: "000001"
+          kitchen_range_mac: "00:06:80:00:00:02"
+          kitchen_range_pin: "000002"
+          main_fridge_mac: "00:06:80:00:00:03"
+          main_fridge_pin: "000003"
+          EOF
+
+      - name: Validate configs before tagging
+        run: |
+          REF="${GITHUB_SHA}"
+          sed -i -E "s#ref: (v[0-9]+\.[0-9]+\.[0-9]+|main)#ref: ${REF}#" \
+            cove-minimal-dishwasher.yaml wolf-minimal-range.yaml wolf-minimal-fridge.yaml
+          for yaml in cove-minimal-dishwasher.yaml wolf-minimal-range.yaml wolf-minimal-fridge.yaml; do
+            echo "::group::Validating $yaml"
+            esphome config "$yaml"
+            echo "::endgroup::"
+          done
+          # Restore the originals so the later sed/commit step operates on clean files.
+          git checkout -- cove-minimal-dishwasher.yaml wolf-minimal-range.yaml wolf-minimal-fridge.yaml
+
       - name: Create tag on current HEAD
         run: |
           git tag "${{ steps.new.outputs.version }}"
@@ -60,7 +98,8 @@ jobs:
         run: |
           gh release create "${{ steps.new.outputs.version }}" \
             --generate-notes \
-            --title "${{ steps.new.outputs.version }}"
+            --title "${{ steps.new.outputs.version }}" \
+            ${{ inputs.prerelease && '--prerelease' || '' }}
 
       - name: Update version references
         run: |
