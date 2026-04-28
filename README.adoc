@@ -37,6 +37,8 @@ pip install esphome
 
 Create a YAML file (e.g. `subzero.yaml`). The `external_components:` block pulls the native `subzero_appliance` component directly from this GitHub repo at compile time - no cloning required. Each appliance is then declared as a single `subzero_appliance:` entry that creates its full set of sensors, switches, numbers, buttons, and the diagnostic Status text sensor.
 
+Each `subzero_appliance:` entry also auto-creates an ESPHome sub-device using the appliance config `id` with `_device` appended, so entities are grouped per appliance in Home Assistant and the ESPHome web UI without needing a separate manual `esphome.devices:` block.
+
 Pick the appropriate `type:` for your appliance:
 
 [cols="1,1"]
@@ -80,11 +82,14 @@ logger:
     BT_GATTC: WARN
 
 api:
+  encryption:
+    key: !secret encryption_key
   reboot_timeout: 5min
 
 ota:
   - platform: esphome
-
+    password: !secret ota_password
+    
 wifi:
   ssid: !secret wifi_ssid
   password: !secret wifi_password
@@ -465,19 +470,22 @@ These diagnostic text sensors are exposed under HA's Diagnostic section for ever
 |===
 | Brand | Model | Type | Status
 
-| Sub-Zero | DEU2450R | Under-counter refrigerator | Fully working
-| Sub-Zero | 313 | French-door fridge/freezer with ice maker | Fully working
-| Sub-Zero | PRO3650G | Refrigerator/Freezer | Fully working
 | Cove | DW2450 | Dishwasher | Fully working
-| Cove | DW2450WS | Dishwasher (with water softener) | Fully working
+| Cove | DW2450WS | Dishwasher with water softener | Fully working
+| Sub-Zero | BI36UFDID | Built-in refrigerator/freezer with ice maker | Fully working
+| Sub-Zero | CL44750SID | Refrigerator/freezer with ice maker | Fully working
+| Sub-Zero | CL4850SID | Refrigerator/freezer with ice maker | Fully working
+| Sub-Zero | DEU2450BG | Under-counter beverage center refrigerator | Fully working
+| Sub-Zero | DEU2450R | Under-counter refrigerator | Fully working
+| Sub-Zero | DEU2450WDZ | Under-counter wine storage, dual-zone | Fully working
+| Sub-Zero | IW30R | Wine storage, dual-zone | Fully working
+| Sub-Zero | IT36CIID | Refrigerator/freezer with ice maker | Fully working
+| Sub-Zero | 313 | French-door fridge/freezer with ice maker | Fully working
+| Sub-Zero | 48SID | Refrigerator/freezer with ice maker | Fully working
 | Wolf | DF36450GSP | Dual-fuel range | Fully working
+| Wolf | DF48850SP | Dual-fuel range | Fully working
+| Wolf | IR36550ST | Induction range | Fully working
 | Wolf | SO3050PESP | Wall oven | Fully working
-| Wolf | DO30PM | Double wall oven | Fully working
-| Sub-Zero | IW30R | Wine storage (dual-zone) | Fully working
-| Sub-Zero | IT36CIID | Refrigerator/Freezer with Ice Maker | Fully working
-| Sub-Zero | 48SID | Refrigerator/Freezer with Ice Maker | Fully working
-| Sub-Zero | BI36UFDID | Built-in Refrigerator/Freezer with Ice Maker | Fully working
-| Wolf | IR36550ST | Induction Range | Fully working
 |===
 
 Other Sub-Zero, Wolf, and Cove appliances with BLE should work - they all use the same protocol. If you test with a different model, please open an issue or PR to update this table. See link:docs/advanced.adoc#_debug_mode[Debug Mode] for how to capture your appliance's data.

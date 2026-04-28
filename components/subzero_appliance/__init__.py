@@ -34,6 +34,7 @@ from __future__ import annotations
 
 import esphome.codegen as cg
 import esphome.config_validation as cv
+import esphome.final_validate as fv
 from esphome import core
 from esphome.components import (
     binary_sensor,
@@ -46,8 +47,11 @@ from esphome.components import (
     text_sensor,
 )
 from esphome.const import (
+    CONF_DEVICE_ID,
     CONF_DEVICE_CLASS,
+    CONF_DEVICES,
     CONF_ENTITY_CATEGORY,
+    CONF_ESPHOME,
     CONF_ICON,
     CONF_ID,
     CONF_INTERNAL,
@@ -65,6 +69,7 @@ from esphome.const import (
     STATE_CLASS_MEASUREMENT,
     UNIT_PERCENT,
 )
+from esphome.core.config import Device
 
 CODEOWNERS = ["@JonGilmore"]
 DEPENDENCIES = ["ble_client"]
@@ -447,6 +452,31 @@ CONFIG_SCHEMA = cv.typed_schema(
 )
 
 
+def _subdevice_id(parent_id: core.ID) -> core.ID:
+    return core.ID(f"{parent_id.id}_device", type=Device)
+
+
+def _final_validate(config):
+    full_conf = fv.full_config.get()
+    esphome_conf = full_conf.setdefault(CONF_ESPHOME, {})
+    devices = esphome_conf.setdefault(CONF_DEVICES, [])
+
+    device_id = _subdevice_id(config[CONF_ID])
+    if not any(dev[CONF_ID].id == device_id.id for dev in devices):
+        devices.append(
+            {
+                CONF_ID: device_id,
+                CONF_NAME: config[CONF_NAME],
+            }
+        )
+        fv.full_config.set(full_conf)
+
+    return config
+
+
+FINAL_VALIDATE_SCHEMA = _final_validate
+
+
 # ----------------------------------------------------------------------
 # Codegen helpers
 # ----------------------------------------------------------------------
@@ -478,6 +508,7 @@ def _build_sensor_config(parent_id, suffix, name_suffix, kwargs, hidden):
     cfg = {
         CONF_ID: _entity_id(parent_id, suffix, sensor.Sensor),
         CONF_NAME: f"{name_suffix}",
+        CONF_DEVICE_ID: _subdevice_id(parent_id),
     }
     cfg.update(kwargs)
     if hidden:
@@ -489,6 +520,7 @@ def _build_binary_sensor_config(parent_id, suffix, name_suffix, kwargs, hidden):
     cfg = {
         CONF_ID: _entity_id(parent_id, suffix, binary_sensor.BinarySensor),
         CONF_NAME: f"{name_suffix}",
+        CONF_DEVICE_ID: _subdevice_id(parent_id),
     }
     cfg.update(kwargs)
     if hidden:
@@ -500,6 +532,7 @@ def _build_text_sensor_config(parent_id, suffix, name_suffix, kwargs, hidden):
     cfg = {
         CONF_ID: _entity_id(parent_id, suffix, text_sensor.TextSensor),
         CONF_NAME: f"{name_suffix}",
+        CONF_DEVICE_ID: _subdevice_id(parent_id),
     }
     cfg.update(kwargs)
     if hidden:
@@ -524,6 +557,7 @@ async def _build_set_switch(parent_id, parent_var, suffix, name_suffix,
     cfg_raw = {
         CONF_ID: _entity_id(parent_id, suffix, ApplianceSetSwitch),
         CONF_NAME: name_suffix,
+        CONF_DEVICE_ID: _subdevice_id(parent_id),
     }
     cfg_raw.update(kwargs)
     if hidden:
@@ -543,6 +577,7 @@ async def _build_set_number(parent_id, parent_var, suffix, name_suffix,
     cfg_raw = {
         CONF_ID: _entity_id(parent_id, suffix, ApplianceSetNumber),
         CONF_NAME: name_suffix,
+        CONF_DEVICE_ID: _subdevice_id(parent_id),
     }
     cfg_raw.update(kwargs)
     if hidden:
@@ -578,6 +613,7 @@ async def to_code(config):
     status_cfg = _validate_text_sensor({
         CONF_ID: _entity_id(parent_id, "status", text_sensor.TextSensor),
         CONF_NAME: f"{name} Status",
+        CONF_DEVICE_ID: _subdevice_id(parent_id),
     })
     status_var = await text_sensor.new_text_sensor(status_cfg)
     cg.add(var.set_status_text_sensor(status_var))
@@ -662,6 +698,7 @@ async def to_code(config):
     pin_cfg_raw = {
         CONF_ID: _entity_id(parent_id, "pin_input", AppliancePinText),
         CONF_NAME: f"{name} PIN",
+        CONF_DEVICE_ID: _subdevice_id(parent_id),
         CONF_ICON: "mdi:key-variant",
         CONF_ENTITY_CATEGORY: ENTITY_CATEGORY_CONFIG,
         # PIN entries are masked in the UI (PASSWORD mode). Sub-Zero PINs
@@ -678,6 +715,7 @@ async def to_code(config):
     debug_sw_cfg_raw = {
         CONF_ID: _entity_id(parent_id, "debug_switch", ApplianceDebugSwitch),
         CONF_NAME: f"{name} Debug Mode",
+        CONF_DEVICE_ID: _subdevice_id(parent_id),
         CONF_ICON: "mdi:bug",
         CONF_ENTITY_CATEGORY: ENTITY_CATEGORY_DIAGNOSTIC,
     }
@@ -694,6 +732,7 @@ async def to_code(config):
                 ApplianceButton,
             ),
             CONF_NAME: name_fmt.format(name=name),
+            CONF_DEVICE_ID: _subdevice_id(parent_id),
             CONF_ICON: icon,
         }
         if entity_category is not None:
