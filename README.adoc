@@ -245,7 +245,7 @@ You need the 6-digit PIN from your appliance. There are two ways to get it:
 . **From the official app:** Open the _Sub-Zero Group Owner_ app, connect to your appliance, and note the PIN shown during pairing. *You will have to delete the BT pairing from your phone after this to allow the ESP32 to connect.*
 . **From the appliance display:** After the ESP32 connects and bonds, press the "Start Pairing" button in Home Assistant. The PIN will appear on the appliance's physical display for 30 seconds.
 
-TIP: Sub-Zero appliance BLE MAC addresses typically begin with `00:06:80`. You can verify this using a Bluetooth scanner app on an Android device (iOS does not expose BLE MAC addresses) or by scanning for BLE advertisements with a spare ESP32. On MacOS. connect to the appliance using a bluetooth scanner, then run `system_profiler SPBluetoothDataType` in a Terminal window to retrieve the BLE MAC Address.
+TIP: Sub-Zero appliance BLE MAC addresses typically begin with `00:06:80`. You can verify this using a Bluetooth scanner app on Android (iOS does not expose BLE MAC addresses), or by scanning BLE advertisements with a spare ESP32. On macOS, connect to the appliance with a Bluetooth scanner, then run `system_profiler SPBluetoothDataType` in Terminal to retrieve the BLE MAC address.
 
 == Troubleshooting
 
