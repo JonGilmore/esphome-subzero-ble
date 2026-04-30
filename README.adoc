@@ -16,8 +16,8 @@ Sub-Zero Group (SZG) appliances include a BLE radio that the official _Sub-Zero 
 
 == Requirements
 
-* An *ESP32* board. The https://shop.everythingsmart.io/products/everything-presence-one-kit[Everything Presence One] and https://www.amazon.com/dp/B0DKJ5VXC9[Waveshare POE ESP32] are what I have experience with and seem to work well.
-* *ESPHome 2024.6+* (tested on 2026.3.0)
+* An *ESP32* board. I've had good results with the https://shop.everythingsmart.io/products/everything-presence-one-kit[Everything Presence One] and the https://www.amazon.com/dp/B0DKJ5VXC9[Waveshare POE ESP32]. In general, any ESP32-S3 module should work well and has been tested with up to 5 simultaneous BLE connections. Less capable variants, such as the ESP-C6, support fewer concurrent connections and are typically limited to about three appliances. 
+* *ESPHome 2025.7+* (tested on 2026.3.0)
 * *Python 3.10+* and a working ESPHome installation
 * The *6-digit PIN* from your appliance display (one-time)
 
@@ -245,7 +245,7 @@ You need the 6-digit PIN from your appliance. There are two ways to get it:
 . **From the official app:** Open the _Sub-Zero Group Owner_ app, connect to your appliance, and note the PIN shown during pairing. *You will have to delete the BT pairing from your phone after this to allow the ESP32 to connect.*
 . **From the appliance display:** After the ESP32 connects and bonds, press the "Start Pairing" button in Home Assistant. The PIN will appear on the appliance's physical display for 30 seconds.
 
-TIP: Sub-Zero appliance BLE MAC addresses typically start with `00:06:80`. You can confirm with a Bluetooth scanner app on your phone or use a spare ESP32 to scan for BLE advertisements.
+TIP: Sub-Zero appliance BLE MAC addresses typically begin with `00:06:80`. You can verify this using a Bluetooth scanner app on an Android device (iOS does not expose BLE MAC addresses) or by scanning for BLE advertisements with a spare ESP32. On MacOS. connect to the appliance using a bluetooth scanner, then run `system_profiler SPBluetoothDataType` in a Terminal window to retrieve the BLE MAC Address.
 
 == Troubleshooting
 
