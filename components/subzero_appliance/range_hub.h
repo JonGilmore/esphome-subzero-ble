@@ -23,6 +23,7 @@ protected:
     auto s = esphome::subzero_protocol::parse_range(msg);
     if (!s.valid)
       return false;
+    log_data_keys_(s.data_keys);
     if (s.common.pin_confirmed) {
       on_pin_confirmed_(*s.common.pin_confirmed);
     }

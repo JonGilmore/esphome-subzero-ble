@@ -28,6 +28,7 @@
 #include <cstdint>
 #include <functional>
 #include <string>
+#include <vector>
 
 namespace esphome {
 namespace subzero_appliance {
@@ -164,6 +165,8 @@ protected:
   // CommonFields contains pin_confirmed. The hub updates stored_pin_
   // and pin_confirmed_, then notifies via pin_input_cb_.
   void on_pin_confirmed_(const std::string &pin);
+  // Virtual so host tests can spy on the subclass call contract
+  virtual void log_data_keys_(const std::vector<std::string> &keys);
 
 private:
   // ---- post_bond stages (translated from the 5-stage YAML script) ----

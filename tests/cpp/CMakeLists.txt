@@ -66,6 +66,7 @@ add_executable(protocol_tests
   gatt_handles_test.cpp
   dispatch_test.cpp
   hub_test.cpp
+  lifecycle_guards_test.cpp
 )
 target_link_libraries(protocol_tests PRIVATE
   subzero_protocol
@@ -75,6 +76,8 @@ target_link_libraries(protocol_tests PRIVATE
 )
 target_compile_definitions(protocol_tests PRIVATE
   FIXTURES_DIR="${FIXTURES_DIR}"
+  PROTOCOL_DIR="${PROTOCOL_DIR}"
+  APPLIANCE_DIR="${APPLIANCE_DIR}"
 )
 
 include(GoogleTest)

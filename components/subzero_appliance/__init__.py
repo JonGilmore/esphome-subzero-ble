@@ -23,11 +23,10 @@ User YAML shape:
         hide_freezer: true
         hide_ice_maker: true
 
-The component generates ~30 sensors per appliance type, the PIN text
-input, the debug-mode switch, the status text sensor, and seven
-control buttons (Connect / Start Pairing / Submit PIN & Unlock / Poll /
-Log Debug Info / Disconnect / Reset Pairing). Multiple appliances can
-coexist on one ESP — the component is MULTI_CONF.
+The component generates a number of sensors per appliance type, the PIN text
+input, the debug-mode switch, the status text sensor, and
+control buttons. Multiple appliances can coexist on one ESP — the component
+is MULTI_CONF.
 """
 
 from __future__ import annotations
@@ -121,35 +120,102 @@ UNIT_FAHRENHEIT = "°F"
 # Common (appliance-agnostic) — all three types get these.
 COMMON_BINARY_SENSORS = [
     # (suffix, friendly-name suffix, setter, kwargs)
-    ("svc_required", "Service Required", "set_svc_required_sensor",
-     {CONF_DEVICE_CLASS: DEVICE_CLASS_PROBLEM}),
+    (
+        "svc_required",
+        "Service Required",
+        "set_svc_required_sensor",
+        {CONF_DEVICE_CLASS: DEVICE_CLASS_PROBLEM},
+    ),
 ]
 
 COMMON_TEXT_SENSORS = [
-    ("model", "Model", "set_model_sensor",
-     {CONF_ICON: "mdi:devices", CONF_ENTITY_CATEGORY: ENTITY_CATEGORY_DIAGNOSTIC}),
-    ("uptime", "Uptime", "set_uptime_sensor",
-     {CONF_ICON: "mdi:timer-outline", CONF_ENTITY_CATEGORY: ENTITY_CATEGORY_DIAGNOSTIC}),
-    ("serial", "Appliance Serial", "set_serial_sensor",
-     {CONF_ICON: "mdi:identifier", CONF_ENTITY_CATEGORY: ENTITY_CATEGORY_DIAGNOSTIC}),
-    ("appliance_type", "Appliance Type", "set_appliance_type_sensor",
-     {CONF_ICON: "mdi:shape", CONF_ENTITY_CATEGORY: ENTITY_CATEGORY_DIAGNOSTIC}),
-    ("diag_status", "Diagnostic Status", "set_diag_status_sensor",
-     {CONF_ICON: "mdi:stethoscope", CONF_ENTITY_CATEGORY: ENTITY_CATEGORY_DIAGNOSTIC}),
-    ("fw_version", "Firmware Version", "set_fw_version_sensor",
-     {CONF_ICON: "mdi:chip", CONF_ENTITY_CATEGORY: ENTITY_CATEGORY_DIAGNOSTIC}),
-    ("api_version", "API Version", "set_api_version_sensor",
-     {CONF_ICON: "mdi:api", CONF_ENTITY_CATEGORY: ENTITY_CATEGORY_DIAGNOSTIC}),
-    ("bleapp_version", "BLE App Version", "set_bleapp_version_sensor",
-     {CONF_ICON: "mdi:bluetooth", CONF_ENTITY_CATEGORY: ENTITY_CATEGORY_DIAGNOSTIC}),
-    ("os_version", "OS Version", "set_os_version_sensor",
-     {CONF_ICON: "mdi:memory", CONF_ENTITY_CATEGORY: ENTITY_CATEGORY_DIAGNOSTIC}),
-    ("rtapp_version", "RTApp Version", "set_rtapp_version_sensor",
-     {CONF_ICON: "mdi:application-cog", CONF_ENTITY_CATEGORY: ENTITY_CATEGORY_DIAGNOSTIC}),
-    ("board_version", "Appliance Board Version", "set_board_version_sensor",
-     {CONF_ICON: "mdi:developer-board", CONF_ENTITY_CATEGORY: ENTITY_CATEGORY_DIAGNOSTIC}),
-    ("build_date", "Build Date", "set_build_date_sensor",
-     {CONF_ICON: "mdi:calendar-clock", CONF_ENTITY_CATEGORY: ENTITY_CATEGORY_DIAGNOSTIC}),
+    (
+        "model",
+        "Model",
+        "set_model_sensor",
+        {CONF_ICON: "mdi:devices", CONF_ENTITY_CATEGORY: ENTITY_CATEGORY_DIAGNOSTIC},
+    ),
+    (
+        "uptime",
+        "Uptime",
+        "set_uptime_sensor",
+        {
+            CONF_ICON: "mdi:timer-outline",
+            CONF_ENTITY_CATEGORY: ENTITY_CATEGORY_DIAGNOSTIC,
+        },
+    ),
+    (
+        "serial",
+        "Appliance Serial",
+        "set_serial_sensor",
+        {CONF_ICON: "mdi:identifier", CONF_ENTITY_CATEGORY: ENTITY_CATEGORY_DIAGNOSTIC},
+    ),
+    (
+        "appliance_type",
+        "Appliance Type",
+        "set_appliance_type_sensor",
+        {CONF_ICON: "mdi:shape", CONF_ENTITY_CATEGORY: ENTITY_CATEGORY_DIAGNOSTIC},
+    ),
+    (
+        "diag_status",
+        "Diagnostic Status",
+        "set_diag_status_sensor",
+        {
+            CONF_ICON: "mdi:stethoscope",
+            CONF_ENTITY_CATEGORY: ENTITY_CATEGORY_DIAGNOSTIC,
+        },
+    ),
+    (
+        "fw_version",
+        "Firmware Version",
+        "set_fw_version_sensor",
+        {CONF_ICON: "mdi:chip", CONF_ENTITY_CATEGORY: ENTITY_CATEGORY_DIAGNOSTIC},
+    ),
+    (
+        "api_version",
+        "API Version",
+        "set_api_version_sensor",
+        {CONF_ICON: "mdi:api", CONF_ENTITY_CATEGORY: ENTITY_CATEGORY_DIAGNOSTIC},
+    ),
+    (
+        "bleapp_version",
+        "BLE App Version",
+        "set_bleapp_version_sensor",
+        {CONF_ICON: "mdi:bluetooth", CONF_ENTITY_CATEGORY: ENTITY_CATEGORY_DIAGNOSTIC},
+    ),
+    (
+        "os_version",
+        "OS Version",
+        "set_os_version_sensor",
+        {CONF_ICON: "mdi:memory", CONF_ENTITY_CATEGORY: ENTITY_CATEGORY_DIAGNOSTIC},
+    ),
+    (
+        "rtapp_version",
+        "RTApp Version",
+        "set_rtapp_version_sensor",
+        {
+            CONF_ICON: "mdi:application-cog",
+            CONF_ENTITY_CATEGORY: ENTITY_CATEGORY_DIAGNOSTIC,
+        },
+    ),
+    (
+        "board_version",
+        "Appliance Board Version",
+        "set_board_version_sensor",
+        {
+            CONF_ICON: "mdi:developer-board",
+            CONF_ENTITY_CATEGORY: ENTITY_CATEGORY_DIAGNOSTIC,
+        },
+    ),
+    (
+        "build_date",
+        "Build Date",
+        "set_build_date_sensor",
+        {
+            CONF_ICON: "mdi:calendar-clock",
+            CONF_ENTITY_CATEGORY: ENTITY_CATEGORY_DIAGNOSTIC,
+        },
+    ),
 ]
 
 # Buttons — same across all appliance types.
@@ -159,16 +225,30 @@ BUTTON_DEFINITIONS = [
     ("kStartPairing", "{name} Start Pairing", "mdi:key-plus", None),
     ("kSubmitPin", "{name} Submit PIN & Unlock", "mdi:lock-open-variant", None),
     ("kPoll", "Poll {name}", "mdi:refresh", None),
-    ("kLogDebugInfo", "{name} Log Debug Info", "mdi:bug-play", ENTITY_CATEGORY_DIAGNOSTIC),
+    (
+        "kLogDebugInfo",
+        "{name} Log Debug Info",
+        "mdi:bug-play",
+        ENTITY_CATEGORY_DIAGNOSTIC,
+    ),
     ("kDisconnect", "Disconnect {name}", "mdi:bluetooth-off", None),
-    ("kResetPairing", "Reset {name} Pairing", "mdi:bluetooth-settings", ENTITY_CATEGORY_CONFIG),
+    (
+        "kResetPairing",
+        "Reset {name} Pairing",
+        "mdi:bluetooth-settings",
+        ENTITY_CATEGORY_CONFIG,
+    ),
     # Diagnostic: deregister the appliance from Azure IoT Hub by sending
     # `set remote_svc_reg_token=""`. After that, the official app can no
     # longer reach the appliance over cloud — it will fall back to BLE
     # and fight us for the single connection slot. Useful only if you
     # specifically want to disable the cloud path.
-    ("kClearCloudToken", "{name} Clear Cloud Token (BT-Only)",
-     "mdi:cloud-off-outline", ENTITY_CATEGORY_DIAGNOSTIC),
+    (
+        "kClearCloudToken",
+        "{name} Clear Cloud Token (BT-Only)",
+        "mdi:cloud-off-outline",
+        ENTITY_CATEGORY_DIAGNOSTIC,
+    ),
 ]
 
 # Per-type sensor descriptors. Each entry: (suffix, name_suffix, setter, kwargs, hide_key_or_None).
@@ -176,22 +256,62 @@ BUTTON_DEFINITIONS = [
 # user's `hide_X: true|false` config (default true → hidden).
 
 FRIDGE_BINARY_SENSORS = [
-    ("door_ajar", "Door", "set_door_ajar_sensor",
-     {CONF_DEVICE_CLASS: DEVICE_CLASS_DOOR}, None),
-    ("sabbath_on", "Sabbath Mode", "set_sabbath_on_sensor",
-     {CONF_ICON: "mdi:candelabra"}, "hide_sabbath"),
-    ("frz_door_ajar", "Freezer Door", "set_frz_door_ajar_sensor",
-     {CONF_DEVICE_CLASS: DEVICE_CLASS_DOOR}, "hide_freezer"),
-    ("ice_maker", "Ice Maker", "set_ice_maker_sensor",
-     {CONF_ICON: "mdi:ice-cream"}, "hide_ice_maker"),
-    ("ref2_door_ajar", "Refrigerator Drawer Door", "set_ref2_door_ajar_sensor",
-     {CONF_DEVICE_CLASS: DEVICE_CLASS_DOOR}, "hide_ref_drawer"),
-    ("wine_door_ajar", "Wine Door", "set_wine_door_ajar_sensor",
-     {CONF_DEVICE_CLASS: DEVICE_CLASS_DOOR}, "hide_wine"),
-    ("wine_temp_alert", "Wine Temperature Alert", "set_wine_temp_alert_sensor",
-     {CONF_DEVICE_CLASS: DEVICE_CLASS_PROBLEM}, "hide_wine"),
-    ("air_filter_on", "Air Filter", "set_air_filter_on_sensor",
-     {CONF_ICON: "mdi:air-filter"}, "hide_air_filter"),
+    (
+        "door_ajar",
+        "Door",
+        "set_door_ajar_sensor",
+        {CONF_DEVICE_CLASS: DEVICE_CLASS_DOOR},
+        None,
+    ),
+    (
+        "sabbath_on",
+        "Sabbath Mode",
+        "set_sabbath_on_sensor",
+        {CONF_ICON: "mdi:candelabra"},
+        "hide_sabbath",
+    ),
+    (
+        "frz_door_ajar",
+        "Freezer Door",
+        "set_frz_door_ajar_sensor",
+        {CONF_DEVICE_CLASS: DEVICE_CLASS_DOOR},
+        "hide_freezer",
+    ),
+    (
+        "ice_maker",
+        "Ice Maker",
+        "set_ice_maker_sensor",
+        {CONF_ICON: "mdi:ice-cream"},
+        "hide_ice_maker",
+    ),
+    (
+        "ref2_door_ajar",
+        "Refrigerator Drawer Door",
+        "set_ref2_door_ajar_sensor",
+        {CONF_DEVICE_CLASS: DEVICE_CLASS_DOOR},
+        "hide_ref_drawer",
+    ),
+    (
+        "wine_door_ajar",
+        "Wine Door",
+        "set_wine_door_ajar_sensor",
+        {CONF_DEVICE_CLASS: DEVICE_CLASS_DOOR},
+        "hide_wine",
+    ),
+    (
+        "wine_temp_alert",
+        "Wine Temperature Alert",
+        "set_wine_temp_alert_sensor",
+        {CONF_DEVICE_CLASS: DEVICE_CLASS_PROBLEM},
+        "hide_wine",
+    ),
+    (
+        "air_filter_on",
+        "Air Filter",
+        "set_air_filter_on_sensor",
+        {CONF_ICON: "mdi:air-filter"},
+        "hide_air_filter",
+    ),
 ]
 
 TEMP_KWARGS = {
@@ -209,28 +329,72 @@ FRIDGE_SENSORS = [
     # we understand the appliance's set-temp guard mode (suspect: needs
     # some "edit mode" enabled at the front panel first, similar to oven
     # cav_set_temp requiring an active cook mode), keep these read-only.
-    ("set_temp", "Set Temperature", "set_set_temp_sensor",
-     {**TEMP_KWARGS, CONF_ICON: "mdi:thermometer"}, None),
-    ("frz_set_temp", "Freezer Set Temperature", "set_frz_set_temp_sensor",
-     {**TEMP_KWARGS, CONF_ICON: "mdi:snowflake-thermometer"}, "hide_freezer"),
-    ("wine_set_temp", "Wine Zone Upper Set Temperature",
-     "set_wine_set_temp_sensor",
-     {**TEMP_KWARGS, CONF_ICON: "mdi:glass-wine"}, "hide_wine"),
-    ("wine2_set_temp", "Wine Zone Lower Set Temperature",
-     "set_wine2_set_temp_sensor",
-     {**TEMP_KWARGS, CONF_ICON: "mdi:glass-wine"}, "hide_wine"),
-    ("ref2_set_temp", "Refrigerator Drawer Set Temperature",
-     "set_ref2_set_temp_sensor",
-     {**TEMP_KWARGS, CONF_ICON: "mdi:thermometer"}, "hide_ref_drawer"),
-    ("crisp_set_temp", "Crisper Drawer Set Temperature",
-     "set_crisp_set_temp_sensor",
-     {**TEMP_KWARGS, CONF_ICON: "mdi:thermometer"}, "hide_crisper"),
-    ("air_filter_pct", "Air Filter Remaining", "set_air_filter_pct_sensor",
-     {CONF_UNIT_OF_MEASUREMENT: UNIT_PERCENT, "state_class": STATE_CLASS_MEASUREMENT,
-      "accuracy_decimals": 0, CONF_ICON: "mdi:air-filter"}, "hide_air_filter"),
-    ("water_filter_pct", "Water Filter Remaining", "set_water_filter_pct_sensor",
-     {CONF_UNIT_OF_MEASUREMENT: UNIT_PERCENT, "state_class": STATE_CLASS_MEASUREMENT,
-      "accuracy_decimals": 0, CONF_ICON: "mdi:water-percent"}, "hide_water_filter"),
+    (
+        "set_temp",
+        "Set Temperature",
+        "set_set_temp_sensor",
+        {**TEMP_KWARGS, CONF_ICON: "mdi:thermometer"},
+        None,
+    ),
+    (
+        "frz_set_temp",
+        "Freezer Set Temperature",
+        "set_frz_set_temp_sensor",
+        {**TEMP_KWARGS, CONF_ICON: "mdi:snowflake-thermometer"},
+        "hide_freezer",
+    ),
+    (
+        "wine_set_temp",
+        "Wine Zone Upper Set Temperature",
+        "set_wine_set_temp_sensor",
+        {**TEMP_KWARGS, CONF_ICON: "mdi:glass-wine"},
+        "hide_wine",
+    ),
+    (
+        "wine2_set_temp",
+        "Wine Zone Lower Set Temperature",
+        "set_wine2_set_temp_sensor",
+        {**TEMP_KWARGS, CONF_ICON: "mdi:glass-wine"},
+        "hide_wine",
+    ),
+    (
+        "ref2_set_temp",
+        "Refrigerator Drawer Set Temperature",
+        "set_ref2_set_temp_sensor",
+        {**TEMP_KWARGS, CONF_ICON: "mdi:thermometer"},
+        "hide_ref_drawer",
+    ),
+    (
+        "crisp_set_temp",
+        "Crisper Drawer Set Temperature",
+        "set_crisp_set_temp_sensor",
+        {**TEMP_KWARGS, CONF_ICON: "mdi:thermometer"},
+        "hide_crisper",
+    ),
+    (
+        "air_filter_pct",
+        "Air Filter Remaining",
+        "set_air_filter_pct_sensor",
+        {
+            CONF_UNIT_OF_MEASUREMENT: UNIT_PERCENT,
+            "state_class": STATE_CLASS_MEASUREMENT,
+            "accuracy_decimals": 0,
+            CONF_ICON: "mdi:air-filter",
+        },
+        "hide_air_filter",
+    ),
+    (
+        "water_filter_pct",
+        "Water Filter Remaining",
+        "set_water_filter_pct_sensor",
+        {
+            CONF_UNIT_OF_MEASUREMENT: UNIT_PERCENT,
+            "state_class": STATE_CLASS_MEASUREMENT,
+            "accuracy_decimals": 0,
+            CONF_ICON: "mdi:water-percent",
+        },
+        "hide_water_filter",
+    ),
 ]
 
 # Writable numbers — entry shape: (suffix, name_suffix, setter, property_key,
@@ -250,123 +414,378 @@ FRIDGE_WRITABLE_NUMBERS: list = []
 FRIDGE_WRITABLE_SWITCHES: list = []  # sabbath_on writability also unconfirmed
 
 DISHWASHER_BINARY_SENSORS = [
-    ("door_ajar", "Door", "set_door_ajar_sensor", {CONF_DEVICE_CLASS: DEVICE_CLASS_DOOR}, None),
-    ("wash_cycle_on", "Wash Cycle Active", "set_wash_cycle_on_sensor",
-     {CONF_ICON: "mdi:dishwasher"}, None),
-    ("heated_dry", "Heated Dry", "set_heated_dry_sensor", {CONF_ICON: "mdi:heat-wave"}, None),
-    ("extended_dry", "Extended Dry", "set_extended_dry_sensor", {CONF_ICON: "mdi:heat-wave"}, None),
-    ("high_temp_wash", "High Temp Wash", "set_high_temp_wash_sensor",
-     {CONF_ICON: "mdi:thermometer-high"}, None),
-    ("sani_rinse", "Sanitize Rinse", "set_sani_rinse_sensor", {CONF_ICON: "mdi:hand-wash"}, None),
-    ("rinse_aid_low", "Rinse Aid Low", "set_rinse_aid_low_sensor",
-     {CONF_DEVICE_CLASS: DEVICE_CLASS_PROBLEM}, None),
-    ("softener_low", "Softener Low", "set_softener_low_sensor",
-     {CONF_DEVICE_CLASS: DEVICE_CLASS_PROBLEM}, "hide_softener"),
+    (
+        "door_ajar",
+        "Door",
+        "set_door_ajar_sensor",
+        {CONF_DEVICE_CLASS: DEVICE_CLASS_DOOR},
+        None,
+    ),
+    (
+        "wash_cycle_on",
+        "Wash Cycle Active",
+        "set_wash_cycle_on_sensor",
+        {CONF_ICON: "mdi:dishwasher"},
+        None,
+    ),
+    (
+        "heated_dry",
+        "Heated Dry",
+        "set_heated_dry_sensor",
+        {CONF_ICON: "mdi:heat-wave"},
+        None,
+    ),
+    (
+        "extended_dry",
+        "Extended Dry",
+        "set_extended_dry_sensor",
+        {CONF_ICON: "mdi:heat-wave"},
+        None,
+    ),
+    (
+        "high_temp_wash",
+        "High Temp Wash",
+        "set_high_temp_wash_sensor",
+        {CONF_ICON: "mdi:thermometer-high"},
+        None,
+    ),
+    (
+        "sani_rinse",
+        "Sanitize Rinse",
+        "set_sani_rinse_sensor",
+        {CONF_ICON: "mdi:hand-wash"},
+        None,
+    ),
+    (
+        "rinse_aid_low",
+        "Rinse Aid Low",
+        "set_rinse_aid_low_sensor",
+        {CONF_DEVICE_CLASS: DEVICE_CLASS_PROBLEM},
+        None,
+    ),
+    (
+        "softener_low",
+        "Softener Low",
+        "set_softener_low_sensor",
+        {CONF_DEVICE_CLASS: DEVICE_CLASS_PROBLEM},
+        "hide_softener",
+    ),
     # Read-only: writing `set light_on` on dishwashers acks (status:0)
     # but the appliance does not actually toggle the light. Same guard
     # behavior as fridge set-temps — see FRIDGE_SENSORS comment above.
     ("light_on", "Light", "set_light_on_sensor", {CONF_ICON: "mdi:lightbulb"}, None),
-    ("remote_ready", "Remote Ready", "set_remote_ready_sensor", {CONF_ICON: "mdi:remote"}, None),
-    ("delay_start", "Delay Start", "set_delay_start_sensor", {CONF_ICON: "mdi:timer-sand"}, None),
+    (
+        "remote_ready",
+        "Remote Ready",
+        "set_remote_ready_sensor",
+        {CONF_ICON: "mdi:remote"},
+        None,
+    ),
+    (
+        "delay_start",
+        "Delay Start",
+        "set_delay_start_sensor",
+        {CONF_ICON: "mdi:timer-sand"},
+        None,
+    ),
 ]
 
 DISHWASHER_WRITABLE_SWITCHES: list = []
 DISHWASHER_WRITABLE_NUMBERS: list = []
 
 DISHWASHER_SENSORS = [
-    ("wash_status", "Wash Status", "set_wash_status_sensor",
-     {CONF_ICON: "mdi:dishwasher", "accuracy_decimals": 0}, None),
-    ("wash_cycle", "Wash Cycle", "set_wash_cycle_sensor",
-     {CONF_ICON: "mdi:counter", "accuracy_decimals": 0}, None),
-    ("wash_time_remaining", "Wash Time Remaining", "set_wash_time_remaining_sensor",
-     {CONF_ICON: "mdi:timer-sand", CONF_UNIT_OF_MEASUREMENT: "min",
-      "accuracy_decimals": 0, CONF_DEVICE_CLASS: DEVICE_CLASS_DURATION}, None),
+    (
+        "wash_status",
+        "Wash Status",
+        "set_wash_status_sensor",
+        {CONF_ICON: "mdi:dishwasher", "accuracy_decimals": 0},
+        None,
+    ),
+    (
+        "wash_cycle",
+        "Wash Cycle",
+        "set_wash_cycle_sensor",
+        {CONF_ICON: "mdi:counter", "accuracy_decimals": 0},
+        None,
+    ),
+    (
+        "wash_time_remaining",
+        "Wash Time Remaining",
+        "set_wash_time_remaining_sensor",
+        {
+            CONF_ICON: "mdi:timer-sand",
+            CONF_UNIT_OF_MEASUREMENT: "min",
+            "accuracy_decimals": 0,
+            CONF_DEVICE_CLASS: DEVICE_CLASS_DURATION,
+        },
+        None,
+    ),
 ]
 
 DISHWASHER_TEXT_SENSORS = [
-    ("wash_cycle_end_time", "Wash Cycle End Time", "set_wash_cycle_end_time_sensor",
-     {CONF_ICON: "mdi:clock-end"}, None),
+    (
+        "wash_cycle_end_time",
+        "Wash Cycle End Time",
+        "set_wash_cycle_end_time_sensor",
+        {CONF_ICON: "mdi:clock-end"},
+        None,
+    ),
 ]
 
 RANGE_BINARY_SENSORS = [
-    ("door_ajar", "Door", "set_door_ajar_sensor", {CONF_DEVICE_CLASS: DEVICE_CLASS_DOOR}, None),
-    ("sabbath_on", "Sabbath Mode", "set_sabbath_on_sensor", {CONF_ICON: "mdi:candelabra"}, None),
+    (
+        "door_ajar",
+        "Door",
+        "set_door_ajar_sensor",
+        {CONF_DEVICE_CLASS: DEVICE_CLASS_DOOR},
+        None,
+    ),
+    (
+        "sabbath_on",
+        "Sabbath Mode",
+        "set_sabbath_on_sensor",
+        {CONF_ICON: "mdi:candelabra"},
+        None,
+    ),
     ("cav_unit_on", "Oven", "set_cav_unit_on_sensor", {CONF_ICON: "mdi:stove"}, None),
-    ("cav_at_set_temp", "Oven At Temperature", "set_cav_at_set_temp_sensor",
-     {CONF_ICON: "mdi:thermometer-check"}, None),
+    (
+        "cav_at_set_temp",
+        "Oven At Temperature",
+        "set_cav_at_set_temp_sensor",
+        {CONF_ICON: "mdi:thermometer-check"},
+        None,
+    ),
     # cav_light_on moved to RANGE_WRITABLE_SWITCHES.
-    ("cav_remote_ready", "Oven Remote Ready", "set_cav_remote_ready_sensor",
-     {CONF_ICON: "mdi:remote"}, None),
-    ("cav_probe_on", "Probe Inserted", "set_cav_probe_on_sensor",
-     {CONF_ICON: "mdi:thermometer-probe"}, None),
-    ("cav_probe_at_temp", "Probe At Temperature", "set_cav_probe_at_temp_sensor",
-     {CONF_ICON: "mdi:thermometer-probe"}, None),
-    ("cav_probe_near", "Probe Within 10°", "set_cav_probe_near_sensor",
-     {CONF_ICON: "mdi:thermometer-probe"}, None),
-    ("cav_gourmet", "Gourmet Mode", "set_cav_gourmet_sensor", {CONF_ICON: "mdi:chef-hat"}, None),
-    ("cook_timer_done", "Cook Timer Complete", "set_cook_timer_done_sensor",
-     {CONF_ICON: "mdi:timer-alert"}, None),
-    ("cook_timer_near", "Cook Timer Within 1 Min", "set_cook_timer_near_sensor",
-     {CONF_ICON: "mdi:timer-alert-outline"}, None),
-    ("ktimer_active", "Kitchen Timer Active", "set_ktimer_active_sensor",
-     {CONF_ICON: "mdi:timer"}, None),
-    ("ktimer_done", "Kitchen Timer Complete", "set_ktimer_done_sensor",
-     {CONF_ICON: "mdi:timer-alert"}, None),
-    ("ktimer_near", "Kitchen Timer Within 1 Min", "set_ktimer_near_sensor",
-     {CONF_ICON: "mdi:timer-alert-outline"}, None),
-    ("ktimer2_active", "Kitchen Timer 2 Active", "set_ktimer2_active_sensor",
-     {CONF_ICON: "mdi:timer"}, None),
-    ("ktimer2_done", "Kitchen Timer 2 Complete", "set_ktimer2_done_sensor",
-     {CONF_ICON: "mdi:timer-alert"}, None),
-    ("ktimer2_near", "Kitchen Timer 2 Within 1 Min", "set_ktimer2_near_sensor",
-     {CONF_ICON: "mdi:timer-alert-outline"}, None),
+    (
+        "cav_remote_ready",
+        "Oven Remote Ready",
+        "set_cav_remote_ready_sensor",
+        {CONF_ICON: "mdi:remote"},
+        None,
+    ),
+    (
+        "cav_probe_on",
+        "Probe Inserted",
+        "set_cav_probe_on_sensor",
+        {CONF_ICON: "mdi:thermometer-probe"},
+        None,
+    ),
+    (
+        "cav_probe_at_temp",
+        "Probe At Temperature",
+        "set_cav_probe_at_temp_sensor",
+        {CONF_ICON: "mdi:thermometer-probe"},
+        None,
+    ),
+    (
+        "cav_probe_near",
+        "Probe Within 10°",
+        "set_cav_probe_near_sensor",
+        {CONF_ICON: "mdi:thermometer-probe"},
+        None,
+    ),
+    (
+        "cav_gourmet",
+        "Gourmet Mode",
+        "set_cav_gourmet_sensor",
+        {CONF_ICON: "mdi:chef-hat"},
+        None,
+    ),
+    (
+        "cook_timer_done",
+        "Cook Timer Complete",
+        "set_cook_timer_done_sensor",
+        {CONF_ICON: "mdi:timer-alert"},
+        None,
+    ),
+    (
+        "cook_timer_near",
+        "Cook Timer Within 1 Min",
+        "set_cook_timer_near_sensor",
+        {CONF_ICON: "mdi:timer-alert-outline"},
+        None,
+    ),
+    (
+        "ktimer_active",
+        "Kitchen Timer Active",
+        "set_ktimer_active_sensor",
+        {CONF_ICON: "mdi:timer"},
+        None,
+    ),
+    (
+        "ktimer_done",
+        "Kitchen Timer Complete",
+        "set_ktimer_done_sensor",
+        {CONF_ICON: "mdi:timer-alert"},
+        None,
+    ),
+    (
+        "ktimer_near",
+        "Kitchen Timer Within 1 Min",
+        "set_ktimer_near_sensor",
+        {CONF_ICON: "mdi:timer-alert-outline"},
+        None,
+    ),
+    (
+        "ktimer2_active",
+        "Kitchen Timer 2 Active",
+        "set_ktimer2_active_sensor",
+        {CONF_ICON: "mdi:timer"},
+        None,
+    ),
+    (
+        "ktimer2_done",
+        "Kitchen Timer 2 Complete",
+        "set_ktimer2_done_sensor",
+        {CONF_ICON: "mdi:timer-alert"},
+        None,
+    ),
+    (
+        "ktimer2_near",
+        "Kitchen Timer 2 Within 1 Min",
+        "set_ktimer2_near_sensor",
+        {CONF_ICON: "mdi:timer-alert-outline"},
+        None,
+    ),
     # Oven 2 (dual-oven)
-    ("cav2_unit_on", "Oven 2", "set_cav2_unit_on_sensor",
-     {CONF_ICON: "mdi:stove"}, "hide_oven2"),
-    ("cav2_door_ajar", "Oven 2 Door", "set_cav2_door_ajar_sensor",
-     {CONF_DEVICE_CLASS: DEVICE_CLASS_DOOR}, "hide_oven2"),
-    ("cav2_at_set_temp", "Oven 2 At Temperature", "set_cav2_at_set_temp_sensor",
-     {CONF_ICON: "mdi:thermometer-check"}, "hide_oven2"),
+    (
+        "cav2_unit_on",
+        "Oven 2",
+        "set_cav2_unit_on_sensor",
+        {CONF_ICON: "mdi:stove"},
+        "hide_oven2",
+    ),
+    (
+        "cav2_door_ajar",
+        "Oven 2 Door",
+        "set_cav2_door_ajar_sensor",
+        {CONF_DEVICE_CLASS: DEVICE_CLASS_DOOR},
+        "hide_oven2",
+    ),
+    (
+        "cav2_at_set_temp",
+        "Oven 2 At Temperature",
+        "set_cav2_at_set_temp_sensor",
+        {CONF_ICON: "mdi:thermometer-check"},
+        "hide_oven2",
+    ),
     # cav2_light_on moved to RANGE_WRITABLE_SWITCHES.
-    ("cav2_remote_ready", "Oven 2 Remote Ready", "set_cav2_remote_ready_sensor",
-     {CONF_ICON: "mdi:remote"}, "hide_oven2"),
-    ("cav2_probe_on", "Oven 2 Probe Inserted", "set_cav2_probe_on_sensor",
-     {CONF_ICON: "mdi:thermometer-probe"}, "hide_oven2"),
-    ("cav2_probe_at_temp", "Oven 2 Probe At Temperature", "set_cav2_probe_at_temp_sensor",
-     {CONF_ICON: "mdi:thermometer-probe"}, "hide_oven2"),
-    ("cav2_probe_near", "Oven 2 Probe Within 10°", "set_cav2_probe_near_sensor",
-     {CONF_ICON: "mdi:thermometer-probe"}, "hide_oven2"),
-    ("cav2_gourmet", "Oven 2 Gourmet Mode", "set_cav2_gourmet_sensor",
-     {CONF_ICON: "mdi:chef-hat"}, "hide_oven2"),
-    ("cav2_cook_timer_done", "Oven 2 Cook Timer Complete", "set_cav2_cook_timer_done_sensor",
-     {CONF_ICON: "mdi:timer-alert"}, "hide_oven2"),
+    (
+        "cav2_remote_ready",
+        "Oven 2 Remote Ready",
+        "set_cav2_remote_ready_sensor",
+        {CONF_ICON: "mdi:remote"},
+        "hide_oven2",
+    ),
+    (
+        "cav2_probe_on",
+        "Oven 2 Probe Inserted",
+        "set_cav2_probe_on_sensor",
+        {CONF_ICON: "mdi:thermometer-probe"},
+        "hide_oven2",
+    ),
+    (
+        "cav2_probe_at_temp",
+        "Oven 2 Probe At Temperature",
+        "set_cav2_probe_at_temp_sensor",
+        {CONF_ICON: "mdi:thermometer-probe"},
+        "hide_oven2",
+    ),
+    (
+        "cav2_probe_near",
+        "Oven 2 Probe Within 10°",
+        "set_cav2_probe_near_sensor",
+        {CONF_ICON: "mdi:thermometer-probe"},
+        "hide_oven2",
+    ),
+    (
+        "cav2_gourmet",
+        "Oven 2 Gourmet Mode",
+        "set_cav2_gourmet_sensor",
+        {CONF_ICON: "mdi:chef-hat"},
+        "hide_oven2",
+    ),
+    (
+        "cav2_cook_timer_done",
+        "Oven 2 Cook Timer Complete",
+        "set_cav2_cook_timer_done_sensor",
+        {CONF_ICON: "mdi:timer-alert"},
+        "hide_oven2",
+    ),
 ]
 
 RANGE_SENSORS = [
-    ("cav_temp", "Oven Temperature", "set_cav_temp_sensor",
-     {**TEMP_KWARGS, CONF_ICON: "mdi:thermometer"}, None),
+    (
+        "cav_temp",
+        "Oven Temperature",
+        "set_cav_temp_sensor",
+        {**TEMP_KWARGS, CONF_ICON: "mdi:thermometer"},
+        None,
+    ),
     # cav_set_temp / probe_set_temp / cav2_set_temp / cav2_probe_set_temp
     # moved to RANGE_WRITABLE_NUMBERS.
-    ("cav_cook_mode", "Cook Mode", "set_cav_cook_mode_sensor",
-     {CONF_ICON: "mdi:stove", "accuracy_decimals": 0}, None),
-    ("cav_gourmet_recipe", "Gourmet Recipe", "set_cav_gourmet_recipe_sensor",
-     {CONF_ICON: "mdi:chef-hat", "accuracy_decimals": 0}, None),
-    ("probe_temp", "Probe Temperature", "set_probe_temp_sensor",
-     {**TEMP_KWARGS, CONF_ICON: "mdi:thermometer-probe"}, None),
-    ("cav2_temp", "Oven 2 Temperature", "set_cav2_temp_sensor",
-     {**TEMP_KWARGS, CONF_ICON: "mdi:thermometer"}, "hide_oven2"),
-    ("cav2_cook_mode", "Oven 2 Cook Mode", "set_cav2_cook_mode_sensor",
-     {CONF_ICON: "mdi:stove", "accuracy_decimals": 0}, "hide_oven2"),
-    ("cav2_probe_temp", "Oven 2 Probe Temperature", "set_cav2_probe_temp_sensor",
-     {**TEMP_KWARGS, CONF_ICON: "mdi:thermometer-probe"}, "hide_oven2"),
+    (
+        "cav_cook_mode",
+        "Cook Mode",
+        "set_cav_cook_mode_sensor",
+        {CONF_ICON: "mdi:stove", "accuracy_decimals": 0},
+        None,
+    ),
+    (
+        "cav_gourmet_recipe",
+        "Gourmet Recipe",
+        "set_cav_gourmet_recipe_sensor",
+        {CONF_ICON: "mdi:chef-hat", "accuracy_decimals": 0},
+        None,
+    ),
+    (
+        "probe_temp",
+        "Probe Temperature",
+        "set_probe_temp_sensor",
+        {**TEMP_KWARGS, CONF_ICON: "mdi:thermometer-probe"},
+        None,
+    ),
+    (
+        "cav2_temp",
+        "Oven 2 Temperature",
+        "set_cav2_temp_sensor",
+        {**TEMP_KWARGS, CONF_ICON: "mdi:thermometer"},
+        "hide_oven2",
+    ),
+    (
+        "cav2_cook_mode",
+        "Oven 2 Cook Mode",
+        "set_cav2_cook_mode_sensor",
+        {CONF_ICON: "mdi:stove", "accuracy_decimals": 0},
+        "hide_oven2",
+    ),
+    (
+        "cav2_probe_temp",
+        "Oven 2 Probe Temperature",
+        "set_cav2_probe_temp_sensor",
+        {**TEMP_KWARGS, CONF_ICON: "mdi:thermometer-probe"},
+        "hide_oven2",
+    ),
 ]
 
 RANGE_WRITABLE_SWITCHES = [
     # (suffix, name_suffix, setter, property_key, kwargs, hide_key)
-    ("cav_light_on", "Oven Light", "set_cav_light_on_switch", "cav_light_on",
-     {CONF_ICON: "mdi:lightbulb"}, None),
-    ("cav2_light_on", "Oven 2 Light", "set_cav2_light_on_switch", "cav2_light_on",
-     {CONF_ICON: "mdi:lightbulb"}, "hide_oven2"),
+    (
+        "cav_light_on",
+        "Oven Light",
+        "set_cav_light_on_switch",
+        "cav_light_on",
+        {CONF_ICON: "mdi:lightbulb"},
+        None,
+    ),
+    (
+        "cav2_light_on",
+        "Oven 2 Light",
+        "set_cav2_light_on_switch",
+        "cav2_light_on",
+        {CONF_ICON: "mdi:lightbulb"},
+        "hide_oven2",
+    ),
 ]
 
 # Wolf ovens (both wall and range cavities) won't accept a target below
@@ -377,25 +796,67 @@ RANGE_WRITABLE_SWITCHES = [
 # value the appliance accepts; the front panel typically rounds to 5°.
 RANGE_WRITABLE_NUMBERS = [
     # (suffix, name_suffix, setter, property_key, min, max, step, kwargs, hide_key)
-    ("cav_set_temp", "Oven Set Temperature", "set_cav_set_temp_number",
-     "cav_set_temp", 200, 550, 1,
-     {**NUMBER_KWARGS, CONF_ICON: "mdi:thermometer-check"}, None),
-    ("probe_set_temp", "Probe Set Temperature", "set_probe_set_temp_number",
-     "cav_probe_set_temp", 100, 200, 1,
-     {**NUMBER_KWARGS, CONF_ICON: "mdi:thermometer-probe"}, None),
-    ("cav2_set_temp", "Oven 2 Set Temperature", "set_cav2_set_temp_number",
-     "cav2_set_temp", 200, 550, 1,
-     {**NUMBER_KWARGS, CONF_ICON: "mdi:thermometer-check"}, "hide_oven2"),
-    ("cav2_probe_set_temp", "Oven 2 Probe Set Temperature",
-     "set_cav2_probe_set_temp_number", "cav2_probe_set_temp", 100, 200, 1,
-     {**NUMBER_KWARGS, CONF_ICON: "mdi:thermometer-probe"}, "hide_oven2"),
+    (
+        "cav_set_temp",
+        "Oven Set Temperature",
+        "set_cav_set_temp_number",
+        "cav_set_temp",
+        200,
+        550,
+        1,
+        {**NUMBER_KWARGS, CONF_ICON: "mdi:thermometer-check"},
+        None,
+    ),
+    (
+        "probe_set_temp",
+        "Probe Set Temperature",
+        "set_probe_set_temp_number",
+        "cav_probe_set_temp",
+        100,
+        200,
+        1,
+        {**NUMBER_KWARGS, CONF_ICON: "mdi:thermometer-probe"},
+        None,
+    ),
+    (
+        "cav2_set_temp",
+        "Oven 2 Set Temperature",
+        "set_cav2_set_temp_number",
+        "cav2_set_temp",
+        200,
+        550,
+        1,
+        {**NUMBER_KWARGS, CONF_ICON: "mdi:thermometer-check"},
+        "hide_oven2",
+    ),
+    (
+        "cav2_probe_set_temp",
+        "Oven 2 Probe Set Temperature",
+        "set_cav2_probe_set_temp_number",
+        "cav2_probe_set_temp",
+        100,
+        200,
+        1,
+        {**NUMBER_KWARGS, CONF_ICON: "mdi:thermometer-probe"},
+        "hide_oven2",
+    ),
 ]
 
 RANGE_TEXT_SENSORS = [
-    ("ktimer_end_time", "Kitchen Timer End Time", "set_ktimer_end_time_sensor",
-     {CONF_ICON: "mdi:clock-end"}, None),
-    ("ktimer2_end_time", "Kitchen Timer 2 End Time", "set_ktimer2_end_time_sensor",
-     {CONF_ICON: "mdi:clock-end"}, None),
+    (
+        "ktimer_end_time",
+        "Kitchen Timer End Time",
+        "set_ktimer_end_time_sensor",
+        {CONF_ICON: "mdi:clock-end"},
+        None,
+    ),
+    (
+        "ktimer2_end_time",
+        "Kitchen Timer 2 End Time",
+        "set_ktimer2_end_time_sensor",
+        {CONF_ICON: "mdi:clock-end"},
+        None,
+    ),
 ]
 
 # ----------------------------------------------------------------------
@@ -434,20 +895,18 @@ def _schema_for_type(type_: str) -> cv.Schema:
         cv.GenerateID(): cv.declare_id(TYPE_TO_CLASS[type_]),
         cv.Required(CONF_NAME): cv.string,
         cv.Required(CONF_PIN): cv.string,
-        cv.Optional(CONF_POLL_OFFSET, default="0s"): cv.positive_time_period_milliseconds,
+        cv.Optional(
+            CONF_POLL_OFFSET, default="0s"
+        ): cv.positive_time_period_milliseconds,
     }
     base.update(TYPE_SCHEMAS[type_])
     return (
-        cv.Schema(base)
-        .extend(ble_client.BLE_CLIENT_SCHEMA)
-        .extend(cv.COMPONENT_SCHEMA)
+        cv.Schema(base).extend(ble_client.BLE_CLIENT_SCHEMA).extend(cv.COMPONENT_SCHEMA)
     )
 
 
 CONFIG_SCHEMA = cv.typed_schema(
-    {
-        type_: _schema_for_type(type_) for type_ in TYPE_TO_CLASS
-    },
+    {type_: _schema_for_type(type_) for type_ in TYPE_TO_CLASS},
     key=CONF_TYPE,
 )
 
@@ -491,6 +950,7 @@ def _entity_id(parent_id: core.ID, suffix: str, type_: type) -> core.ID:
 # `disabled_by_default`, `internal`, `id` are present). Hand-built dicts
 # crash. We construct minimal dicts and run them through the schema to
 # get a complete, validated config.
+
 
 def _validate_sensor(cfg):
     return sensor.sensor_schema()(cfg)
@@ -548,8 +1008,9 @@ def _resolve_hidden(config, hide_key):
     return bool(config.get(hide_key, False))
 
 
-async def _build_set_switch(parent_id, parent_var, suffix, name_suffix,
-                            property_key, kwargs, hidden):
+async def _build_set_switch(
+    parent_id, parent_var, suffix, name_suffix, property_key, kwargs, hidden
+):
     """Instantiates an ApplianceSetSwitch HA entity, wires the parent +
     property_key, and registers it. Caller binds the bus pointer via the
     setter on `parent_var` (e.g. `parent_var.set_cav_light_on_switch(s)`).
@@ -569,9 +1030,18 @@ async def _build_set_switch(parent_id, parent_var, suffix, name_suffix,
     return sw
 
 
-async def _build_set_number(parent_id, parent_var, suffix, name_suffix,
-                            property_key, min_value, max_value, step,
-                            kwargs, hidden):
+async def _build_set_number(
+    parent_id,
+    parent_var,
+    suffix,
+    name_suffix,
+    property_key,
+    min_value,
+    max_value,
+    step,
+    kwargs,
+    hidden,
+):
     """Instantiates an ApplianceSetNumber HA entity, wires the parent +
     property_key, and registers it with min/max/step traits."""
     cfg_raw = {
@@ -584,7 +1054,10 @@ async def _build_set_number(parent_id, parent_var, suffix, name_suffix,
         cfg_raw[CONF_INTERNAL] = True
     cfg = number.number_schema(ApplianceSetNumber)(cfg_raw)
     n = await number.new_number(
-        cfg, min_value=min_value, max_value=max_value, step=step,
+        cfg,
+        min_value=min_value,
+        max_value=max_value,
+        step=step,
     )
     cg.add(n.set_parent(parent_var))
     cg.add(n.set_property_key(property_key))
@@ -610,23 +1083,29 @@ async def to_code(config):
     cg.add(var.set_poll_offset_ms(config[CONF_POLL_OFFSET]))
 
     # ---- Status text sensor ----
-    status_cfg = _validate_text_sensor({
-        CONF_ID: _entity_id(parent_id, "status", text_sensor.TextSensor),
-        CONF_NAME: f"{name} Status",
-        CONF_DEVICE_ID: _subdevice_id(parent_id),
-    })
+    status_cfg = _validate_text_sensor(
+        {
+            CONF_ID: _entity_id(parent_id, "status", text_sensor.TextSensor),
+            CONF_NAME: f"{name} Status",
+            CONF_DEVICE_ID: _subdevice_id(parent_id),
+        }
+    )
     status_var = await text_sensor.new_text_sensor(status_cfg)
     cg.add(var.set_status_text_sensor(status_var))
 
     # ---- Common binary sensors ----
     for suffix, name_suffix, setter, kwargs in COMMON_BINARY_SENSORS:
-        cfg = _build_binary_sensor_config(parent_id, suffix, f"{name} {name_suffix}", kwargs, False)
+        cfg = _build_binary_sensor_config(
+            parent_id, suffix, f"{name} {name_suffix}", kwargs, False
+        )
         bs = await binary_sensor.new_binary_sensor(cfg)
         cg.add(getattr(var, setter)(bs))
 
     # ---- Common text sensors ----
     for suffix, name_suffix, setter, kwargs in COMMON_TEXT_SENSORS:
-        cfg = _build_text_sensor_config(parent_id, suffix, f"{name} {name_suffix}", kwargs, False)
+        cfg = _build_text_sensor_config(
+            parent_id, suffix, f"{name} {name_suffix}", kwargs, False
+        )
         ts = await text_sensor.new_text_sensor(cfg)
         cg.add(getattr(var, setter)(ts))
 
@@ -652,7 +1131,10 @@ async def to_code(config):
 
     for suffix, name_suffix, setter, kwargs, hide_key in bs_list:
         cfg = _build_binary_sensor_config(
-            parent_id, suffix, f"{name} {name_suffix}", kwargs,
+            parent_id,
+            suffix,
+            f"{name} {name_suffix}",
+            kwargs,
             _resolve_hidden(config, hide_key),
         )
         bs = await binary_sensor.new_binary_sensor(cfg)
@@ -660,7 +1142,10 @@ async def to_code(config):
 
     for suffix, name_suffix, setter, kwargs, hide_key in s_list:
         cfg = _build_sensor_config(
-            parent_id, suffix, f"{name} {name_suffix}", kwargs,
+            parent_id,
+            suffix,
+            f"{name} {name_suffix}",
+            kwargs,
             _resolve_hidden(config, hide_key),
         )
         s = await sensor.new_sensor(cfg)
@@ -668,7 +1153,10 @@ async def to_code(config):
 
     for suffix, name_suffix, setter, kwargs, hide_key in ts_list:
         cfg = _build_text_sensor_config(
-            parent_id, suffix, f"{name} {name_suffix}", kwargs,
+            parent_id,
+            suffix,
+            f"{name} {name_suffix}",
+            kwargs,
             _resolve_hidden(config, hide_key),
         )
         ts = await text_sensor.new_text_sensor(cfg)
@@ -677,17 +1165,29 @@ async def to_code(config):
     # Writable switches — HA-toggled booleans that send `set` on D5.
     for suffix, name_suffix, setter, prop_key, kwargs, hide_key in sw_list:
         sw = await _build_set_switch(
-            parent_id, var, suffix, f"{name} {name_suffix}", prop_key, kwargs,
+            parent_id,
+            var,
+            suffix,
+            f"{name} {name_suffix}",
+            prop_key,
+            kwargs,
             _resolve_hidden(config, hide_key),
         )
         cg.add(getattr(var, setter)(sw))
 
     # Writable numbers — HA-set numerics (set temps, etc.) that send `set`.
-    for (suffix, name_suffix, setter, prop_key, mn, mx, step,
-         kwargs, hide_key) in n_list:
+    for suffix, name_suffix, setter, prop_key, mn, mx, step, kwargs, hide_key in n_list:
         n = await _build_set_number(
-            parent_id, var, suffix, f"{name} {name_suffix}", prop_key,
-            mn, mx, step, kwargs, _resolve_hidden(config, hide_key),
+            parent_id,
+            var,
+            suffix,
+            f"{name} {name_suffix}",
+            prop_key,
+            mn,
+            mx,
+            step,
+            kwargs,
+            _resolve_hidden(config, hide_key),
         )
         cg.add(getattr(var, setter)(n))
 
@@ -722,6 +1222,7 @@ async def to_code(config):
     debug_sw_cfg = switch.switch_schema(ApplianceDebugSwitch)(debug_sw_cfg_raw)
     debug_sw = await switch.new_switch(debug_sw_cfg)
     cg.add(debug_sw.set_parent(var))
+    cg.add(var.set_debug_switch(debug_sw))
 
     # ---- Buttons ----
     for kind_name, name_fmt, icon, entity_category in BUTTON_DEFINITIONS:

@@ -7,7 +7,7 @@
 #include <cstring>
 #include <utility>
 
-#ifdef ESPHOME_LOG_HAS_INFO
+#ifdef USE_ESP32
 #include "esphome/core/log.h"
 #define HUB_LOGI(tag, ...) ESP_LOGI(tag, __VA_ARGS__)
 #define HUB_LOGW(tag, ...) ESP_LOGW(tag, __VA_ARGS__)
@@ -205,6 +205,14 @@ void SubzeroHub::on_pin_confirmed_(const std::string &pin) {
     pin_input_cb_(pin);
   HUB_LOGI("szg", "[%s] PIN confirmed: %s", name_.c_str(), pin.c_str());
   publish_status_("PIN confirmed! Channel unlocked.");
+}
+
+void SubzeroHub::log_data_keys_(const std::vector<std::string> &keys) {
+  if (!debug_mode_)
+    return;
+  for (const auto &k : keys) {
+    HUB_LOGI("szg-debug", "[%s] key=%s", name_.c_str(), k.c_str());
+  }
 }
 
 void SubzeroHub::log_chunked_debug_(const std::string &msg) {

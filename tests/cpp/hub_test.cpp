@@ -590,3 +590,87 @@ TEST_F(HubFixture, PostBondRestart_CancelsPriorPostBond) {
   // the hub must not have rescheduled multiple competing chains.
   EXPECT_LE(scheduler_.pending_count(), pending_before + 1);
 }
+
+#include "protocol.h"
+#include <algorithm>
+
+namespace {
+
+class RecordingFridgeLikeHub : public SubzeroHub {
+public:
+  RecordingFridgeLikeHub() = default;
+  bool parse_and_dispatch_(const std::string &msg) override {
+    auto s = esphome::subzero_protocol::parse_fridge(msg);
+    if (!s.valid)
+      return false;
+    log_data_keys_(s.data_keys);
+    return true;
+  }
+
+  void log_data_keys_(const std::vector<std::string> &keys) override {
+    log_calls_.push_back(keys);
+  }
+
+  std::vector<std::vector<std::string>> log_calls_;
+};
+
+class FridgeLikeFixture : public ::testing::Test {
+protected:
+  RecordingFridgeLikeHub hub_;
+};
+
+} // namespace
+
+TEST_F(FridgeLikeFixture, ParseAndDispatch_InvokesLogDataKeysWithParsedKeys) {
+  const std::string msg =
+      R"({"status":0,"resp":{"sabbath_on":false,"ref_set_temp":38,"appliance_model":"DEU2450R"}})";
+
+  bool ok = hub_.parse_and_dispatch_(msg);
+  ASSERT_TRUE(ok);
+
+  ASSERT_EQ(hub_.log_calls_.size(), 1u)
+      << "Subclass parse_and_dispatch_ must call log_data_keys_ exactly "
+         "once per successful parse — if this fires 0 times, the subclass "
+         "dropped the call (regression of the Phase 3 port).";
+
+  const auto &keys = hub_.log_calls_.front();
+  EXPECT_NE(std::find(keys.begin(), keys.end(), "sabbath_on"), keys.end());
+  EXPECT_NE(std::find(keys.begin(), keys.end(), "ref_set_temp"), keys.end());
+  EXPECT_NE(std::find(keys.begin(), keys.end(), "appliance_model"), keys.end());
+  EXPECT_EQ(keys.size(), 3u)
+      << "log_data_keys_ should receive the full data_keys vector from "
+         "the parser, not a subset.";
+}
+
+TEST_F(FridgeLikeFixture, ParseAndDispatch_DoesNotInvokeLogOnParseFailure) {
+  bool ok = hub_.parse_and_dispatch_("not json at all");
+  EXPECT_FALSE(ok);
+  EXPECT_EQ(hub_.log_calls_.size(), 0u);
+}
+
+namespace {
+
+class GuardSpyHub : public SubzeroHub {
+public:
+  bool parse_and_dispatch_(const std::string &) override { return true; }
+  void log_data_keys_(const std::vector<std::string> &keys) override {
+    invocations_++;
+    SubzeroHub::log_data_keys_(keys); // exercises the debug_mode_ guard
+  }
+  int invocations_ = 0;
+};
+
+} // namespace
+
+TEST(SubzeroHubLogDataKeys, NoDebugMode_GuardLetsBaseNoOp) {
+  GuardSpyHub h;
+  h.log_data_keys_({"a", "b", "c"});
+  EXPECT_EQ(h.invocations_, 1);
+}
+
+TEST(SubzeroHubLogDataKeys, DebugModeOn_BaseCompletesWithoutError) {
+  GuardSpyHub h;
+  h.set_debug_mode(true);
+  h.log_data_keys_({"a", "b"});
+  EXPECT_EQ(h.invocations_, 1);
+}

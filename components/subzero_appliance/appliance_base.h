@@ -48,6 +48,9 @@ public:
     status_ts_ = s;
   }
   void set_pin_input(esphome::text::Text *t) { pin_input_ = t; }
+  // Debug Mode switch — held so press_log_debug_info() can flip the HA
+  // UI state when the user clicks the "Log Debug Info" button
+  void set_debug_switch(esphome::switch_::Switch *s) { debug_switch_ = s; }
 
   // CommonBus setters — match the fields on subzero_protocol::CommonBus.
   // Subclass's bus inherits CommonBus, so writing through common_bus()
@@ -135,22 +138,12 @@ public:
 
   // Connect: reset hub state and trigger ble_client connect.
   void press_connect();
-  // Disconnect: drop the BLE link (auto_connect will bring it back).
   void press_disconnect();
-  // Pairing flow
   void press_start_pairing() { hub()->press_start_pairing(); }
   void press_submit_pin() { hub()->press_submit_pin(); }
   void press_poll() { hub()->press_poll(); }
-  void press_log_debug_info() { hub()->press_log_debug_info(); }
-  // Reset: full pairing wipe — clear bond + handles + state, then
-  // disconnect and let auto_connect re-pair on the next session.
+  void press_log_debug_info();
   void press_reset_pairing();
-  // Clear cloud token: sends `set remote_svc_reg_token=""` to deregister
-  // the appliance from Azure IoT Hub, forcing the official app to fall
-  // back to BLE for everything (which then fights us for the single
-  // connection slot — diagnostic only). Verified mechanism via HCI snoop
-  // 2026-04-26: the app's `isBluetoothOnlyMode` flips false once any
-  // token is present.
   void press_clear_cloud_token() {
     write_set_string("remote_svc_reg_token", "");
   }
@@ -173,6 +166,7 @@ protected:
   // Entity refs (set from Python codegen)
   esphome::text_sensor::TextSensor *status_ts_ = nullptr;
   esphome::text::Text *pin_input_ = nullptr;
+  esphome::switch_::Switch *debug_switch_ = nullptr;
 };
 
 // One Button subclass for all 7 button actions. Python codegen

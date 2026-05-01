@@ -72,18 +72,23 @@ void ApplianceBase::gattc_event_handler(esp_gattc_cb_event_t event,
   auto *h = hub();
   switch (event) {
   case ESP_GATTC_OPEN_EVT:
-    if (param->open.status == ESP_GATT_OK) {
-      h->handle_connected();
-    } else {
-      // Failed open — log it and route to the hub's disconnect handler
-      // so any pending discovery timeouts get cancelled. handle_disconnected
-      // is idempotent for a not-yet-connected state (clears handles + flags
-      // we never set), so calling it here is safe even when the previous
-      // state was already disconnected.
+    // Route OPEN-with-error to the hub's disconnect handler (cancels any
+    // pending discovery timeouts; idempotent for a not-yet-connected
+    // state). On OPEN-success we do NOT call handle_connected yet — the
+    // GATT cache isn't populated until SEARCH_CMPL fires, and our
+    // subscribe ladder needs handles+descriptors visible to bluedroid
+    // (otherwise register_for_notify and CCCD writes silently no-op,
+    // leaving the appliance unsubscribed and no data ever flows)
+    if (param->open.status != ESP_GATT_OK) {
       ESP_LOGW(TAG, "[%s] GATT open failed (status=%d)", name_str_.c_str(),
                static_cast<int>(param->open.status));
       h->handle_disconnected();
     }
+    break;
+  case ESP_GATTC_SEARCH_CMPL_EVT:
+    // bluedroid GATT db is populated, safe to discover handles, register for
+    // notify & write CCCDs
+    h->handle_connected();
     break;
   case ESP_GATTC_DISCONNECT_EVT:
     h->handle_disconnected();
@@ -141,6 +146,16 @@ void ApplianceBase::press_connect() {
 }
 
 void ApplianceBase::press_disconnect() { transport_.disconnect(); }
+
+void ApplianceBase::press_log_debug_info() {
+  // Sync the HA Debug Mode switch state BEFORE forwarding to the hub —
+  // the hub's press_log_debug_info() immediately disconnects, so any
+  // post-disconnect publish would race with the BLE teardown.
+  if (debug_switch_ != nullptr) {
+    debug_switch_->publish_state(true);
+  }
+  hub()->press_log_debug_info();
+}
 
 void ApplianceBase::press_reset_pairing() {
   hub()->press_reset_pairing();
