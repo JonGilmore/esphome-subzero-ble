@@ -1,0 +1,159 @@
+name: Bug report / troubleshooting
+description: Something isn't working - a sensor reads wrong, an appliance won't connect, a model isn't fully supported, or you've spotted unexpected behavior.
+title: "<brand> <model>: <short description>"
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file a report. Sub-Zero, Wolf, and Cove ship lots of model variants and each firmware version exposes a slightly different set of JSON keys, so the single most useful thing you can attach is a **full debug capture** from your appliance. It tells us exactly what your unit advertises, which firmware quirks apply, and where the protocol diverges from what we've already seen.
+
+        Please fill in as much as you can. The debug capture sections are required for any runtime issue (sensors, connection, push notifications, etc.). If your issue is purely a YAML/build error and the appliance isn't reachable, write `N/A - build error` in those fields and explain in the description.
+
+  - type: input
+    id: brand
+    attributes:
+      label: Brand
+      description: Sub-Zero, Wolf, or Cove.
+      placeholder: Sub-Zero
+    validations:
+      required: true
+
+  - type: input
+    id: model
+    attributes:
+      label: Model number
+      description: The full model number from the rating plate (usually inside the door frame).
+      placeholder: BI36UFDID
+    validations:
+      required: true
+
+  - type: dropdown
+    id: appliance_type
+    attributes:
+      label: Configured `type:`
+      description: Which `subzero_appliance:` type are you using in YAML?
+      options:
+        - fridge
+        - dishwasher
+        - range
+        - unsure / not yet configured
+        - N/A - build error
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: What's happening?
+      description: |
+        Describe the problem. What did you expect to happen, and what actually happened? If a specific sensor reads wrong or a `key=...` line in the logs doesn't appear to map to any Home Assistant entity, mention it here.
+      placeholder: |
+        e.g. The Freezer Door binary sensor never changes when I open the door.
+        e.g. "ref_humidity_pct" appears in the debug log but I don't see a humidity sensor in HA.
+        e.g. The appliance pairs successfully but disconnects after ~30 seconds.
+    validations:
+      required: true
+
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostic entities
+      description: |
+        From Home Assistant, copy the values of the diagnostic text sensors for this appliance. They're under the device's "Diagnostic" section. Leave any field blank if it shows "unknown".
+      value: |
+        - Appliance Type:
+        - Firmware Version:
+        - API Version:
+        - BLE App Version:
+        - OS Version:
+        - RTApp Version:
+        - Appliance Board Version:
+        - Build Date:
+    validations:
+      required: true
+
+  - type: markdown
+    attributes:
+      value: |
+        ## Debug capture
+
+        Each appliance has a **Log Debug Info** button under its Diagnostic entities in Home Assistant. Pressing it enables Debug Mode, forces a BLE reconnect, and lands a fresh full-state poll on the next cycle.
+
+        1. Press **Log Debug Info** for the affected appliance.
+        2. On some devices, you have to wait ~10-15 seconds for the reconnect to complete and the next poll to land.
+        3. **Optionally** interact with the appliance (open/close a door, change a set temp, toggle the light) to capture push notifications - these reveal which keys correspond to which physical state.
+        4. Copy the relevant log lines from the ESPHome dashboard or `esphome logs` output. Paste them into the boxes below.
+        5. Turn **Debug Mode** off when you're done.
+
+        Don't worry if you can't reassemble the JSON - paste the raw `Response[N/M]:` chunks and we'll stitch them.
+
+  - type: textarea
+    id: keys
+    attributes:
+      label: Top-level keys (`szg-debug` log lines)
+      description: |
+        Grep for `szg-debug` in the logs and paste every `[I][szg-debug:###]: [<name>] key=<something>` line you see, including push-notification lines that show up after you interact with the appliance.
+      render: text
+      placeholder: |
+        [I][szg-debug:123]: [Main Fridge] key=ref_door_ajar
+        [I][szg-debug:123]: [Main Fridge] key=ref_set_temp
+        [I][szg-debug:123]: [Main Fridge] key=fz_set_temp
+        [I][szg-debug:123]: [Main Fridge] key=...
+    validations:
+      required: true
+
+  - type: textarea
+    id: payload
+    attributes:
+      label: Full response payload (`Response[N/M]:` chunks)
+      description: |
+        Grep for `Response\[` in the logs and paste the chunks in order. They look like `Response[1/4]: {"...`, `Response[2/4]: ...`, etc. Paste all of them - we'll concatenate. If you can already reassemble them into a single JSON object and paste that, even better.
+      render: text
+      placeholder: |
+        [I][szg:###]: [Main Fridge] Response[1/4]: {"ref_door_ajar":false,"ref_set_temp":...
+        [I][szg:###]: [Main Fridge] Response[2/4]: ...
+        [I][szg:###]: [Main Fridge] Response[3/4]: ...
+        [I][szg:###]: [Main Fridge] Response[4/4]: ...}
+    validations:
+      required: true
+
+  - type: textarea
+    id: yaml
+    attributes:
+      label: Your `subzero_appliance:` YAML
+      description: The YAML block for this appliance. You can omit `mac_address`, `pin`, and any other secrets.
+      render: yaml
+      placeholder: |
+        subzero_appliance:
+          - id: main_fridge
+            name: Main Fridge
+            type: fridge
+            mac_address: !secret main_fridge_mac
+            pin: !secret main_fridge_pin
+    validations:
+      required: false
+
+  - type: input
+    id: esphome_version
+    attributes:
+      label: ESPHome version
+      placeholder: "2026.3.0"
+    validations:
+      required: true
+
+  - type: input
+    id: integration_version
+    attributes:
+      label: esphome-subzero-ble version / ref
+      description: The git ref or release tag from your `external_components:` block.
+      placeholder: "v3.3.0"
+    validations:
+      required: true
+
+  - type: textarea
+    id: notes
+    attributes:
+      label: Anything else?
+      description: Photos of the appliance UI, screenshots of HA entities, related issues, etc.
+    validations:
+      required: false

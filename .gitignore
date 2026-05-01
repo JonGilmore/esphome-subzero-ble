@@ -6,6 +6,8 @@
 !.github/workflows/ci.yml
 !.github/workflows/release.yml
 !.github/workflows/
+!.github/ISSUE_TEMPLATE/
+!.github/ISSUE_TEMPLATE/**
 !.github/
 !README.adoc
 !docs/
