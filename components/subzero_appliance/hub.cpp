@@ -160,7 +160,15 @@ void SubzeroHub::handle_d5_notify(const std::uint8_t * /*data*/,
 }
 
 void SubzeroHub::handle_d6_notify(const std::uint8_t *data, std::size_t len) {
-  poll_ok_ = true;
+  // Don't set poll_ok_ here — push notifications on D6 (msg_types:1
+  // diagnostic_status, msg_types:2 props) would mask the fw 8.5
+  // silent-poll case where the appliance keeps pushing but never
+  // answers get_async. poll_ok_ is set in process_message_complete_
+  // only when a parsed message is a real POLL RESPONSE (status:0).
+  // The zombie detector then correctly forces a reconnect every ~3 min
+  // on fw 8.5, which is the only way to refresh full state on those
+  // devices (D6 unlock session expires server-side after ~60-80s of
+  // idle).
   if (json_buf_.feed(data, len)) {
     process_message_complete_();
   }
@@ -199,7 +207,16 @@ void SubzeroHub::process_message_complete_() {
     return;
   }
   fast_retries_ = 0;
-  poll_ok_ = true;
+  // poll_ok_ tracks specifically successful POLL RESPONSES (full state),
+  // not pushes. Setting it on incidental pushes (msg_types:1
+  // diagnostic_status, msg_types:2 props) would mask the fw 8.5
+  // silent-poll case — appliance keeps pushing but never answers
+  // get_async, so the zombie detector must still trigger a reconnect.
+  // String-search on `"status":0` is the cheap discriminator: poll
+  // responses always have it, push notifications never do.
+  if (msg->find("\"status\":0") != std::string::npos) {
+    poll_ok_ = true;
+  }
 }
 
 bool SubzeroHub::handle_lacking_properties_(const std::string &msg) {

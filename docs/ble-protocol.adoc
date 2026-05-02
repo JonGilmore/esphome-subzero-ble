@@ -119,9 +119,14 @@ Response Fragmentation:: The appliance sends responses as BLE indications, fragm
 fw 8.5 appliances fragment at ~40 bytes per indication (50+ fragments for a ~2 KB poll response). fw 2.27 appliances use ~244 byte fragments (most pushes fit in a single indication).
 The receiver buffers and reassembles by tracking JSON brace depth (`{` / `}`) to detect message completion.
 
-Push Notifications:: Appliances send real-time push notifications for state changes (door open/close, temperature change, light toggle, etc.) on D6. Format: `{"seq":N,"props":{...},"msg_types":M}` (or `{"diagnostic_status":"...","msg_types":1}` for diagnostic_status updates).
+Push Notifications:: Appliances send real-time push notifications for state changes (door open/close, temperature change, light toggle, etc.) on D6. Two shapes:
++
+* `msg_types:2` - props update: `{"seq":N,"props":{<changed-fields>},"msg_types":2}`. Carries one or more state field changes.
+* `msg_types:1` - diagnostic_status update: `{"diagnostic_status":"0x...","msg_types":1,"seq":N,"timestamp":"..."}`. Carries the appliance's diagnostic_status field at the *root* of the JSON object (no `resp` or `props` wrapper). Sub-Zero/Wolf appliances emit these every minute or so when the appliance is otherwise idle. Initial implementations of `extract_data` only handled `resp` (poll) and `props` (msg_types:2 push); msg_types:1 pushes were dropped as parse failures until they were explicitly handled (see `extract_data` in `subzero_protocol/protocol.cpp`).
 +
 The appliance also broadcasts a duplicate copy of every D6 push on D5. We deliberately ignore those copies in the D5 notification handler (it doesn't feed the JSON buffer) to prevent the same push from being parsed twice and corrupting the buffer with duplicated bytes.
+
+Zombie-poll detection (poll vs push):: `poll_ok_` only flips on a successful POLL RESPONSE (the substring `"status":0`), never on incoming push notifications. The fw 8.5 silent-poll case keeps emitting `msg_types:1` pushes while `get_async` writes go silent server-side; treating those pushes as "evidence of life" would block the zombie detector from firing and the appliance state would freeze on its initial poll values forever. With this gating, pushes still update incremental state via the dispatch bus, but `poll_miss_` keeps incrementing each silent 60s window and forces a reconnect after 3 misses (~3 min) - matching the Sub-Zero Android app's disconnect-between-polls cadence on fw 8.5.
 
 D5 + D6 Discovery Timing:: The encrypted D5 and D6 characteristics are not visible in the initial GATT database - they only appear after BLE bonding completes.
 The implementation requests encryption, refreshes the GATT cache (`esp_ble_gattc_cache_refresh`), and re-runs service discovery to make them visible. The code polls up to three times with delays to handle timing variations across different appliance models.

@@ -771,3 +771,107 @@ TEST_F(HubFixture, PeriodicPoll_UsesCurrentVerb) {
   hub_.do_periodic_poll();
   EXPECT_TRUE(transport_.wrote_command_to(hub_.d6_handle(), "\"get\"}"));
 }
+
+// =============================================================================
+// poll_ok_ semantics — must distinguish poll responses (full state) from
+// push notifications. The fw 8.5 silent-poll case keeps pushing
+// diagnostic_status (msg_types:1) every minute or so; if those reset
+// poll_miss_ the zombie detector never triggers, and we never reconnect
+// to refresh full state. See live log analysis 2026-05-01 (issue #91 thread).
+// =============================================================================
+
+namespace {
+
+// Helper: feed a fully-formed JSON string + trailing newline through the
+// D6 indication path so json_buf_ can detect message completion.
+void feed_complete_d6_(SubzeroHub &hub, const std::string &payload) {
+  std::string with_newline = payload + "\n";
+  hub.handle_d6_notify(
+      reinterpret_cast<const std::uint8_t *>(with_newline.data()),
+      with_newline.size());
+}
+
+} // namespace
+
+TEST_F(HubFixture, PollOk_NotSetByMsgTypes2Push) {
+  hub_.set_stored_pin("12345");
+  run_to_ready_();
+  // After run_to_ready_, subscribe_initial_get_ has set poll_ok_=false
+  // and written get_async. One do_periodic_poll cycle takes miss to 1.
+  hub_.do_periodic_poll();
+  ASSERT_EQ(hub_.poll_miss(), 1);
+
+  // Feed a msg_types:2 push. With the fix, poll_ok_ stays false because
+  // the push has no "status":0.
+  hub_.parse_should_succeed_ = true;
+  feed_complete_d6_(hub_,
+                    R"({"seq":1,"msg_types":2,"props":{"door_ajar":true}})");
+
+  // Next periodic_poll must increment miss (push did NOT reset poll_ok_).
+  hub_.do_periodic_poll();
+  EXPECT_EQ(hub_.poll_miss(), 2)
+      << "poll_miss_ must NOT reset on a msg_types:2 push — only real "
+         "poll responses (status:0) reset the zombie counter. fw 8.5 "
+         "silent-poll detection depends on this.";
+}
+
+TEST_F(HubFixture, PollOk_NotSetByMsgTypes1Push) {
+  hub_.set_stored_pin("12345");
+  run_to_ready_();
+  hub_.do_periodic_poll();
+  ASSERT_EQ(hub_.poll_miss(), 1);
+
+  hub_.parse_should_succeed_ = true;
+  feed_complete_d6_(hub_,
+                    R"({"diagnostic_status":"0x123","msg_types":1,"seq":1})");
+
+  hub_.do_periodic_poll();
+  EXPECT_EQ(hub_.poll_miss(), 2)
+      << "msg_types:1 diagnostic_status pushes must NOT reset the zombie "
+         "counter — fw 8.5 wall ovens emit these continuously while "
+         "get_async goes silent (live log 2026-05-01, issue #91 thread).";
+}
+
+TEST_F(HubFixture, PollOk_SetByActualPollResponse) {
+  hub_.set_stored_pin("12345");
+  run_to_ready_();
+  hub_.do_periodic_poll();
+  ASSERT_EQ(hub_.poll_miss(), 1)
+      << "Test setup: needs poll_miss_ > 0 before feeding the response.";
+
+  hub_.parse_should_succeed_ = true;
+  // Real poll response: status:0 — must reset the zombie counter.
+  feed_complete_d6_(hub_, R"({"status":0,"resp":{"ref_set_temp":38}})");
+
+  hub_.do_periodic_poll();
+  EXPECT_EQ(hub_.poll_miss(), 0)
+      << "poll_miss_ must reset to 0 once a real poll response arrives.";
+}
+
+TEST_F(HubFixture, ZombieDetector_StillFiresWithPushTraffic) {
+  // Direct integration test for the live-log scenario from the issue
+  // #91 thread (Wall Oven SO3050PESP fw 8.5): appliance keeps pushing
+  // msg_types:1 every minute but never answers get_async. The zombie
+  // detector must still trip after 3 silent polls and force a reconnect
+  // — otherwise the appliance state stays frozen on its initial poll
+  // values forever.
+  hub_.set_stored_pin("12345");
+  run_to_ready_();
+  hub_.parse_should_succeed_ = true;
+  std::size_t disc_before = transport_.disconnect_count();
+
+  // Cycle 1: poll fails silently, then push arrives (poll_ok_ stays false)
+  hub_.do_periodic_poll();
+  feed_complete_d6_(hub_,
+                    R"({"diagnostic_status":"0x1","msg_types":1,"seq":1})");
+  // Cycle 2: poll fails silently, push arrives
+  hub_.do_periodic_poll();
+  feed_complete_d6_(hub_,
+                    R"({"diagnostic_status":"0x2","msg_types":1,"seq":2})");
+  // Cycle 3: poll fails silently → miss hits threshold → ZOMBIE FIRES
+  hub_.do_periodic_poll();
+  EXPECT_GT(transport_.disconnect_count(), disc_before)
+      << "Zombie detector must force a reconnect after 3 silent polls "
+         "even when push notifications keep arriving — otherwise the "
+         "fw 8.5 silent-poll case never recovers.";
+}
