@@ -57,7 +57,7 @@ external_components:                          # <1>
   - source:
       type: git
       url: https://github.com/JonGilmore/esphome-subzero-ble
-      ref: v3.3.0 # use latest tag, or main
+      ref: v3.4.0 # use latest tag, or main
     components: [patch_acl_reassembly, subzero_protocol, subzero_appliance]
 
 esphome:
@@ -154,7 +154,7 @@ subzero_appliance:
 
 NOTE: `esp32_ble: max_connections: 5` supports up to 5 concurrent appliances on one ESP32. Bump it (and see link:docs/advanced.adoc#ble-stack-tuning[BLE Stack Tuning] for additional `sdkconfig_options`) if you need more.
 
-TIP: Pin to a release tag (e.g. `ref: v3.3.0`) for stability, or use `ref: main` to track the latest changes. The minimal copy-paste examples in `wolf-minimal-fridge.yaml`, `wolf-minimal-range.yaml`, and `cove-minimal-dishwasher.yaml` in the repo root track `main` and are a known-good starting point.
+TIP: Pin to a release tag (e.g. `ref: v3.4.0`) for stability, or use `ref: main` to track the latest changes. The minimal copy-paste examples in `wolf-minimal-fridge.yaml`, `wolf-minimal-range.yaml`, and `cove-minimal-dishwasher.yaml` in the repo root track `main` and are a known-good starting point.
 
 ==== Fridge-Only Options
 
