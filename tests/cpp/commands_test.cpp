@@ -213,3 +213,18 @@ TEST(Commands, IsLackingProperties_RejectsHealthyPushNotification) {
   EXPECT_FALSE(is_lacking_properties_response(
       "{\"msg_types\":2,\"seq\":92,\"props\":{\"ref_door_ajar\":true}}"));
 }
+
+TEST(Commands, IsLackingProperties_RejectsStatusWithDigitSuffix) {
+  EXPECT_FALSE(is_lacking_properties_response("{\"status\":10,\"resp\":{}}"));
+  EXPECT_FALSE(is_lacking_properties_response("{\"status\":11,\"resp\":{}}"));
+  EXPECT_FALSE(is_lacking_properties_response("{\"status\":100,\"resp\":{}}"));
+  EXPECT_FALSE(
+      is_lacking_properties_response("{\"status\":1234,\"resp\":{}}"));
+}
+
+TEST(Commands, IsLackingProperties_AcceptsWhitespaceAfterColon) {
+  // some firmwares may emit `"status": 1` with a space after the colon
+  EXPECT_TRUE(is_lacking_properties_response("{\"status\": 1,\"resp\":{}}"));
+  EXPECT_TRUE(
+      is_lacking_properties_response("{\"status\": 1, \"resp\": {}}"));
+}

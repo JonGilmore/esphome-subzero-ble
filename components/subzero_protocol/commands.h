@@ -130,20 +130,34 @@ inline std::string build_poll_command(PollVerb v) {
   return v == PollVerb::kGet ? build_get() : build_get_async();
 }
 
-// True if `msg` matches the "appliance lacking properties" sentinel:
-// status:1 plus an empty resp object. The exact wire bytes vary across
-// firmwares (some include "status_msg":"An error occurred", some don't,
-// whitespace differs), so we substring-match on the two stable tokens
-// rather than parsing JSON. Compatible with both `"resp":{}` (no space)
-// and `"resp": {}` (with space) — covers every observed variant.
 inline bool is_lacking_properties_response(const std::string &msg) {
-  if (msg.find("\"status\":1") == std::string::npos)
+  static constexpr const char *kStatusKey = "\"status\":";
+  static constexpr std::size_t kKeyLen = 9; // strlen(kStatusKey)
+  std::size_t pos = 0;
+  bool found_status_1 = false;
+  while ((pos = msg.find(kStatusKey, pos)) != std::string::npos) {
+    std::size_t v = pos + kKeyLen;
+    // Skip optional whitespace after colon.
+    while (v < msg.size() && (msg[v] == ' ' || msg[v] == '\t'))
+      v++;
+    if (v < msg.size() && msg[v] == '1') {
+      // The value must NOT be followed by another digit — that would be
+      // `10`, `11`, `12`, `100`, etc. (`1.0` doesn't appear in this
+      // protocol; `.` is allowed because Sub-Zero responses use integer
+      // status codes only).
+      char next = (v + 1 < msg.size()) ? msg[v + 1] : '\0';
+      if (next < '0' || next > '9') {
+        found_status_1 = true;
+        break;
+      }
+    }
+    pos++;
+  }
+  if (!found_status_1)
     return false;
-  if (msg.find("\"resp\":{}") != std::string::npos)
-    return true;
-  if (msg.find("\"resp\": {}") != std::string::npos)
-    return true;
-  return false;
+  // Empty resp object — accept both spacing variants observed on the wire.
+  return msg.find("\"resp\":{}") != std::string::npos ||
+         msg.find("\"resp\": {}") != std::string::npos;
 }
 
 // `display_pin` makes the appliance show its random pairing PIN on its

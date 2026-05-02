@@ -6,12 +6,11 @@
 // advanced via FakeScheduler::advance_to().
 
 #include "../../components/subzero_appliance/hub.h"
-
 #include "hub_test_helpers.h"
-
-#include <gtest/gtest.h>
-
+#include "protocol.h"
+#include <algorithm>
 #include <cstring>
+#include <gtest/gtest.h>
 #include <string>
 #include <vector>
 
@@ -590,9 +589,6 @@ TEST_F(HubFixture, PostBondRestart_CancelsPriorPostBond) {
   // the hub must not have rescheduled multiple competing chains.
   EXPECT_LE(scheduler_.pending_count(), pending_before + 1);
 }
-
-#include "protocol.h"
-#include <algorithm>
 
 namespace {
 

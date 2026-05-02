@@ -577,9 +577,13 @@ void SubzeroHub::press_connect() {
     scheduler_->cancel_timeout(kTimeoutPostBondGiveup);
     scheduler_->cancel_timeout(kTimeoutSubscribeUnlock);
     scheduler_->cancel_timeout(kTimeoutSubscribeGet);
+    scheduler_->cancel_timeout(kTimeoutFastReconnect);
+    scheduler_->cancel_timeout(kTimeoutSubmitPinPoll);
+    scheduler_->cancel_timeout(kTimeoutVerbFallbackRetry);
   }
   post_bond_running_ = false;
   subscribe_running_ = false;
+  fast_reconnect_running_ = false;
 }
 
 void SubzeroHub::press_start_pairing() {
@@ -656,6 +660,20 @@ void SubzeroHub::press_log_debug_info() {
 void SubzeroHub::press_reset_pairing() {
   if (transport_ == nullptr)
     return;
+  if (scheduler_ != nullptr) {
+    scheduler_->cancel_timeout(kTimeoutPostBondInitial);
+    scheduler_->cancel_timeout(kTimeoutPostBondPostEnc);
+    scheduler_->cancel_timeout(kTimeoutPostBondSearch);
+    scheduler_->cancel_timeout(kTimeoutPostBondPoll1);
+    scheduler_->cancel_timeout(kTimeoutPostBondPoll2);
+    scheduler_->cancel_timeout(kTimeoutPostBondPoll3);
+    scheduler_->cancel_timeout(kTimeoutPostBondGiveup);
+    scheduler_->cancel_timeout(kTimeoutSubscribeUnlock);
+    scheduler_->cancel_timeout(kTimeoutSubscribeGet);
+    scheduler_->cancel_timeout(kTimeoutFastReconnect);
+    scheduler_->cancel_timeout(kTimeoutSubmitPinPoll);
+    scheduler_->cancel_timeout(kTimeoutVerbFallbackRetry);
+  }
   pin_confirmed_ = false;
   clear_handles_();
   phase_ = 0;
@@ -663,6 +681,9 @@ void SubzeroHub::press_reset_pairing() {
   poll_miss_ = 0;
   json_buf_.clear();
   poll_verb_ = esphome::subzero_protocol::PollVerb::kGetAsync;
+  post_bond_running_ = false;
+  subscribe_running_ = false;
+  fast_reconnect_running_ = false;
   transport_->cache_clean();
   transport_->remove_bond();
   HUB_LOGW("ble", "[%s] Bond removed, GATT cache cleared, all state reset",

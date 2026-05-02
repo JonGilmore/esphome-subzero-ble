@@ -86,8 +86,17 @@ void ApplianceBase::gattc_event_handler(esp_gattc_cb_event_t event,
     }
     break;
   case ESP_GATTC_SEARCH_CMPL_EVT:
-    // bluedroid GATT db is populated, safe to discover handles, register for
-    // notify & write CCCDs
+    // bluedroid GATT db is populated, safe to discover handles, register
+    // for notify & write CCCDs — but only if the search itself succeeded.
+    // A failed search means the GATT db is empty/stale; routing to
+    // handle_connected() would publish "Connected, discovering..." and
+    // start the post-bond ladder against handles that don't exist.
+    if (param->search_cmpl.status != ESP_GATT_OK) {
+      ESP_LOGW(TAG, "[%s] GATT search failed (status=%d)", name_str_.c_str(),
+               static_cast<int>(param->search_cmpl.status));
+      h->handle_disconnected();
+      break;
+    }
     h->handle_connected();
     break;
   case ESP_GATTC_DISCONNECT_EVT:
