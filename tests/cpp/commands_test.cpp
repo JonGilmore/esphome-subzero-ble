@@ -5,7 +5,7 @@
 #include <string>
 
 using esphome::subzero_protocol::build_display_pin;
-using esphome::subzero_protocol::build_get_all;
+using esphome::subzero_protocol::build_get;
 using esphome::subzero_protocol::build_get_async;
 using esphome::subzero_protocol::build_poll_command;
 using esphome::subzero_protocol::build_set;
@@ -169,14 +169,19 @@ TEST(Commands, SetEscapesKeyName) {
             "{\"cmd\":\"set\",\"params\":{\"a\\\"b\":1}}\n");
 }
 
-TEST(Commands, BuildGetAllProducesCanonicalLiteral) {
-  EXPECT_EQ(build_get_all(), "{\"cmd\":\"get_all\"}\n");
-  EXPECT_EQ(build_get_all().back(), '\n');
+TEST(Commands, BuildGetProducesCanonicalLiteral) {
+  // {"cmd":"get"}\n — what mwbourgeois empirically tested working on
+  // their IR36550ST per issue #91. NOT one of the 6 verbs the official
+  // app sends over BLE (those are: set, unlock_channel, scan, get_async,
+  // display_pin, reset_air_filter — verified via blutter dump of
+  // libapp.so v4.5.1's BluetoothCommands class).
+  EXPECT_EQ(build_get(), "{\"cmd\":\"get\"}\n");
+  EXPECT_EQ(build_get().back(), '\n');
 }
 
 TEST(Commands, BuildPollCommandSelectsByVerb) {
   EXPECT_EQ(build_poll_command(PollVerb::kGetAsync), build_get_async());
-  EXPECT_EQ(build_poll_command(PollVerb::kGetAll), build_get_all());
+  EXPECT_EQ(build_poll_command(PollVerb::kGet), build_get());
 }
 
 TEST(Commands, IsLackingProperties_ExactSentinel) {

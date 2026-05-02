@@ -149,53 +149,61 @@ Any raw-buffer content that reaches ESPHome's logger (the debug-mode `Response[N
 
 == Command Reference
 
-Commands are JSON objects terminated with `\n`. The full command set per the official app's binary is eight verbs: six baked as JSON literals (`unlock_channel`, `get_async`, `display_pin`, `set`, `scan`, `reset_air_filter`) plus two verbs constructed dynamically by the app (`get_all`, `exit_delay`). There is no keepalive/ping verb. There is no `subscribe` / `unsubscribe` / `set_async` - push subscriptions are pure CCCD writes (`0x02 0x00` to handle+2 of D5/D6).
+Commands are JSON objects terminated with `\n`. The official Android app's BLE protocol vocabulary is *exactly six verbs*, all baked as JSON literals in the `BluetoothCommands` Dart class (verified by blutter decompilation of `libapp.so` v4.5.1, Dart SDK 3.11.0):
 
 [cols="1,1,2,2"]
 |===
 | Command | Channel | Payload | Response
 
 | `unlock_channel` | *D5 + D6* | `{"cmd":"unlock_channel","params":{"pin":"XXXXXX"}}\n` | `{"status":0,"resp":{"pin":"XXXXXX"}}` on whichever channel was written. Each channel needs its own unlock.
-| `get_async` | *D6* | `{"cmd":"get_async"}\n` | Full appliance state as JSON (see <<Example Responses>>). On firmwares "lacking properties" (e.g. Sub-Zero IR36550ST fw 2.27), returns `{"status":1,"resp":{},"status_msg":"An error occurred"}` - see <<get-fallback,Polling fallback chain>>.
-| `get_all` | *D6* | `{"cmd":"get_all"}\n` | Same shape as `get_async` success response. Used by the official app as a fallback when `get_async` returns `status:1` with empty `resp`. Constructed dynamically (no JSON literal in the binary), driven by `GetAllParameters` Dart class.
+| `get_async` | *D6* | `{"cmd":"get_async"}\n` | Full appliance state as JSON (see <<Example Responses>>). On firmwares "lacking properties" (e.g. Sub-Zero IR36550ST fw 2.27), returns `{"status":1,"resp":{},"status_msg":"An error occurred"}` - see <<get-fallback,Polling fallback>>.
 | `display_pin` | *D5* | `{"cmd":"display_pin","params":{"duration": 30}}\n` | `{"status":0,"resp":{}}`. Displays PIN on appliance for 30 seconds.
-| `set` | *D5* | `{"cmd":"set","params":{"<field>":"<value>"}}\n` | `{"status":0,"resp":{}}`. Writes a single property (time, ap_ssid + ap_pass + ap_enc, remote_svc_reg_token, etc.)
+| `set` | *D5* | `{"cmd":"set","params":{"<field>":"<value>"}}\n` | `{"status":0,"resp":{}}`. Writes a single property (time, ap_ssid + ap_pass + ap_enc, remote_svc_reg_token, etc.). Specialized variant `connectWiFiCmd` writes the WiFi triplet.
 | `scan` | *D5* | `{"cmd":"scan"}\n` | `{"status":0,"resp":{"aps":[{"ap_ssid":"...","ap_enc":3,"ap_rssi":N},...]}}`
 | `reset_air_filter` | *D5* | `{"cmd":"reset_air_filter"}\n` | (untested by this integration)
-| `exit_delay` | *D5* | `{"cmd":"exit_delay"}\n` (likely shape) | (untested) Verb appears as a bare token in the official app, no JSON literal. Suspected to cancel a pending delayed-start state on dishwashers/ranges.
 |===
+
+The official app has *no other BLE verbs*. There is no keepalive/ping. There is no `subscribe`/`unsubscribe`/`set_async` - push subscriptions are pure CCCD writes (`0x02 0x00` to handle+2 of D5/D6).
 
 The *open* channel `get_async` (no unlock required) the official app uses for its initial probe is on *D7*, not D4. It returns a much smaller response (model, doors, uptime, wlan_id) than D6's full state. The integration discovers D7 but doesn't currently use it.
 
+==== Misleading symbols in libapp.so
+
+Several plausible-looking symbols in the binary are NOT BLE verbs:
+
+* *`getAllWithParameters` / `GetAllParameters`* - methods/class belonging to the `shared_preferences_android` Flutter plugin (Android local-storage API). Unrelated to the Sub-Zero protocol.
+* *`get_all` (bare token)* - a telemetry tag passed to `_stopPropertyLoadTrace`, AND the Azure IoT Hub Direct Method name. Never written to a BLE characteristic.
+* *`exit_delay` (bare token)* - present in the const string pool but no JSON literal exists, no `BluetoothCommands` method emits it. Suspected unused or used only via the cloud Direct Method path.
+* *`Sending "get" command`* - log line from a non-BLE code path.
+* *`Sending fallback GetAll command for appliance lacking properties`* - emitted in `appliance_list_card_controller.dart` and immediately followed by a call to `AzureApplianceCommands.sendGetCommand()`. *Cloud-side* fallback, not BLE.
+
+The official app's actual fallback for a "lacking properties" BLE response is to abandon BLE polling and fall back to *Azure IoT Hub Direct Method*. ESPHome can't do that - we have no Azure credentials and the appliance may not even be cloud-registered.
+
 [[get-fallback]]
-=== Polling fallback chain (`get_async` -> `get_all`)
+=== Polling fallback (`get_async` -> `get`)
 
-Some appliance firmwares respond to D6 `get_async` with `{"status":1,"resp":{},"status_msg":"An error occurred"}` instead of full state - a 56-byte sentinel. The official Android app describes these as "appliances lacking properties" (see strings in `lib/arm64-v8a/libapp.so`):
+Some appliance firmwares respond to D6 `get_async` with `{"status":1,"resp":{},"status_msg":"An error occurred"}` instead of full state - a 56-byte sentinel.
 
-----
-"Async channel is open, stopping property polling"
-"Starting property polling for appliance"
-"Initial GetAll command failed (attempt"
-"Initial GetAll failed with maximum failures, not starting property polling"
-"Sending fallback GetAll command for appliance lacking properties"
-"Property polling failed (attempt"
-"Stopping property polling after 3 consecutive failures"
-"Failed to send GetAll command with error"
-----
+[NOTE]
+====
+*This integration's BLE-side fallback is original protocol work, not a mirror of the official app.* The official app falls back to the Azure cloud (above); this integration falls back to a different BLE verb instead, since the cloud path isn't available to ESPHome.
+====
 
-This integration mirrors the official app's behavior in `SubzeroHub`:
+`SubzeroHub` behavior:
 
-. Default poll verb is `get_async`. Sent on `subscribe_initial_get_`, `do_periodic_poll`, and the "Poll Now" button.
-. If a poll response matches the sentinel (`"status":1` AND `"resp":{}`), the hub flips its `poll_verb_` to `kGetAll` for the rest of this session and schedules an immediate retry with `{"cmd":"get_all"}`.
-. The verb selection latches per-hub. Once an appliance is known to need `get_all`, every subsequent poll uses it directly (no `get_async` retry on every cycle).
+. Default poll verb is `get_async` (the only BLE poll verb in the official app). Sent on `subscribe_initial_get_`, `do_periodic_poll`, and the "Poll Now" button.
+. If a poll response matches the sentinel (`"status":1` AND `"resp":{}`), the hub flips its `poll_verb_` to `kGet` for the rest of this session and schedules an immediate retry with `{"cmd":"get"}`.
+. The verb selection latches per-hub. Once an appliance is known to need `get`, every subsequent poll uses it directly (no `get_async` retry on every cycle).
 . The latch resets on `press_reset_pairing()` (full state wipe) but persists across normal disconnect/reconnect - the verb is a firmware capability, not a transient state.
-. If `get_all` also returns the lacking-properties sentinel, the hub logs an error and stops trying to switch - push notifications continue to work via CCCD even when neither poll verb does.
+. If `get` also returns the lacking-properties sentinel, the hub logs an error and stops trying to switch - push notifications continue to work via CCCD even when neither poll verb does.
+
+`{"cmd":"get"}` was empirically verified by issue #91 reporter (mwbourgeois) on a Sub-Zero IR36550ST induction range fw 2.27: returns ~2394-byte full-state response across multiple consecutive poll cycles. The verb is *not* in the official app's `BluetoothCommands`; the most likely explanations are firmware-side prefix matching (`get` matches `get_async`) or a Sub-Zero service/diagnostic verb left in the firmware.
 
 Verified appliance behaviors:
 
 [cols="1,1,1,1"]
 |===
-| Appliance | FW | `get_async` D6 | `get_all` D6
+| Appliance | FW | `get_async` D6 | `get` D6
 
 | Wolf SO3050PESP wall oven | 8.5 | works (~2178 byte poll) | (untested)
 | Wolf DF36450GSP range | 2.27 | works | (untested)

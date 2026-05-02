@@ -702,34 +702,35 @@ TEST_F(HubFixture, LackingProperties_FlipsVerbAndSchedulesRetry) {
 
   feed_message(hub_, kLackingPropertiesSentinel);
 
-  EXPECT_EQ(hub_.poll_verb(), esphome::subzero_protocol::PollVerb::kGetAll);
-  EXPECT_TRUE(any_status_contains("get_all"));
+  EXPECT_EQ(hub_.poll_verb(), esphome::subzero_protocol::PollVerb::kGet);
+  EXPECT_TRUE(any_status_contains("get"));
   EXPECT_EQ(transport_.write_count(), writes_before)
       << "Retry must be deferred via scheduler — not written inline.";
   scheduler_.advance_by(1100); // > kVerbFallbackRetryDelayMs (1000)
-  EXPECT_TRUE(transport_.wrote_command_to(hub_.d6_handle(), "get_all"))
+  EXPECT_TRUE(transport_.wrote_command_to(hub_.d6_handle(), "\"get\"}"))
       << "After the verb-fallback retry timer fires, hub must write "
-         "{\"cmd\":\"get_all\"} to D6.";
+         "{\"cmd\":\"get\"} to D6 (the verb empirically confirmed working "
+         "on IR36550ST per issue #91).";
 }
 
-TEST_F(HubFixture, LackingProperties_LatchesOnGetAll) {
+TEST_F(HubFixture, LackingProperties_LatchesOnGet) {
   hub_.set_stored_pin("12345");
   run_to_ready_();
 
   hub_.parse_should_succeed_ = false;
   feed_message(hub_, kLackingPropertiesSentinel);
-  ASSERT_EQ(hub_.poll_verb(), esphome::subzero_protocol::PollVerb::kGetAll);
+  ASSERT_EQ(hub_.poll_verb(), esphome::subzero_protocol::PollVerb::kGet);
   scheduler_.advance_by(1100);
   transport_.clear_writes();
   hub_.parse_should_succeed_ = true;
   feed_message(hub_, "{\"status\":0,\"resp\":{\"ref_set_temp\":38}}\n");
-  EXPECT_EQ(hub_.poll_verb(), esphome::subzero_protocol::PollVerb::kGetAll);
+  EXPECT_EQ(hub_.poll_verb(), esphome::subzero_protocol::PollVerb::kGet);
 
-  // And the next periodic_poll must use get_all.
+  // Subsequent periodic_poll must use get, not get_async.
   hub_.do_periodic_poll();
-  EXPECT_TRUE(transport_.wrote_command_to(hub_.d6_handle(), "get_all"));
+  EXPECT_TRUE(transport_.wrote_command_to(hub_.d6_handle(), "\"get\"}"));
   EXPECT_FALSE(transport_.wrote_command_to(hub_.d6_handle(), "get_async"))
-      << "After latching, periodic poll must use get_all exclusively.";
+      << "After latching, periodic poll must use get exclusively.";
 }
 
 TEST_F(HubFixture, LackingProperties_SecondHitDoesNotPingPongVerb) {
@@ -738,20 +739,20 @@ TEST_F(HubFixture, LackingProperties_SecondHitDoesNotPingPongVerb) {
   hub_.parse_should_succeed_ = false;
 
   feed_message(hub_, kLackingPropertiesSentinel);
-  EXPECT_EQ(hub_.poll_verb(), esphome::subzero_protocol::PollVerb::kGetAll);
+  EXPECT_EQ(hub_.poll_verb(), esphome::subzero_protocol::PollVerb::kGet);
   scheduler_.advance_by(1100);
 
-  // Second hit — get_all also failed.
+  // Second hit — `get` also failed.
   feed_message(hub_, kLackingPropertiesSentinel);
-  EXPECT_EQ(hub_.poll_verb(), esphome::subzero_protocol::PollVerb::kGetAll)
-      << "Verb must stay at kGetAll on repeated sentinel responses — no "
+  EXPECT_EQ(hub_.poll_verb(), esphome::subzero_protocol::PollVerb::kGet)
+      << "Verb must stay at kGet on repeated sentinel responses — no "
          "ping-pong back to kGetAsync.";
 }
 
 TEST_F(HubFixture, ResetPairing_RestoresDefaultVerb) {
   hub_.set_stored_pin("12345");
   run_to_ready_();
-  hub_.set_poll_verb(esphome::subzero_protocol::PollVerb::kGetAll);
+  hub_.set_poll_verb(esphome::subzero_protocol::PollVerb::kGet);
 
   hub_.press_reset_pairing();
   EXPECT_EQ(hub_.poll_verb(), esphome::subzero_protocol::PollVerb::kGetAsync);
@@ -765,8 +766,8 @@ TEST_F(HubFixture, PeriodicPoll_UsesCurrentVerb) {
   hub_.do_periodic_poll();
   EXPECT_TRUE(transport_.wrote_command_to(hub_.d6_handle(), "get_async"));
 
-  hub_.set_poll_verb(esphome::subzero_protocol::PollVerb::kGetAll);
+  hub_.set_poll_verb(esphome::subzero_protocol::PollVerb::kGet);
   transport_.clear_writes();
   hub_.do_periodic_poll();
-  EXPECT_TRUE(transport_.wrote_command_to(hub_.d6_handle(), "get_all"));
+  EXPECT_TRUE(transport_.wrote_command_to(hub_.d6_handle(), "\"get\"}"));
 }

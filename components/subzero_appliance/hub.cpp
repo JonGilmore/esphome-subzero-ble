@@ -208,17 +208,19 @@ bool SubzeroHub::handle_lacking_properties_(const std::string &msg) {
   if (poll_verb_ == esphome::subzero_protocol::PollVerb::kGetAsync) {
     HUB_LOGW("szg",
              "[%s] Appliance returned 'lacking properties' to get_async; "
-             "switching to get_all fallback (mirrors official app behavior)",
+             "switching to {\"cmd\":\"get\"} fallback (verified working on "
+             "IR36550ST per issue #91; not a verb the official app sends "
+             "over BLE — see commands.h)",
              name_.c_str());
-    poll_verb_ = esphome::subzero_protocol::PollVerb::kGetAll;
-    publish_status_("Switching to get_all fallback...");
+    poll_verb_ = esphome::subzero_protocol::PollVerb::kGet;
+    publish_status_("Switching to get fallback...");
     if (scheduler_ != nullptr) {
       scheduler_->set_timeout(kTimeoutVerbFallbackRetry,
                               kVerbFallbackRetryDelayMs, [this]() {
                                 if (transport_ == nullptr || d6_handle_ == 0)
                                   return;
                                 write_poll_command_(d6_handle_);
-                                publish_status_("Retrying with get_all...");
+                                publish_status_("Retrying with get...");
                               });
     }
     return true;
@@ -226,7 +228,7 @@ bool SubzeroHub::handle_lacking_properties_(const std::string &msg) {
 
   HUB_LOGE("szg",
            "[%s] Appliance returned 'lacking properties' to BOTH get_async "
-           "AND get_all; firmware does not support state polling. Push "
+           "AND get; firmware does not support state polling. Push "
            "notifications via CCCD may still work.",
            name_.c_str());
   publish_status_("Appliance does not support state polling");
@@ -311,8 +313,8 @@ void SubzeroHub::do_periodic_poll() {
   }
   HUB_LOGI("szg", "[%s] Periodic poll D6 (verb=%s, miss=%d, retries=%d)",
            name_.c_str(),
-           poll_verb_ == esphome::subzero_protocol::PollVerb::kGetAll
-               ? "get_all"
+           poll_verb_ == esphome::subzero_protocol::PollVerb::kGet
+               ? "get"
                : "get_async",
            poll_miss_, fast_retries_);
 }
@@ -614,8 +616,8 @@ void SubzeroHub::press_poll() {
   }
   write_poll_command_(d6_handle_);
   HUB_LOGI("ble", "[%s] POLL D6: re-unlock + %s", name_.c_str(),
-           poll_verb_ == esphome::subzero_protocol::PollVerb::kGetAll
-               ? "get_all"
+           poll_verb_ == esphome::subzero_protocol::PollVerb::kGet
+               ? "get"
                : "get_async");
   publish_status_("Polling...");
 }

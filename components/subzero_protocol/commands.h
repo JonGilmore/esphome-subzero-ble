@@ -89,18 +89,53 @@ inline std::string build_unlock_channel(const std::string &pin) {
 }
 
 // `get_async` requests a full state dump on the channel it's written to.
-// Used on D6 only post-PR-#72 — D5 returns nothing for get_async.
+// Used on D6 only post-PR-#72 — D5 returns nothing for get_async. Verified
+// in libapp.so blutter dump as the only BLE poll verb in
+// `BluetoothCommands::getAsyncCmd`.
 inline std::string build_get_async() { return "{\"cmd\":\"get_async\"}\n"; }
-inline std::string build_get_all() { return "{\"cmd\":\"get_all\"}\n"; }
+
+// `get` is our BLE-side fallback when an appliance returns
+// `{"status":1,"resp":{},"status_msg":"An error occurred"}` to `get_async`
+// — what the app's log strings call "appliance lacking properties".
+//
+// NOT a verb the official Android app sends over BLE. blutter
+// decompilation of libapp.so v4.5.1 (Dart 3.11.0) shows
+// `BluetoothCommands` has exactly 6 baked JSON verbs: `set`,
+// `unlock_channel`, `scan`, `get_async`, `display_pin`,
+// `reset_air_filter`. The official app's "Sending fallback GetAll
+// command" log lives in the *cloud* path (`AzureApplianceCommands.
+// sendGetCommand` Direct Method via `azure_appliance_commands.dart`),
+// not BLE — and the `getAllWithParameters`/`GetAllParameters` symbols
+// belong to the `shared_preferences_android` Flutter plugin, unrelated
+// to the Sub-Zero protocol entirely.
+//
+// `{"cmd":"get"}` is original protocol work, justified by issue #91:
+// mwbourgeois empirically confirmed it returns a 2394-byte full-state
+// response from a Sub-Zero IR36550ST induction range fw 2.27 across
+// multiple consecutive poll cycles. Plausibly accepted via firmware-side
+// prefix matching (`get` → `get_async`) or a Sub-Zero service verb.
+// Same response shape as `get_async` on success.
+inline std::string build_get() { return "{\"cmd\":\"get\"}\n"; }
+
+// Polling verb selector — the hub latches to whichever one a given
+// appliance accepts. Default is kGetAsync (the only BLE poll verb in the
+// official app); kGet is our empirical fallback for appliances that
+// return the "lacking properties" sentinel to get_async.
 enum class PollVerb {
   kGetAsync,
-  kGetAll,
+  kGet,
 };
 
 inline std::string build_poll_command(PollVerb v) {
-  return v == PollVerb::kGetAll ? build_get_all() : build_get_async();
+  return v == PollVerb::kGet ? build_get() : build_get_async();
 }
 
+// True if `msg` matches the "appliance lacking properties" sentinel:
+// status:1 plus an empty resp object. The exact wire bytes vary across
+// firmwares (some include "status_msg":"An error occurred", some don't,
+// whitespace differs), so we substring-match on the two stable tokens
+// rather than parsing JSON. Compatible with both `"resp":{}` (no space)
+// and `"resp": {}` (with space) — covers every observed variant.
 inline bool is_lacking_properties_response(const std::string &msg) {
   if (msg.find("\"status\":1") == std::string::npos)
     return false;
