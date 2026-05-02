@@ -22,6 +22,7 @@
 // `dispatch_X(state, bus)` from subzero_protocol.
 
 #include "../subzero_protocol/buffer.h"
+#include "../subzero_protocol/commands.h"
 #include "ble_transport.h"
 #include "scheduler.h"
 
@@ -148,6 +149,8 @@ public:
   bool subscribe_running() const { return subscribe_running_; }
   bool fast_reconnect_running() const { return fast_reconnect_running_; }
   const std::string &stored_pin() const { return stored_pin_; }
+  esphome::subzero_protocol::PollVerb poll_verb() const { return poll_verb_; }
+  void set_poll_verb(esphome::subzero_protocol::PollVerb v) { poll_verb_ = v; }
 
 protected:
   // Subclass hook — called when a complete JSON message has been
@@ -194,7 +197,8 @@ private:
   void process_message_complete_();
   void log_chunked_debug_(const std::string &msg);
   void write_unlock_channel_(std::uint16_t handle);
-  void write_get_async_(std::uint16_t handle);
+  void write_poll_command_(std::uint16_t handle);
+  bool handle_lacking_properties_(const std::string &msg);
   void write_set_property_(const std::string &key,
                            const std::string &json_value);
   void update_handles_from_db_();
@@ -219,6 +223,8 @@ private:
   int poll_miss_ = 0;
   bool debug_mode_ = false;
   std::uint32_t poll_offset_ms_ = 0;
+  esphome::subzero_protocol::PollVerb poll_verb_ =
+      esphome::subzero_protocol::PollVerb::kGetAsync;
 
   // Pending-flow flags — match the YAML scripts' `is_running()` checks.
   // periodic_poll consults these to avoid clobbering an in-progress
@@ -248,6 +254,7 @@ private:
   static constexpr std::uint32_t kResetPairingDisconnectDelayMs = 1000;
   static constexpr int kStaleBondsThreshold = 3;
   static constexpr int kZombiePollMissThreshold = 3;
+  static constexpr std::uint32_t kVerbFallbackRetryDelayMs = 1000;
 };
 
 } // namespace subzero_appliance

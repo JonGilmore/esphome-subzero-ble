@@ -5,12 +5,16 @@
 #include <string>
 
 using esphome::subzero_protocol::build_display_pin;
+using esphome::subzero_protocol::build_get_all;
 using esphome::subzero_protocol::build_get_async;
+using esphome::subzero_protocol::build_poll_command;
 using esphome::subzero_protocol::build_set;
 using esphome::subzero_protocol::build_set_bool;
 using esphome::subzero_protocol::build_set_int;
 using esphome::subzero_protocol::build_set_string;
 using esphome::subzero_protocol::build_unlock_channel;
+using esphome::subzero_protocol::is_lacking_properties_response;
+using esphome::subzero_protocol::PollVerb;
 
 TEST(Commands, GetAsyncIsExactWireFormat) {
   EXPECT_EQ(build_get_async(), "{\"cmd\":\"get_async\"}\n");
@@ -163,4 +167,44 @@ TEST(Commands, SetEscapesKeyName) {
   // quote/backslash, JSON-escape it rather than emitting broken wire data.
   EXPECT_EQ(build_set_int("a\"b", 1),
             "{\"cmd\":\"set\",\"params\":{\"a\\\"b\":1}}\n");
+}
+
+TEST(Commands, BuildGetAllProducesCanonicalLiteral) {
+  EXPECT_EQ(build_get_all(), "{\"cmd\":\"get_all\"}\n");
+  EXPECT_EQ(build_get_all().back(), '\n');
+}
+
+TEST(Commands, BuildPollCommandSelectsByVerb) {
+  EXPECT_EQ(build_poll_command(PollVerb::kGetAsync), build_get_async());
+  EXPECT_EQ(build_poll_command(PollVerb::kGetAll), build_get_all());
+}
+
+TEST(Commands, IsLackingProperties_ExactSentinel) {
+  EXPECT_TRUE(is_lacking_properties_response(
+      "{\"status\":1,\"resp\":{},\"status_msg\":\"An error occurred\"}\n"));
+}
+
+TEST(Commands, IsLackingProperties_AcceptsWhitespaceVariant) {
+  // Some firmwares may emit a space after the colon — both must trip.
+  EXPECT_TRUE(is_lacking_properties_response("{\"status\":1,\"resp\": {}}"));
+}
+
+TEST(Commands, IsLackingProperties_RejectsStatusZero) {
+  // Successful response — has data in resp, status:0. Must NOT trip.
+  EXPECT_FALSE(is_lacking_properties_response(
+      "{\"status\":0,\"resp\":{\"ref_set_temp\":38}}"));
+}
+
+TEST(Commands, IsLackingProperties_RejectsStatusNonzeroWithData) {
+  EXPECT_FALSE(is_lacking_properties_response(
+      "{\"status\":1,\"resp\":{\"ref_set_temp\":38}}"));
+}
+
+TEST(Commands, IsLackingProperties_RejectsStatus302) {
+  EXPECT_FALSE(is_lacking_properties_response("{\"status\":302,\"resp\":{}}"));
+}
+
+TEST(Commands, IsLackingProperties_RejectsHealthyPushNotification) {
+  EXPECT_FALSE(is_lacking_properties_response(
+      "{\"msg_types\":2,\"seq\":92,\"props\":{\"ref_door_ajar\":true}}"));
 }

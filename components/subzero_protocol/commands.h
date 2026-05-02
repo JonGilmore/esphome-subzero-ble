@@ -91,6 +91,25 @@ inline std::string build_unlock_channel(const std::string &pin) {
 // `get_async` requests a full state dump on the channel it's written to.
 // Used on D6 only post-PR-#72 — D5 returns nothing for get_async.
 inline std::string build_get_async() { return "{\"cmd\":\"get_async\"}\n"; }
+inline std::string build_get_all() { return "{\"cmd\":\"get_all\"}\n"; }
+enum class PollVerb {
+  kGetAsync,
+  kGetAll,
+};
+
+inline std::string build_poll_command(PollVerb v) {
+  return v == PollVerb::kGetAll ? build_get_all() : build_get_async();
+}
+
+inline bool is_lacking_properties_response(const std::string &msg) {
+  if (msg.find("\"status\":1") == std::string::npos)
+    return false;
+  if (msg.find("\"resp\":{}") != std::string::npos)
+    return true;
+  if (msg.find("\"resp\": {}") != std::string::npos)
+    return true;
+  return false;
+}
 
 // `display_pin` makes the appliance show its random pairing PIN on its
 // front-panel display for the requested duration (seconds). Sent on D5

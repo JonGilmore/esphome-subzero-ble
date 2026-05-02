@@ -674,3 +674,99 @@ TEST(SubzeroHubLogDataKeys, DebugModeOn_BaseCompletesWithoutError) {
   h.log_data_keys_({"a", "b"});
   EXPECT_EQ(h.invocations_, 1);
 }
+
+namespace {
+
+// 56-byte sentinel from the user's IR36550ST in issue #91.
+constexpr const char *kLackingPropertiesSentinel =
+    "{\"status\":1,\"resp\":{},\"status_msg\":\"An error occurred\"}\n";
+
+void feed_message(SubzeroHub &hub, const std::string &payload) {
+  hub.handle_d6_notify(reinterpret_cast<const std::uint8_t *>(payload.data()),
+                       payload.size());
+}
+
+} // namespace
+
+TEST_F(HubFixture, PollVerb_DefaultsToGetAsync) {
+  EXPECT_EQ(hub_.poll_verb(), esphome::subzero_protocol::PollVerb::kGetAsync);
+}
+
+TEST_F(HubFixture, LackingProperties_FlipsVerbAndSchedulesRetry) {
+  hub_.set_stored_pin("12345");
+  run_to_ready_();
+  ASSERT_GT(hub_.d6_handle(), 0);
+
+  hub_.parse_should_succeed_ = false;
+  std::size_t writes_before = transport_.write_count();
+
+  feed_message(hub_, kLackingPropertiesSentinel);
+
+  EXPECT_EQ(hub_.poll_verb(), esphome::subzero_protocol::PollVerb::kGetAll);
+  EXPECT_TRUE(any_status_contains("get_all"));
+  EXPECT_EQ(transport_.write_count(), writes_before)
+      << "Retry must be deferred via scheduler — not written inline.";
+  scheduler_.advance_by(1100); // > kVerbFallbackRetryDelayMs (1000)
+  EXPECT_TRUE(transport_.wrote_command_to(hub_.d6_handle(), "get_all"))
+      << "After the verb-fallback retry timer fires, hub must write "
+         "{\"cmd\":\"get_all\"} to D6.";
+}
+
+TEST_F(HubFixture, LackingProperties_LatchesOnGetAll) {
+  hub_.set_stored_pin("12345");
+  run_to_ready_();
+
+  hub_.parse_should_succeed_ = false;
+  feed_message(hub_, kLackingPropertiesSentinel);
+  ASSERT_EQ(hub_.poll_verb(), esphome::subzero_protocol::PollVerb::kGetAll);
+  scheduler_.advance_by(1100);
+  transport_.clear_writes();
+  hub_.parse_should_succeed_ = true;
+  feed_message(hub_, "{\"status\":0,\"resp\":{\"ref_set_temp\":38}}\n");
+  EXPECT_EQ(hub_.poll_verb(), esphome::subzero_protocol::PollVerb::kGetAll);
+
+  // And the next periodic_poll must use get_all.
+  hub_.do_periodic_poll();
+  EXPECT_TRUE(transport_.wrote_command_to(hub_.d6_handle(), "get_all"));
+  EXPECT_FALSE(transport_.wrote_command_to(hub_.d6_handle(), "get_async"))
+      << "After latching, periodic poll must use get_all exclusively.";
+}
+
+TEST_F(HubFixture, LackingProperties_SecondHitDoesNotPingPongVerb) {
+  hub_.set_stored_pin("12345");
+  run_to_ready_();
+  hub_.parse_should_succeed_ = false;
+
+  feed_message(hub_, kLackingPropertiesSentinel);
+  EXPECT_EQ(hub_.poll_verb(), esphome::subzero_protocol::PollVerb::kGetAll);
+  scheduler_.advance_by(1100);
+
+  // Second hit — get_all also failed.
+  feed_message(hub_, kLackingPropertiesSentinel);
+  EXPECT_EQ(hub_.poll_verb(), esphome::subzero_protocol::PollVerb::kGetAll)
+      << "Verb must stay at kGetAll on repeated sentinel responses — no "
+         "ping-pong back to kGetAsync.";
+}
+
+TEST_F(HubFixture, ResetPairing_RestoresDefaultVerb) {
+  hub_.set_stored_pin("12345");
+  run_to_ready_();
+  hub_.set_poll_verb(esphome::subzero_protocol::PollVerb::kGetAll);
+
+  hub_.press_reset_pairing();
+  EXPECT_EQ(hub_.poll_verb(), esphome::subzero_protocol::PollVerb::kGetAsync);
+}
+
+TEST_F(HubFixture, PeriodicPoll_UsesCurrentVerb) {
+  hub_.set_stored_pin("12345");
+  run_to_ready_();
+  transport_.clear_writes();
+
+  hub_.do_periodic_poll();
+  EXPECT_TRUE(transport_.wrote_command_to(hub_.d6_handle(), "get_async"));
+
+  hub_.set_poll_verb(esphome::subzero_protocol::PollVerb::kGetAll);
+  transport_.clear_writes();
+  hub_.do_periodic_poll();
+  EXPECT_TRUE(transport_.wrote_command_to(hub_.d6_handle(), "get_all"));
+}

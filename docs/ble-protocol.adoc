@@ -149,21 +149,59 @@ Any raw-buffer content that reaches ESPHome's logger (the debug-mode `Response[N
 
 == Command Reference
 
-Commands are JSON objects terminated with `\n`. The full command set per the official app's binary is six verbs: `unlock_channel`, `get_async`, `display_pin`, `set` (write properties), `scan` (Wi-Fi scan), `reset_air_filter`. There is no keepalive/ping verb.
+Commands are JSON objects terminated with `\n`. The full command set per the official app's binary is eight verbs: six baked as JSON literals (`unlock_channel`, `get_async`, `display_pin`, `set`, `scan`, `reset_air_filter`) plus two verbs constructed dynamically by the app (`get_all`, `exit_delay`). There is no keepalive/ping verb. There is no `subscribe` / `unsubscribe` / `set_async` - push subscriptions are pure CCCD writes (`0x02 0x00` to handle+2 of D5/D6).
 
 [cols="1,1,2,2"]
 |===
 | Command | Channel | Payload | Response
 
 | `unlock_channel` | *D5 + D6* | `{"cmd":"unlock_channel","params":{"pin":"XXXXXX"}}\n` | `{"status":0,"resp":{"pin":"XXXXXX"}}` on whichever channel was written. Each channel needs its own unlock.
-| `get_async` | *D6* | `{"cmd":"get_async"}\n` | Full appliance state as JSON (see <<Example Responses>>)
+| `get_async` | *D6* | `{"cmd":"get_async"}\n` | Full appliance state as JSON (see <<Example Responses>>). On firmwares "lacking properties" (e.g. Sub-Zero IR36550ST fw 2.27), returns `{"status":1,"resp":{},"status_msg":"An error occurred"}` - see <<get-fallback,Polling fallback chain>>.
+| `get_all` | *D6* | `{"cmd":"get_all"}\n` | Same shape as `get_async` success response. Used by the official app as a fallback when `get_async` returns `status:1` with empty `resp`. Constructed dynamically (no JSON literal in the binary), driven by `GetAllParameters` Dart class.
 | `display_pin` | *D5* | `{"cmd":"display_pin","params":{"duration": 30}}\n` | `{"status":0,"resp":{}}`. Displays PIN on appliance for 30 seconds.
 | `set` | *D5* | `{"cmd":"set","params":{"<field>":"<value>"}}\n` | `{"status":0,"resp":{}}`. Writes a single property (time, ap_ssid + ap_pass + ap_enc, remote_svc_reg_token, etc.)
 | `scan` | *D5* | `{"cmd":"scan"}\n` | `{"status":0,"resp":{"aps":[{"ap_ssid":"...","ap_enc":3,"ap_rssi":N},...]}}`
 | `reset_air_filter` | *D5* | `{"cmd":"reset_air_filter"}\n` | (untested by this integration)
+| `exit_delay` | *D5* | `{"cmd":"exit_delay"}\n` (likely shape) | (untested) Verb appears as a bare token in the official app, no JSON literal. Suspected to cancel a pending delayed-start state on dishwashers/ranges.
 |===
 
 The *open* channel `get_async` (no unlock required) the official app uses for its initial probe is on *D7*, not D4. It returns a much smaller response (model, doors, uptime, wlan_id) than D6's full state. The integration discovers D7 but doesn't currently use it.
+
+[[get-fallback]]
+=== Polling fallback chain (`get_async` -> `get_all`)
+
+Some appliance firmwares respond to D6 `get_async` with `{"status":1,"resp":{},"status_msg":"An error occurred"}` instead of full state - a 56-byte sentinel. The official Android app describes these as "appliances lacking properties" (see strings in `lib/arm64-v8a/libapp.so`):
+
+----
+"Async channel is open, stopping property polling"
+"Starting property polling for appliance"
+"Initial GetAll command failed (attempt"
+"Initial GetAll failed with maximum failures, not starting property polling"
+"Sending fallback GetAll command for appliance lacking properties"
+"Property polling failed (attempt"
+"Stopping property polling after 3 consecutive failures"
+"Failed to send GetAll command with error"
+----
+
+This integration mirrors the official app's behavior in `SubzeroHub`:
+
+. Default poll verb is `get_async`. Sent on `subscribe_initial_get_`, `do_periodic_poll`, and the "Poll Now" button.
+. If a poll response matches the sentinel (`"status":1` AND `"resp":{}`), the hub flips its `poll_verb_` to `kGetAll` for the rest of this session and schedules an immediate retry with `{"cmd":"get_all"}`.
+. The verb selection latches per-hub. Once an appliance is known to need `get_all`, every subsequent poll uses it directly (no `get_async` retry on every cycle).
+. The latch resets on `press_reset_pairing()` (full state wipe) but persists across normal disconnect/reconnect - the verb is a firmware capability, not a transient state.
+. If `get_all` also returns the lacking-properties sentinel, the hub logs an error and stops trying to switch - push notifications continue to work via CCCD even when neither poll verb does.
+
+Verified appliance behaviors:
+
+[cols="1,1,1,1"]
+|===
+| Appliance | FW | `get_async` D6 | `get_all` D6
+
+| Wolf SO3050PESP wall oven | 8.5 | works (~2178 byte poll) | (untested)
+| Wolf DF36450GSP range | 2.27 | works | (untested)
+| Sub-Zero DEU2450R fridge | 8.5 | works (HCI-confirmed) | (untested)
+| Sub-Zero IR36550ST induction range | 2.27 | *fails* (56-byte error) | works (~2394 byte poll, user-confirmed)
+|===
 
 [[example-responses]]
 == Example Responses
