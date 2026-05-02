@@ -156,7 +156,15 @@ std::uint32_t SubzeroHub::handle_passkey_request() {
 
 void SubzeroHub::handle_d5_notify(const std::uint8_t * /*data*/,
                                   std::size_t /*len*/) {
-  poll_ok_ = true;
+  // D5 indications are control-channel responses (display_pin /
+  // unlock_channel / set / scan acks) and duplicate copies of D6 push
+  // notifications — never poll responses. Setting poll_ok_=true here
+  // would mask the fw 8.5 silent-D6-poll case the same way D6 push
+  // traffic used to (the appliance keeps acking D5 commands AND
+  // mirroring D6 pushes onto D5 even when get_async on D6 has gone
+  // silent). poll_ok_ flips only in process_message_complete_ on a
+  // successful POLL RESPONSE — see CodeRabbit review on PR f795296.
+  // Body intentionally empty.
 }
 
 void SubzeroHub::handle_d6_notify(const std::uint8_t *data, std::size_t len) {
@@ -212,9 +220,9 @@ void SubzeroHub::process_message_complete_() {
   // diagnostic_status, msg_types:2 props) would mask the fw 8.5
   // silent-poll case — appliance keeps pushing but never answers
   // get_async, so the zombie detector must still trigger a reconnect.
-  // String-search on `"status":0` is the cheap discriminator: poll
-  // responses always have it, push notifications never do.
-  if (msg->find("\"status\":0") != std::string::npos) {
+  // has_status_value is whitespace-tolerant and digit-suffix-safe (won't
+  // false-match `"status":01` or `"status": 0` or `"status":09`).
+  if (esphome::subzero_protocol::has_status_value(*msg, '0')) {
     poll_ok_ = true;
   }
 }

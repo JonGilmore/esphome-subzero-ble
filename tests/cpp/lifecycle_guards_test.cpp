@@ -21,7 +21,9 @@ std::string extract_case_body(const std::string &src,
   if (start == std::string::npos)
     return "";
   start += needle.size();
-  auto stop = src.find("break;", start);
+  std::size_t next_case = src.find("\n  case ", start);
+  std::size_t next_default = src.find("\n  default:", start);
+  std::size_t stop = std::min(next_case, next_default);
   if (stop == std::string::npos)
     return src.substr(start);
   return src.substr(start, stop - start);

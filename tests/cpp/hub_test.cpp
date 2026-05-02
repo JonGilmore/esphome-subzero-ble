@@ -375,10 +375,12 @@ TEST_F(HubFixture, PeriodicPoll_ZombieDetection_ReconnectsAfterThreeMisses) {
 // Notify + parse path
 // =============================================================================
 
-TEST_F(HubFixture, D5Notify_OnlyResetsZombieFlag) {
+TEST_F(HubFixture, D5Notify_DoesNotTouchPollOkOrBuffer) {
   std::uint8_t bytes[] = {'p', 'u', 's', 'h'};
   hub_.handle_d5_notify(bytes, sizeof(bytes));
-  EXPECT_TRUE(hub_.poll_ok());
+  EXPECT_FALSE(hub_.poll_ok())
+      << "D5 indications must not flip poll_ok_ — only successful POLL "
+         "RESPONSES on D6 (status:0) reset the zombie counter.";
   // D5 must NOT trigger parse_and_dispatch_ — buffer is for D6 only.
   EXPECT_FALSE(hub_.parse_called_);
 }
@@ -767,14 +769,6 @@ TEST_F(HubFixture, PeriodicPoll_UsesCurrentVerb) {
   hub_.do_periodic_poll();
   EXPECT_TRUE(transport_.wrote_command_to(hub_.d6_handle(), "\"get\"}"));
 }
-
-// =============================================================================
-// poll_ok_ semantics — must distinguish poll responses (full state) from
-// push notifications. The fw 8.5 silent-poll case keeps pushing
-// diagnostic_status (msg_types:1) every minute or so; if those reset
-// poll_miss_ the zombie detector never triggers, and we never reconnect
-// to refresh full state. See live log analysis 2026-05-01 (issue #91 thread).
-// =============================================================================
 
 namespace {
 

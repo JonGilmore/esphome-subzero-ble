@@ -1,1 +1,5 @@
-{"status":1,"resp":{},"status_msg":"An error occurred"}
+{
+  "status": 1,
+  "resp": {},
+  "status_msg": "An error occurred"
+}

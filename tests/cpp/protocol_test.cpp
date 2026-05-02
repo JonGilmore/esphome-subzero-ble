@@ -354,10 +354,6 @@ TEST(ProtocolTest, IsPollAcrossAllThreeParsers) {
   EXPECT_FALSE(parse_range(R"({"seq":1,"props":{},"msg_types":2})").is_poll);
 }
 
-// msg_types:1 — a "diagnostic_status changed" push that arrives with
-// fields at the ROOT level (no resp/props wrapper). Observed on Wolf
-// SO3050PESP fw 8.5; previously dropped as a parse failure (which also
-// spammed the warning log every cycle).
 TEST(ProtocolTest, MsgTypes1PushExtractsDiagnosticStatus) {
   const std::string msg =
       R"({"diagnostic_status":"0x00000301111","msg_types":1,)"
@@ -370,16 +366,25 @@ TEST(ProtocolTest, MsgTypes1PushExtractsDiagnosticStatus) {
 }
 
 TEST(ProtocolTest, MsgTypes1PushAcrossAllParsers) {
-  // The msg_types:1 shape is appliance-agnostic — all three parsers
-  // must extract diagnostic_status.
   const std::string msg =
       R"({"diagnostic_status":"0x12345","msg_types":1,"seq":1})";
-  EXPECT_TRUE(parse_fridge(msg).valid);
-  EXPECT_TRUE(parse_dishwasher(msg).valid);
-  EXPECT_TRUE(parse_range(msg).valid);
-  EXPECT_FALSE(parse_fridge(msg).is_poll);
-  EXPECT_FALSE(parse_dishwasher(msg).is_poll);
-  EXPECT_FALSE(parse_range(msg).is_poll);
+  auto f = parse_fridge(msg);
+  auto d = parse_dishwasher(msg);
+  auto r = parse_range(msg);
+
+  ASSERT_TRUE(f.valid);
+  ASSERT_TRUE(d.valid);
+  ASSERT_TRUE(r.valid);
+  EXPECT_FALSE(f.is_poll);
+  EXPECT_FALSE(d.is_poll);
+  EXPECT_FALSE(r.is_poll);
+
+  ASSERT_TRUE(f.common.diagnostic_status.has_value());
+  ASSERT_TRUE(d.common.diagnostic_status.has_value());
+  ASSERT_TRUE(r.common.diagnostic_status.has_value());
+  EXPECT_EQ(*f.common.diagnostic_status, "0x12345");
+  EXPECT_EQ(*d.common.diagnostic_status, "0x12345");
+  EXPECT_EQ(*r.common.diagnostic_status, "0x12345");
 }
 
 TEST(ProtocolTest, DataKeysCapturedInOrder) {

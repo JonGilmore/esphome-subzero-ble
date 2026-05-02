@@ -59,14 +59,6 @@ JsonObjectConst extract_data(JsonObjectConst root, bool &is_poll) {
     is_poll = false;
     return root["props"].as<JsonObjectConst>();
   }
-  // msg_types:1 push: a "diagnostic_status changed" notification that
-  // arrives with diagnostic_status at the ROOT level (no resp/props
-  // wrapper). Shape observed on Wolf SO3050PESP fw 8.5:
-  //   {"diagnostic_status": "0x00000301111", "msg_types": 1,
-  //    "seq": 475, "timestamp": "..."}
-  // Treat the root as the data object — fill_common picks up
-  // diagnostic_status by key, and seq/timestamp/msg_types are silently
-  // ignored by the type-checked field reads.
   if (root["msg_types"].is<int>() && root["msg_types"].as<int>() == 1) {
     is_poll = false;
     return root;

@@ -13,6 +13,7 @@ using esphome::subzero_protocol::build_set_bool;
 using esphome::subzero_protocol::build_set_int;
 using esphome::subzero_protocol::build_set_string;
 using esphome::subzero_protocol::build_unlock_channel;
+using esphome::subzero_protocol::has_status_value;
 using esphome::subzero_protocol::is_lacking_properties_response;
 using esphome::subzero_protocol::PollVerb;
 
@@ -162,19 +163,11 @@ TEST(Commands, SetTerminatesWithNewline) {
 }
 
 TEST(Commands, SetEscapesKeyName) {
-  // Defensive: keys come from C++ string literals in our code, so this
-  // shouldn't fire in practice. But if a key name ever did contain a
-  // quote/backslash, JSON-escape it rather than emitting broken wire data.
   EXPECT_EQ(build_set_int("a\"b", 1),
             "{\"cmd\":\"set\",\"params\":{\"a\\\"b\":1}}\n");
 }
 
 TEST(Commands, BuildGetProducesCanonicalLiteral) {
-  // {"cmd":"get"}\n — what mwbourgeois empirically tested working on
-  // their IR36550ST per issue #91. NOT one of the 6 verbs the official
-  // app sends over BLE (those are: set, unlock_channel, scan, get_async,
-  // display_pin, reset_air_filter — verified via blutter dump of
-  // libapp.so v4.5.1's BluetoothCommands class).
   EXPECT_EQ(build_get(), "{\"cmd\":\"get\"}\n");
   EXPECT_EQ(build_get().back(), '\n');
 }
@@ -225,4 +218,40 @@ TEST(Commands, IsLackingProperties_AcceptsWhitespaceAfterColon) {
   // some firmwares may emit `"status": 1` with a space after the colon
   EXPECT_TRUE(is_lacking_properties_response("{\"status\": 1,\"resp\":{}}"));
   EXPECT_TRUE(is_lacking_properties_response("{\"status\": 1, \"resp\": {}}"));
+}
+
+TEST(Commands, HasStatusValue_ZeroExactMatch) {
+  EXPECT_TRUE(has_status_value("{\"status\":0,\"resp\":{}}", '0'));
+  EXPECT_TRUE(has_status_value("{\"status\":0}", '0'));
+}
+
+TEST(Commands, HasStatusValue_ZeroAcceptsWhitespace) {
+  // Tab and space variants between the colon and the value.
+  EXPECT_TRUE(has_status_value("{\"status\": 0,\"resp\":{}}", '0'));
+  EXPECT_TRUE(has_status_value("{\"status\":\t0,\"resp\":{}}", '0'));
+}
+
+TEST(Commands, HasStatusValue_ZeroRejectsLargerNumber) {
+  // The killer case: 0 followed by another digit must NOT match.
+  EXPECT_FALSE(has_status_value("{\"status\":01,\"resp\":{}}", '0'));
+  EXPECT_FALSE(has_status_value("{\"status\":09,\"resp\":{}}", '0'));
+  EXPECT_FALSE(has_status_value("{\"status\":01234}", '0'));
+}
+
+TEST(Commands, HasStatusValue_ZeroRejectsPushNotification) {
+  // Push notifications never have a top-level "status" field.
+  EXPECT_FALSE(has_status_value(
+      "{\"msg_types\":2,\"seq\":1,\"props\":{\"door_ajar\":true}}", '0'));
+  EXPECT_FALSE(has_status_value(
+      "{\"diagnostic_status\":\"0x123\",\"msg_types\":1,\"seq\":1}", '0'));
+}
+
+TEST(Commands, HasStatusValue_DigitParameterDistinguishesValues) {
+  // Same message: status:1 matches digit '1' but not '0', and vice versa.
+  const std::string m1 = "{\"status\":1,\"resp\":{}}";
+  EXPECT_TRUE(has_status_value(m1, '1'));
+  EXPECT_FALSE(has_status_value(m1, '0'));
+  const std::string m0 = "{\"status\":0,\"resp\":{\"foo\":1}}";
+  EXPECT_TRUE(has_status_value(m0, '0'));
+  EXPECT_FALSE(has_status_value(m0, '1'));
 }
