@@ -179,6 +179,7 @@ subzero_appliance:
 | `hide_freezer` | `false` | Freezer Set Temperature, Freezer Door
 | `hide_ice_maker` | `false` | Ice Maker
 | `hide_sabbath` | `false` | Sabbath Mode
+| `hide_fridge_zone` | `false` | Set Temperature, Door (set true for wine-only fridges that have no main fridge compartment)
 | `hide_wine` | `true` | Wine Door, Wine Zone Upper/Lower Set Temperature, Wine Temperature Alert
 | `hide_ref_drawer` | `true` | Refrigerator Drawer Set Temperature, Refrigerator Drawer Door
 | `hide_crisper` | `true` | Crisper Drawer Set Temperature

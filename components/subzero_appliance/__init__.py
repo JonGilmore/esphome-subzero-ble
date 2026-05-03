@@ -261,7 +261,7 @@ FRIDGE_BINARY_SENSORS = [
         "Door",
         "set_door_ajar_sensor",
         {CONF_DEVICE_CLASS: DEVICE_CLASS_DOOR},
-        None,
+        "hide_fridge_zone",
     ),
     (
         "sabbath_on",
@@ -334,7 +334,7 @@ FRIDGE_SENSORS = [
         "Set Temperature",
         "set_set_temp_sensor",
         {**TEMP_KWARGS, CONF_ICON: "mdi:thermometer"},
-        None,
+        "hide_fridge_zone",
     ),
     (
         "frz_set_temp",
@@ -869,6 +869,7 @@ TYPE_SCHEMAS = {
         cv.Optional("hide_freezer", default=False): cv.boolean,
         cv.Optional("hide_ice_maker", default=False): cv.boolean,
         cv.Optional("hide_sabbath", default=False): cv.boolean,
+        cv.Optional("hide_fridge_zone", default=False): cv.boolean,
         cv.Optional("hide_wine", default=True): cv.boolean,
         cv.Optional("hide_ref_drawer", default=True): cv.boolean,
         cv.Optional("hide_crisper", default=True): cv.boolean,

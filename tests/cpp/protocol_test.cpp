@@ -303,6 +303,26 @@ TEST(ProtocolTest, FridgeSetpointFallsBackToFreezer) {
   EXPECT_FLOAT_EQ(*f.frz_set_temp, -5.0f);
 }
 
+// Wine-only fridges (e.g. DEU2450WDZ) publish wine_* keys but no
+// ref_set_temp / door_ajar / frz_*
+TEST(ProtocolTest, FridgeWineOnlyDoesNotFallBackToWine) {
+  auto f = parse_fridge(R"({"status":0,"resp":{
+    "wine_door_ajar": false,
+    "wine_set_temp": 40,
+    "wine2_set_temp": 55,
+    "wine_temp_alert_on": false
+  }})");
+  ASSERT_TRUE(f.valid);
+  EXPECT_FALSE(f.ref_set_temp.has_value());
+  EXPECT_FALSE(f.door_ajar.has_value());
+  ASSERT_TRUE(f.wine_set_temp.has_value());
+  EXPECT_FLOAT_EQ(*f.wine_set_temp, 40.0f);
+  ASSERT_TRUE(f.wine2_set_temp.has_value());
+  EXPECT_FLOAT_EQ(*f.wine2_set_temp, 55.0f);
+  ASSERT_TRUE(f.wine_door_ajar.has_value());
+  EXPECT_FALSE(*f.wine_door_ajar);
+}
+
 TEST(ProtocolTest, RangeDoorPrefersCavDoor) {
   auto r = parse_range(
       R"({"status":0,"resp":{"cav_door_ajar":true,"door_ajar":false}})");
