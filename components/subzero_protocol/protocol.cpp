@@ -141,6 +141,21 @@ FridgeState parse_fridge(const std::string &json) {
   state.is_poll = is_poll;
   capture_keys(data, state.data_keys);
   fill_common(data, state.common);
+  auto notif_type = opt_int(data["notif_type"]);
+
+  if (notif_type) {
+    switch (*notif_type) {
+      case 108:
+        state.notif_event = "fridge_door_open";
+        break;
+      case 109:
+        state.notif_event = "freezer_door_open";
+        break;
+      
+      default:
+        break;
+    }
+  }
 
   // Setpoint with freezer-only fallback.
   if (data["ref_set_temp"].is<float>()) {
@@ -187,6 +202,20 @@ DishwasherState parse_dishwasher(const std::string &json) {
   state.is_poll = is_poll;
   capture_keys(data, state.data_keys);
   fill_common(data, state.common);
+  auto notif_type = opt_int(data["notif_type"]);
+
+  if (notif_type) {
+    switch (*notif_type) {
+      case 301:
+        state.notif_event = "dishwasher_cycle_started";
+        break;
+      case 302:
+        state.notif_event = "dishwasher_cycle_complete";
+        break;
+      default:
+        break;
+    }
+  }  
 
   state.door_ajar = opt_bool(data["door_ajar"]);
   state.wash_cycle_on = opt_bool(data["wash_cycle_on"]);
@@ -233,7 +262,35 @@ RangeState parse_range(const std::string &json) {
   state.is_poll = is_poll;
   capture_keys(data, state.data_keys);
   fill_common(data, state.common);
+  auto notif_type = opt_int(data["notif_type"]);
 
+  if (notif_type) {
+    switch (*notif_type) {
+      case 201:
+        state.notif_event = "oven_preheat_complete";
+        break;
+      case 207:
+        state.notif_event = "timer_ended";
+        break;
+      case 208:
+        state.notif_event = "timer2_ended";
+        break;
+      case 209:
+        state.notif_event = "timer_1min_remaining";
+        break;
+      case 210:
+        state.notif_event = "timer2_1min_remaining";
+        break;
+      case 215:
+        state.notif_event = "oven_event_215";
+        break;
+      case 218:
+        state.notif_event = "oven_event_218";
+        break;
+      default:
+        break;
+    }
+  }
   // Door with generic fallback.
   if (data["cav_door_ajar"].is<bool>()) {
     state.door_ajar = data["cav_door_ajar"].as<bool>();
