@@ -207,10 +207,10 @@ DishwasherState parse_dishwasher(const std::string &json) {
   if (notif_type) {
     switch (*notif_type) {
       case 301:
-        state.notif_event = "dishwasher_cycle_complete";
+        state.notif_event = "dishwasher_cycle_started";
         break;
       case 302:
-        state.notif_event = "dishwasher_event_302";
+        state.notif_event = "dishwasher_cycle_complete";
         break;
       default:
         break;
