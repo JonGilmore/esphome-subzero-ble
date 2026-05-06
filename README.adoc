@@ -313,7 +313,7 @@ NOTE: Sub-Zero fridge firmware only exposes _set points_ over BLE - actual/measu
 |===
 | Sensor | Description
 
-| *Refrigerator Set Temperature* | Current fridge setpoint (°F). For standalone freezer units, falls back to the freezer setpoint.
+| *Refrigerator Set Temperature* | Current fridge setpoint (°F). Wine-only and freezer-only models don't publish this - set `hide_fridge_zone: true` to hide the entity.
 | *Freezer Set Temperature* | Current freezer setpoint (°F) _(optional)_
 | *Refrigerator Door* | Open/closed binary sensor
 | *Freezer Door* | Open/closed binary sensor _(optional)_
