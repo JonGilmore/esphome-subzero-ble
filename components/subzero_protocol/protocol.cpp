@@ -142,12 +142,7 @@ FridgeState parse_fridge(const std::string &json) {
   capture_keys(data, state.data_keys);
   fill_common(data, state.common);
 
-  // Setpoint with freezer-only fallback.
-  if (data["ref_set_temp"].is<float>()) {
-    state.ref_set_temp = data["ref_set_temp"].as<float>();
-  } else if (data["frz_set_temp"].is<float>()) {
-    state.ref_set_temp = data["frz_set_temp"].as<float>();
-  }
+  state.ref_set_temp = opt_float(data["ref_set_temp"]);
   // Door with generic fallback.
   if (data["ref_door_ajar"].is<bool>()) {
     state.door_ajar = data["ref_door_ajar"].as<bool>();

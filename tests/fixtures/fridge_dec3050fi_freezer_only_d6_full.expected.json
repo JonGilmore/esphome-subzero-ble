@@ -1,0 +1,25 @@
+{
+  "valid": true,
+  "frz_set_temp": 0,
+  "frz_door_ajar": false,
+  "ice_maker_on": true,
+  "water_filter_pct_remaining": 31,
+  "common": {
+    "sabbath_on": false,
+    "service_required": false,
+    "appliance_model": "DEC3050FI",
+    "uptime": "959:52:0",
+    "appliance_serial": "5998813",
+    "appliance_type": "17.17.5.0",
+    "diagnostic_status": "0x00000003111",
+    "build_date": "2024-11-26T16:04:29",
+    "version": {
+      "fw": "2.27",
+      "api": "5.5",
+      "bleapp": "3.4",
+      "os": "25.10",
+      "rtapp": "2.27",
+      "appliance": "main: 12.9.16573; mcb_ccm_lv: 12.8.15804; uim_typeB1: 0.3.16548"
+    }
+  }
+}

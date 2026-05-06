@@ -294,13 +294,24 @@ TEST(ProtocolTest, FridgeDoorFallsBackToGenericDoor) {
   EXPECT_TRUE(*f.door_ajar);
 }
 
-TEST(ProtocolTest, FridgeSetpointFallsBackToFreezer) {
-  auto f = parse_fridge(R"({"status":0,"resp":{"frz_set_temp":-5}})");
+TEST(ProtocolTest, FridgeFreezerOnlyDoesNotFallBackToFreezer) {
+  auto f = parse_fridge(R"({"status":0,"resp":{
+    "frz_door_ajar": false,
+    "frz_set_temp": 0,
+    "ice_maker_on": true,
+    "water_filter_pct_remaining": 31
+  }})");
   ASSERT_TRUE(f.valid);
-  ASSERT_TRUE(f.ref_set_temp.has_value());
-  EXPECT_FLOAT_EQ(*f.ref_set_temp, -5.0f);
+  EXPECT_FALSE(f.ref_set_temp.has_value());
+  EXPECT_FALSE(f.door_ajar.has_value());
   ASSERT_TRUE(f.frz_set_temp.has_value());
-  EXPECT_FLOAT_EQ(*f.frz_set_temp, -5.0f);
+  EXPECT_FLOAT_EQ(*f.frz_set_temp, 0.0f);
+  ASSERT_TRUE(f.frz_door_ajar.has_value());
+  EXPECT_FALSE(*f.frz_door_ajar);
+  ASSERT_TRUE(f.ice_maker_on.has_value());
+  EXPECT_TRUE(*f.ice_maker_on);
+  ASSERT_TRUE(f.water_filter_pct_remaining.has_value());
+  EXPECT_FLOAT_EQ(*f.water_filter_pct_remaining, 31.0f);
 }
 
 // Wine-only fridges (e.g. DEU2450WDZ) publish wine_* keys but no
