@@ -51,6 +51,7 @@ struct CommonRecorder {
   void publish_board_version(const std::string &v) {
     strings["board_version"] = v;
   }
+  void publish_notif_event(const std::string &v) { strings["notif_event"] = v; }
 };
 
 struct FridgeRecorder : CommonRecorder {

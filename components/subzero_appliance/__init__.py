@@ -216,6 +216,12 @@ COMMON_TEXT_SENSORS = [
             CONF_ENTITY_CATEGORY: ENTITY_CATEGORY_DIAGNOSTIC,
         },
     ),
+    (
+        "notif_event",
+        "Notification Event",
+        "set_notif_event_sensor",
+        {CONF_ICON: "mdi:bell-ring"},
+    ),
 ]
 
 # Buttons — same across all appliance types.

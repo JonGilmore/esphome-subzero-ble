@@ -1,0 +1,10 @@
+{
+  "seq": 711,
+  "timestamp": "2026-05-03T15:09:37.021-05:00",
+  "props": {
+    "wash_cycle_on": true
+  },
+  "notif_seq": 31,
+  "notif_type": 301,
+  "msg_types": 6
+}

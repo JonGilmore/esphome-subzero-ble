@@ -1,0 +1,5 @@
+{
+  "valid": true,
+  "notif_event": "oven_preheat_complete",
+  "cav_at_set_temp": true
+}

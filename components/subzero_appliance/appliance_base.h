@@ -97,6 +97,9 @@ public:
   void set_board_version_sensor(esphome::text_sensor::TextSensor *s) {
     common_bus()->board_version = s;
   }
+  void set_notif_event_sensor(esphome::text_sensor::TextSensor *s) {
+    common_bus()->notif_event = s;
+  }
 
   // ---- ESPHome lifecycle ----
 

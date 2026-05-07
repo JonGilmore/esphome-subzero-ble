@@ -38,6 +38,7 @@ struct FridgeState {
   // Top-level keys present in the data object (resp or props), in order.
   // Populated on every parse; the lambdas log these when debug mode is on.
   std::vector<std::string> data_keys;
+  std::optional<std::string> notif_event;
   CommonFields common;
   std::optional<float> ref_set_temp;
   std::optional<bool> door_ajar;
@@ -60,6 +61,7 @@ struct DishwasherState {
   bool valid = false;
   bool is_poll = false;
   std::vector<std::string> data_keys;
+  std::optional<std::string> notif_event;
   CommonFields common;
   std::optional<bool> door_ajar;
   std::optional<bool> wash_cycle_on;
@@ -82,6 +84,7 @@ struct RangeState {
   bool valid = false;
   bool is_poll = false;
   std::vector<std::string> data_keys;
+  std::optional<std::string> notif_event;
   CommonFields common;
   std::optional<bool> door_ajar;
 

@@ -1,0 +1,5 @@
+{
+  "valid": true,
+  "notif_event": "wash_cycle_started",
+  "wash_cycle_on": true
+}

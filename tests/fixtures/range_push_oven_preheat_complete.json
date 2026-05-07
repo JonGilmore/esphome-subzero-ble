@@ -1,0 +1,10 @@
+{
+  "seq": 3606,
+  "timestamp": "2026-04-30T21:37:15.519-05:00",
+  "props": {
+    "cav_at_set_temp": true
+  },
+  "notif_seq": 14,
+  "notif_type": 201,
+  "msg_types": 6
+}

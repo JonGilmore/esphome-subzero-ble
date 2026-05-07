@@ -93,6 +93,7 @@ json fridge_to_json(const FridgeState &s) {
   json c = common_to_json(s.common);
   if (!c.empty())
     o["common"] = c;
+  OPT_PUT(o, s, notif_event);
   OPT_PUT(o, s, ref_set_temp);
   OPT_PUT(o, s, door_ajar);
   OPT_PUT(o, s, frz_set_temp);
@@ -119,6 +120,7 @@ json dishwasher_to_json(const DishwasherState &s) {
   json c = common_to_json(s.common);
   if (!c.empty())
     o["common"] = c;
+  OPT_PUT(o, s, notif_event);
   OPT_PUT(o, s, door_ajar);
   OPT_PUT(o, s, wash_cycle_on);
   OPT_PUT(o, s, heated_dry_on);
@@ -145,6 +147,7 @@ json range_to_json(const RangeState &s) {
   json c = common_to_json(s.common);
   if (!c.empty())
     o["common"] = c;
+  OPT_PUT(o, s, notif_event);
   OPT_PUT(o, s, door_ajar);
   OPT_PUT(o, s, cav_unit_on);
   OPT_PUT(o, s, cav_at_set_temp);
@@ -435,6 +438,107 @@ TEST(ProtocolTest, DataKeysPopulatedForPushMessages) {
   ASSERT_EQ(r.data_keys.size(), 2u);
   EXPECT_EQ(r.data_keys[0], "cav_temp");
   EXPECT_EQ(r.data_keys[1], "cav_unit_on");
+}
+
+TEST(ProtocolTest, FridgeNotifTypeMapsToEvent) {
+  // msg_types=6 push: props + notif_type at root.
+  auto f = parse_fridge(R"({
+    "msg_types":6,"seq":1,"notif_seq":1,"notif_type":108,
+    "props":{"water_filter_pct_remaining":0}
+  })");
+  ASSERT_TRUE(f.valid);
+  ASSERT_TRUE(f.notif_event.has_value());
+  EXPECT_EQ(*f.notif_event, "water_filter_expired");
+  // The push's data field was still extracted.
+  ASSERT_TRUE(f.water_filter_pct_remaining.has_value());
+}
+
+TEST(ProtocolTest, FridgeMsgTypes4NotifOnlyPushIsValid) {
+  auto f = parse_fridge(R"({
+    "msg_types":4,"seq":103,"notif_seq":1360,"notif_type":109,
+    "timestamp":"2026-05-04T09:38:51.391-05:00"
+  })");
+  ASSERT_TRUE(f.valid);
+  EXPECT_FALSE(f.is_poll);
+  ASSERT_TRUE(f.notif_event.has_value());
+  EXPECT_EQ(*f.notif_event, "air_filter_expired");
+  // No data fields set since there are no props/resp.
+  EXPECT_FALSE(f.door_ajar.has_value());
+  EXPECT_TRUE(f.data_keys.empty());
+}
+
+TEST(ProtocolTest, FridgeUnknownNotifTypeFallsBack) {
+  auto f =
+      parse_fridge(R"({"msg_types":4,"seq":1,"notif_type":142,"notif_seq":1})");
+  ASSERT_TRUE(f.valid);
+  ASSERT_TRUE(f.notif_event.has_value());
+  EXPECT_EQ(*f.notif_event, "fridge_event_142");
+}
+
+TEST(ProtocolTest, FridgeMsgTypes4WithoutNotifTypeIsInvalid) {
+  auto f = parse_fridge(R"({"msg_types":4,"seq":1})");
+  EXPECT_FALSE(f.valid);
+}
+
+TEST(ProtocolTest, DishwasherWashCycleStartedEvent) {
+  auto d = parse_dishwasher(R"({
+    "seq":711,"timestamp":"2026-05-03T15:09:37.021-05:00",
+    "props":{"wash_cycle_on":true},
+    "notif_seq":31,"notif_type":301,"msg_types":6
+  })");
+  ASSERT_TRUE(d.valid);
+  ASSERT_TRUE(d.notif_event.has_value());
+  EXPECT_EQ(*d.notif_event, "wash_cycle_started");
+  ASSERT_TRUE(d.wash_cycle_on.has_value());
+  EXPECT_TRUE(*d.wash_cycle_on);
+}
+
+TEST(ProtocolTest, DishwasherWashCycleCompleteEvent) {
+  auto d = parse_dishwasher(R"({
+    "msg_types":6,"seq":602,"notif_seq":1,"notif_type":302,
+    "props":{"wash_cycle_on":false}
+  })");
+  ASSERT_TRUE(d.valid);
+  ASSERT_TRUE(d.notif_event.has_value());
+  EXPECT_EQ(*d.notif_event, "wash_cycle_complete");
+}
+
+TEST(ProtocolTest, RangeOvenPreheatCompleteEvent) {
+  auto r = parse_range(R"({
+    "seq":3606,"timestamp":"2026-04-30T21:37:15.519-05:00",
+    "props":{"cav_at_set_temp":true},
+    "notif_seq":14,"notif_type":201,"msg_types":6
+  })");
+  ASSERT_TRUE(r.valid);
+  ASSERT_TRUE(r.notif_event.has_value());
+  EXPECT_EQ(*r.notif_event, "oven_preheat_complete");
+}
+
+TEST(ProtocolTest, RangeKitchenTimerEndedEvents) {
+  auto r1 = parse_range(R"({
+    "msg_types":6,"seq":1,"notif_seq":1,"notif_type":207,
+    "props":{"kitchen_timer_complete":true}
+  })");
+  ASSERT_TRUE(r1.notif_event.has_value());
+  EXPECT_EQ(*r1.notif_event, "kitchen_timer_ended");
+
+  auto r2 = parse_range(R"({
+    "msg_types":6,"seq":1,"notif_seq":1,"notif_type":208,
+    "props":{"kitchen_timer2_complete":true}
+  })");
+  ASSERT_TRUE(r2.notif_event.has_value());
+  EXPECT_EQ(*r2.notif_event, "kitchen_timer2_ended");
+}
+
+TEST(ProtocolTest, NotifTypeInPollResponseIsIgnored) {
+  auto f = parse_fridge(R"({
+    "status":0,"resp":{
+      "notifs":[{"notif_type":109,"notif_seq":1,"timestamp":"2026-05-04T09:38:51"}],
+      "ref_set_temp":38
+    }
+  })");
+  ASSERT_TRUE(f.valid);
+  EXPECT_FALSE(f.notif_event.has_value());
 }
 
 TEST(ProtocolTest, DishwasherNegativeRemainingClampsToZero) {

@@ -74,6 +74,10 @@ struct CommonBus {
   esphome::text_sensor::TextSensor *os_version = nullptr;
   esphome::text_sensor::TextSensor *rtapp_version = nullptr;
   esphome::text_sensor::TextSensor *board_version = nullptr;
+  // Latest notif_type → human-readable event name (e.g. "fridge_door_open").
+  // Updated only on push messages that carry a notif_type; HA automations
+  // can trigger on state-changes here.
+  esphome::text_sensor::TextSensor *notif_event = nullptr;
 
   void publish_sabbath_on(bool v) { detail::publish_if(sabbath_on, v); }
   void publish_svc_required(bool v) { detail::publish_if(svc_required, v); }
@@ -106,6 +110,9 @@ struct CommonBus {
   }
   void publish_board_version(const std::string &v) {
     detail::publish_if(board_version, v);
+  }
+  void publish_notif_event(const std::string &v) {
+    detail::publish_if(notif_event, v);
   }
 };
 

@@ -66,6 +66,94 @@ JsonObjectConst extract_data(JsonObjectConst root, bool &is_poll) {
   return JsonObjectConst();
 }
 
+// Format the unknown-code fallback used when notif_type is present but not
+// recognized by the per-appliance mapping. Surfaces the raw integer to HA
+// (as e.g. "fridge_event_142") so users can observe and report new codes
+// without us hard-coding a placeholder name.
+std::string unknown_notif_event(const char *appliance, int notif_type) {
+  char buf[40];
+  std::snprintf(buf, sizeof(buf), "%s_event_%d", appliance, notif_type);
+  return buf;
+}
+
+// notif_type → human-readable event name. Mappings come from issue #69
+// debug captures, cross-referenced against the official Sub-Zero iOS app's
+// push notification text. Codes not in the table fall through to
+// "<appliance>_event_<n>" so unknown codes are still observable.
+std::optional<std::string> fridge_notif_event(JsonObjectConst root) {
+  auto t = opt_int(root["notif_type"]);
+  if (!t)
+    return std::nullopt;
+  switch (*t) {
+  case 101:
+    return std::string("fridge_door_open");
+  case 102:
+    return std::string("freezer_door_open");
+  case 106:
+    return std::string("fridge_setpoint_changed");
+  case 107:
+    return std::string("freezer_setpoint_changed");
+  case 108:
+    return std::string("water_filter_expired");
+  case 109:
+    return std::string("air_filter_expired");
+  default:
+    return unknown_notif_event("fridge", *t);
+  }
+}
+
+std::optional<std::string> dishwasher_notif_event(JsonObjectConst root) {
+  auto t = opt_int(root["notif_type"]);
+  if (!t)
+    return std::nullopt;
+  switch (*t) {
+  case 301:
+    return std::string("wash_cycle_started");
+  case 302:
+    return std::string("wash_cycle_complete");
+  case 304:
+    return std::string("rinse_aid_low");
+  case 306:
+    return std::string("wash_cycle_interrupted");
+  case 307:
+    return std::string("wash_cycle_cancelled");
+  default:
+    return unknown_notif_event("dishwasher", *t);
+  }
+}
+
+std::optional<std::string> range_notif_event(JsonObjectConst root) {
+  auto t = opt_int(root["notif_type"]);
+  if (!t)
+    return std::nullopt;
+  switch (*t) {
+  case 201:
+    return std::string("oven_preheat_complete");
+  case 203:
+    return std::string("oven_probe_in_use");
+  case 205:
+    return std::string("oven_probe_temp_reached");
+  case 207:
+    return std::string("kitchen_timer_ended");
+  case 208:
+    return std::string("kitchen_timer2_ended");
+  case 209:
+    return std::string("kitchen_timer_1min_remaining");
+  case 210:
+    return std::string("kitchen_timer2_1min_remaining");
+  case 211:
+    return std::string("timed_cook_ended");
+  case 213:
+    return std::string("timed_cook_1min_remaining");
+  case 215:
+    return std::string("oven_probe_within_10deg");
+  case 218:
+    return std::string("oven_door_opened");
+  default:
+    return unknown_notif_event("range", *t);
+  }
+}
+
 void fill_version(JsonObjectConst v, Version &out) {
   out.fw = opt_str(v["fw"]);
   out.api = opt_str(v["api"]);
@@ -133,12 +221,26 @@ FridgeState parse_fridge(const std::string &json) {
     return state;
   if (!doc.is<JsonObject>())
     return state;
+  JsonObjectConst root = doc.as<JsonObjectConst>();
+  // Extract notif_event from root first — `notif_type` lives at the root of
+  // push messages, alongside `seq`/`timestamp`, NOT inside `props`.
+  auto notif_event = fridge_notif_event(root);
   bool is_poll = true;
-  JsonObjectConst data = extract_data(doc.as<JsonObjectConst>(), is_poll);
-  if (data.isNull())
+  JsonObjectConst data = extract_data(root, is_poll);
+  if (data.isNull()) {
+    // msg_types:4 notification-only push: no `props`/`resp`, just notif_type
+    // at root. Mark valid so the bus can publish the event; leave data
+    // fields empty.
+    if (notif_event) {
+      state.valid = true;
+      state.is_poll = false;
+      state.notif_event = std::move(notif_event);
+    }
     return state;
+  }
   state.valid = true;
   state.is_poll = is_poll;
+  state.notif_event = std::move(notif_event);
   capture_keys(data, state.data_keys);
   fill_common(data, state.common);
 
@@ -173,13 +275,21 @@ DishwasherState parse_dishwasher(const std::string &json) {
     return state;
   if (!doc.is<JsonObject>())
     return state;
-  bool is_poll = true;
   JsonObjectConst root = doc.as<JsonObjectConst>();
+  auto notif_event = dishwasher_notif_event(root);
+  bool is_poll = true;
   JsonObjectConst data = extract_data(root, is_poll);
-  if (data.isNull())
+  if (data.isNull()) {
+    if (notif_event) {
+      state.valid = true;
+      state.is_poll = false;
+      state.notif_event = std::move(notif_event);
+    }
     return state;
+  }
   state.valid = true;
   state.is_poll = is_poll;
+  state.notif_event = std::move(notif_event);
   capture_keys(data, state.data_keys);
   fill_common(data, state.common);
 
@@ -220,12 +330,21 @@ RangeState parse_range(const std::string &json) {
     return state;
   if (!doc.is<JsonObject>())
     return state;
+  JsonObjectConst root = doc.as<JsonObjectConst>();
+  auto notif_event = range_notif_event(root);
   bool is_poll = true;
-  JsonObjectConst data = extract_data(doc.as<JsonObjectConst>(), is_poll);
-  if (data.isNull())
+  JsonObjectConst data = extract_data(root, is_poll);
+  if (data.isNull()) {
+    if (notif_event) {
+      state.valid = true;
+      state.is_poll = false;
+      state.notif_event = std::move(notif_event);
+    }
     return state;
+  }
   state.valid = true;
   state.is_poll = is_poll;
+  state.notif_event = std::move(notif_event);
   capture_keys(data, state.data_keys);
   fill_common(data, state.common);
 

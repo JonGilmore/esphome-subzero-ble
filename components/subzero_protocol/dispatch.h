@@ -62,6 +62,8 @@ inline void dispatch_common(const CommonFields &c, Bus &bus) {
 template <typename Bus>
 inline void dispatch_fridge(const FridgeState &s, Bus &bus) {
   dispatch_common(s.common, bus);
+  if (s.notif_event)
+    bus.publish_notif_event(*s.notif_event);
   // Fridge / Freezer
   if (s.ref_set_temp)
     bus.publish_set_temp(*s.ref_set_temp);
@@ -107,6 +109,8 @@ inline void dispatch_fridge(const FridgeState &s, Bus &bus) {
 template <typename Bus>
 inline void dispatch_dishwasher(const DishwasherState &s, Bus &bus) {
   dispatch_common(s.common, bus);
+  if (s.notif_event)
+    bus.publish_notif_event(*s.notif_event);
   if (s.door_ajar)
     bus.publish_door_ajar(*s.door_ajar);
   if (s.wash_cycle_on)
@@ -148,6 +152,8 @@ inline void dispatch_dishwasher(const DishwasherState &s, Bus &bus) {
 template <typename Bus>
 inline void dispatch_range(const RangeState &s, Bus &bus) {
   dispatch_common(s.common, bus);
+  if (s.notif_event)
+    bus.publish_notif_event(*s.notif_event);
   if (s.door_ajar)
     bus.publish_door_ajar(*s.door_ajar);
   // Primary cavity
