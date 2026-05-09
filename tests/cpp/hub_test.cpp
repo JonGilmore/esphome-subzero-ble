@@ -350,25 +350,28 @@ TEST_F(HubFixture, PeriodicPoll_WritesUnlockAndGetAsyncOnHappyPath) {
   EXPECT_TRUE(transport_.wrote_command_to(d6, "get_async"));
 }
 
-TEST_F(HubFixture, PeriodicPoll_ZombieDetection_ReconnectsAfterThreeMisses) {
+TEST_F(HubFixture, PeriodicPoll_PollMissIsDiagnosticOnly_NoReconnect) {
   hub_.set_stored_pin("12345");
   transport_.set_gatt_db(full_gatt_db());
   hub_.handle_connected();
   scheduler_.advance_by(3000);
   transport_.clear_writes();
-  // Each poll without a notification arriving counts as a miss.
-  // poll_ok_ enters this block at false (subscribe_initial_get_ explicitly
-  // sets it to false; no notify arrived in the test). After 3 misses the
-  // hub forces a reconnect and resets poll_miss to 0.
+  // poll_miss_ is now diagnostic-only. It still increments on silent
+  // polls (so logs make the silent-poll case visible) but does NOT
+  // trigger a reconnect — that's the job of the scheduled session
+  // refresh (kSessionRefreshIntervalMs in subscribe_initial_get_).
+  std::size_t disconnect_before = transport_.disconnect_count();
   hub_.do_periodic_poll();
   EXPECT_EQ(hub_.poll_miss(), 1);
   hub_.do_periodic_poll();
   EXPECT_EQ(hub_.poll_miss(), 2);
-  std::size_t disconnect_before = transport_.disconnect_count();
   hub_.do_periodic_poll();
-  EXPECT_GT(transport_.disconnect_count(), disconnect_before);
-  EXPECT_EQ(hub_.poll_miss(), 0);
-  EXPECT_TRUE(any_status_contains("Connection stale"));
+  EXPECT_EQ(hub_.poll_miss(), 3);
+  hub_.do_periodic_poll();
+  EXPECT_EQ(hub_.poll_miss(), 4);
+  EXPECT_EQ(transport_.disconnect_count(), disconnect_before)
+      << "poll_miss_ at any value must NOT trigger a reconnect — only "
+         "the scheduled session-refresh timer does.";
 }
 
 // =============================================================================
@@ -838,30 +841,53 @@ TEST_F(HubFixture, PollOk_SetByActualPollResponse) {
       << "poll_miss_ must reset to 0 once a real poll response arrives.";
 }
 
-TEST_F(HubFixture, ZombieDetector_StillFiresWithPushTraffic) {
-  // Direct integration test for the live-log scenario from the issue
-  // #91 thread (Wall Oven SO3050PESP fw 8.5): appliance keeps pushing
-  // msg_types:1 every minute but never answers get_async. The zombie
-  // detector must still trip after 3 silent polls and force a reconnect
-  // — otherwise the appliance state stays frozen on its initial poll
-  // values forever.
+TEST_F(HubFixture, PushTraffic_DoesNotForceReconnectFromPollSilence) {
   hub_.set_stored_pin("12345");
   run_to_ready_();
   hub_.parse_should_succeed_ = true;
   std::size_t disc_before = transport_.disconnect_count();
 
-  // Cycle 1: poll fails silently, then push arrives (poll_ok_ stays false)
-  hub_.do_periodic_poll();
-  feed_complete_d6_(hub_,
-                    R"({"diagnostic_status":"0x1","msg_types":1,"seq":1})");
-  // Cycle 2: poll fails silently, push arrives
-  hub_.do_periodic_poll();
-  feed_complete_d6_(hub_,
-                    R"({"diagnostic_status":"0x2","msg_types":1,"seq":2})");
-  // Cycle 3: poll fails silently → miss hits threshold → ZOMBIE FIRES
-  hub_.do_periodic_poll();
+  for (int i = 0; i < 6; ++i) {
+    hub_.do_periodic_poll();
+    feed_complete_d6_(hub_,
+                      R"({"diagnostic_status":"0x1","msg_types":1,"seq":1})");
+  }
+  EXPECT_EQ(transport_.disconnect_count(), disc_before)
+      << "Silent polls must not kill a healthy push-streaming connection. "
+         "Reconnect is now scheduled (18 min) — not poll-miss-triggered.";
+  EXPECT_GE(hub_.poll_miss(), 6)
+      << "poll_miss_ should still increment as a diagnostic counter "
+         "even though it no longer drives reconnect.";
+}
+
+TEST_F(HubFixture, SessionRefresh_FiresAfterIntervalAndDisconnects) {
+  hub_.set_stored_pin("12345");
+  run_to_ready_();
+  std::size_t disc_before = transport_.disconnect_count();
+
+  // Just before the refresh interval — no disconnect yet.
+  scheduler_.advance_by(SubzeroHub::kSessionRefreshIntervalMs - 1000);
+  EXPECT_EQ(transport_.disconnect_count(), disc_before)
+      << "Session refresh must not fire before the interval elapses.";
+
+  // Cross the interval — refresh fires, transport disconnect requested.
+  scheduler_.advance_by(2000);
   EXPECT_GT(transport_.disconnect_count(), disc_before)
-      << "Zombie detector must force a reconnect after 3 silent polls "
-         "even when push notifications keep arriving — otherwise the "
-         "fw 8.5 silent-poll case never recovers.";
+      << "Session refresh must trigger a disconnect after "
+         "kSessionRefreshIntervalMs.";
+  EXPECT_TRUE(any_status_contains("Refreshing session"));
+}
+
+TEST_F(HubFixture, SessionRefresh_CancelledOnDisconnect) {
+  hub_.set_stored_pin("12345");
+  run_to_ready_();
+  ASSERT_TRUE(scheduler_.has_pending("session_refresh"))
+      << "Session refresh timer should be armed after subscribe_initial_get_.";
+
+  // External disconnect (e.g. RF interruption, appliance reboot) — the
+  // scheduled timer must be cancelled so it doesn't try to disconnect
+  // an already-disconnected transport on the next session.
+  hub_.handle_disconnected();
+  EXPECT_FALSE(scheduler_.has_pending("session_refresh"))
+      << "handle_disconnected must cancel the session-refresh timer.";
 }

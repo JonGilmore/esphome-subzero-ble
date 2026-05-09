@@ -112,6 +112,10 @@ public:
   // Per-appliance stagger to avoid concurrent bonding races on shared
   // ESP32. Translated from the `poll_offset` substitution.
   void set_poll_offset_ms(std::uint32_t ms) { poll_offset_ms_ = ms; }
+
+  // Public so tests can advance the fake scheduler to exactly the refresh
+  // deadline
+  static constexpr std::uint32_t kSessionRefreshIntervalMs = 18 * 60 * 1000;
   // Status text callback — connected to ${prefix}_debug.publish_state.
   void set_status_callback(std::function<void(const std::string &)> cb) {
     status_cb_ = std::move(cb);
@@ -190,6 +194,9 @@ private:
   void start_fast_reconnect_();
   void fast_reconnect_subscribe_();
 
+  // Scheduled session refresh - fires once per session ~18 min after unlock
+  void disconnect_for_session_refresh_();
+
   // ---- helpers ----
   void publish_status_(const std::string &text);
   void clear_handles_();
@@ -253,7 +260,6 @@ private:
   static constexpr std::uint32_t kSubmitPinPollDelayMs = 3000;
   static constexpr std::uint32_t kResetPairingDisconnectDelayMs = 1000;
   static constexpr int kStaleBondsThreshold = 3;
-  static constexpr int kZombiePollMissThreshold = 3;
   static constexpr std::uint32_t kVerbFallbackRetryDelayMs = 1000;
 };
 
