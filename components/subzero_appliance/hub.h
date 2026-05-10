@@ -240,6 +240,14 @@ private:
   bool subscribe_running_ = false;
   bool fast_reconnect_running_ = false;
 
+  // Set by disconnect_for_session_refresh_() immediately before the
+  // disconnect call, consumed and cleared in handle_disconnected().
+  // Marks the next disconnect as "by us, on purpose" so it doesn't
+  // count toward stale-bond detection (kStaleBondsThreshold). Without
+  // this, two failed reconnects on top of a session refresh would
+  // wrongly wipe the bond.
+  bool intentional_disconnect_ = false;
+
   // D6 message buffer (D5 is heartbeat-only post-PR-#72).
   esphome::subzero_protocol::MessageBuffer json_buf_;
 

@@ -118,18 +118,28 @@ void SubzeroHub::handle_disconnected() {
   fast_reconnect_running_ = false;
 
   if (d5_handle_ > 0 && phase_ >= 1) {
-    fast_retries_ += 1;
-    if (fast_retries_ >= kStaleBondsThreshold) {
-      HUB_LOGW("ble", "[%s] Stale bond (%d failures), clearing for re-pair",
-               name_.c_str(), fast_retries_);
-      transport_->remove_bond();
-      clear_handles_();
-      phase_ = 0;
-      fast_retries_ = 0;
-      publish_status_("Bond cleared, re-pairing on next connect...");
+    if (intentional_disconnect_) {
+      // Scheduled session refresh — we initiated this. Don't let it
+      // contribute to stale-bond detection; the bond is fine, we're
+      // just rotating the unlock session.
+      intentional_disconnect_ = false;
+      HUB_LOGI("ble",
+               "[%s] Disconnected (intentional refresh, handles cached, d5=%d)",
+               name_.c_str(), d5_handle_);
     } else {
-      HUB_LOGI("ble", "[%s] Disconnected (handles cached, d5=%d, retries=%d)",
-               name_.c_str(), d5_handle_, fast_retries_);
+      fast_retries_ += 1;
+      if (fast_retries_ >= kStaleBondsThreshold) {
+        HUB_LOGW("ble", "[%s] Stale bond (%d failures), clearing for re-pair",
+                 name_.c_str(), fast_retries_);
+        transport_->remove_bond();
+        clear_handles_();
+        phase_ = 0;
+        fast_retries_ = 0;
+        publish_status_("Bond cleared, re-pairing on next connect...");
+      } else {
+        HUB_LOGI("ble", "[%s] Disconnected (handles cached, d5=%d, retries=%d)",
+                 name_.c_str(), d5_handle_, fast_retries_);
+      }
     }
   } else {
     phase_ = 0;
@@ -539,6 +549,9 @@ void SubzeroHub::disconnect_for_session_refresh_() {
       name_.c_str(), static_cast<unsigned>(kSessionRefreshIntervalMs / 60000));
   json_buf_.clear();
   publish_status_("Refreshing session...");
+  // Tag the next disconnect callback so handle_disconnected skips
+  // fast_retries_ accounting — see intentional_disconnect_ comment.
+  intentional_disconnect_ = true;
   transport_->disconnect();
 }
 

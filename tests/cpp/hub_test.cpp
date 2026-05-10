@@ -891,3 +891,26 @@ TEST_F(HubFixture, SessionRefresh_CancelledOnDisconnect) {
   EXPECT_FALSE(scheduler_.has_pending("session_refresh"))
       << "handle_disconnected must cancel the session-refresh timer.";
 }
+
+TEST_F(HubFixture, SessionRefresh_DoesNotIncrementFastRetries) {
+  hub_.set_stored_pin("12345");
+  run_to_ready_();
+  ASSERT_EQ(hub_.fast_retries(), 0);
+
+  // Trigger the scheduled session refresh. The hub calls
+  // transport_->disconnect(); in production the BLE stack then
+  // delivers the disconnect callback to handle_disconnected().
+  scheduler_.advance_by(SubzeroHub::kSessionRefreshIntervalMs);
+  hub_.handle_disconnected();
+
+  EXPECT_EQ(hub_.fast_retries(), 0)
+      << "Intentional session-refresh disconnect must not contribute "
+         "to stale-bond detection. Otherwise two failed reconnects on "
+         "top of a refresh would wrongly trigger remove_bond().";
+
+  // And the flag must auto-clear: a subsequent unexpected disconnect
+  // (e.g. RF loss) should still increment normally.
+  hub_.handle_disconnected();
+  EXPECT_EQ(hub_.fast_retries(), 1)
+      << "Unexpected disconnects after a refresh must still count.";
+}
