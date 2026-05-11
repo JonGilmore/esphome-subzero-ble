@@ -109,6 +109,8 @@ json fridge_to_json(const FridgeState &s) {
   OPT_PUT(o, s, air_filter_on);
   OPT_PUT(o, s, air_filter_pct_remaining);
   OPT_PUT(o, s, water_filter_pct_remaining);
+  OPT_PUT(o, s, water_filter_gal_remaining);
+  OPT_PUT(o, s, water_filter_end_date);
   return o;
 }
 
@@ -287,6 +289,32 @@ TEST(ProtocolTest, PinTooLongIsIgnored) {
 TEST(ProtocolTest, StatusNonZeroIsInvalid) {
   auto f = parse_fridge(R"({"status":1,"resp":{"ref_set_temp":38}})");
   EXPECT_FALSE(f.valid);
+}
+
+TEST(ProtocolTest, FridgeWaterFilterGallonsAndEndDate) {
+  auto f = parse_fridge(R"({"status":0,"resp":{
+    "water_filter_pct_remaining": 50,
+    "water_filter_gal_remaining": 162.5,
+    "water_filter_end_date": "2027-05-10"
+  }})");
+  ASSERT_TRUE(f.valid);
+  ASSERT_TRUE(f.water_filter_gal_remaining.has_value());
+  EXPECT_FLOAT_EQ(*f.water_filter_gal_remaining, 162.5f);
+  ASSERT_TRUE(f.water_filter_end_date.has_value());
+  // Date-only input is promoted to a full ISO8601 timestamp so HA's
+  // `timestamp` device_class accepts the string.
+  EXPECT_EQ(*f.water_filter_end_date, "2027-05-10T00:00:00+00:00");
+}
+
+TEST(ProtocolTest, FridgeWaterFilterEndDatePreservesFullTimestamp) {
+  // If a future firmware ever sends a full timestamp, pass it through
+  // unmodified.
+  auto f = parse_fridge(R"({"status":0,"resp":{
+    "water_filter_end_date": "2027-05-10T12:34:56Z"
+  }})");
+  ASSERT_TRUE(f.valid);
+  ASSERT_TRUE(f.water_filter_end_date.has_value());
+  EXPECT_EQ(*f.water_filter_end_date, "2027-05-10T12:34:56Z");
 }
 
 TEST(ProtocolTest, FridgeDoorFallsBackToGenericDoor) {

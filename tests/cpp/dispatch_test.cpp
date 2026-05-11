@@ -71,6 +71,10 @@ struct FridgeRecorder : CommonRecorder {
   void publish_crisp_set_temp(float v) { floats["crisp_set_temp"] = v; }
   void publish_air_filter_pct(float v) { floats["air_filter_pct"] = v; }
   void publish_water_filter_pct(float v) { floats["water_filter_pct"] = v; }
+  void publish_water_filter_gal(float v) { floats["water_filter_gal"] = v; }
+  void publish_water_filter_end_date(const std::string &v) {
+    strings["water_filter_end_date"] = v;
+  }
 };
 
 struct DishwasherRecorder : CommonRecorder {

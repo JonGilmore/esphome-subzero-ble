@@ -81,6 +81,12 @@ public:
   void set_water_filter_pct_sensor(esphome::sensor::Sensor *s) {
     bus_.water_filter_pct = s;
   }
+  void set_water_filter_gal_sensor(esphome::sensor::Sensor *s) {
+    bus_.water_filter_gal = s;
+  }
+  void set_water_filter_end_date_sensor(esphome::text_sensor::TextSensor *s) {
+    bus_.water_filter_end_date = s;
+  }
 
 protected:
   SubzeroHub *hub() override { return &hub_; }

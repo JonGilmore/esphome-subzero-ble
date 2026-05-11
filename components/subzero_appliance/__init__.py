@@ -63,6 +63,7 @@ from esphome.const import (
     DEVICE_CLASS_DURATION,
     DEVICE_CLASS_PROBLEM,
     DEVICE_CLASS_TEMPERATURE,
+    DEVICE_CLASS_TIMESTAMP,
     ENTITY_CATEGORY_CONFIG,
     ENTITY_CATEGORY_DIAGNOSTIC,
     STATE_CLASS_MEASUREMENT,
@@ -398,6 +399,31 @@ FRIDGE_SENSORS = [
             "state_class": STATE_CLASS_MEASUREMENT,
             "accuracy_decimals": 0,
             CONF_ICON: "mdi:water-percent",
+        },
+        "hide_water_filter",
+    ),
+    (
+        "water_filter_gal",
+        "Water Filter Gallons Remaining",
+        "set_water_filter_gal_sensor",
+        {
+            CONF_UNIT_OF_MEASUREMENT: "gal",
+            "state_class": STATE_CLASS_MEASUREMENT,
+            "accuracy_decimals": 1,
+            CONF_ICON: "mdi:water",
+        },
+        "hide_water_filter",
+    ),
+]
+
+FRIDGE_TEXT_SENSORS = [
+    (
+        "water_filter_end_date",
+        "Water Filter Expires",
+        "set_water_filter_end_date_sensor",
+        {
+            CONF_DEVICE_CLASS: DEVICE_CLASS_TIMESTAMP,
+            CONF_ICON: "mdi:calendar-clock",
         },
         "hide_water_filter",
     ),
@@ -1120,7 +1146,7 @@ async def to_code(config):
     if type_ == "fridge":
         bs_list = FRIDGE_BINARY_SENSORS
         s_list = FRIDGE_SENSORS
-        ts_list = []
+        ts_list = FRIDGE_TEXT_SENSORS
         sw_list = FRIDGE_WRITABLE_SWITCHES
         n_list = FRIDGE_WRITABLE_NUMBERS
     elif type_ == "dishwasher":

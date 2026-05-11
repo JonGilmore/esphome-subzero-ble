@@ -265,6 +265,19 @@ FridgeState parse_fridge(const std::string &json) {
   state.air_filter_pct_remaining = opt_float(data["air_filter_pct_remaining"]);
   state.water_filter_pct_remaining =
       opt_float(data["water_filter_pct_remaining"]);
+  state.water_filter_gal_remaining =
+      opt_float(data["water_filter_gal_remaining"]);
+  // Appliance sends a date-only string (e.g. "2027-05-10"). Promote to a
+  // fully-qualified ISO8601 timestamp so HA's timestamp device_class accepts
+  // it. Pass-through any value that already contains a 'T' separator.
+  if (auto raw = opt_str(data["water_filter_end_date"])) {
+    const std::string &v = *raw;
+    if (v.size() == 10 && v[4] == '-' && v[7] == '-') {
+      state.water_filter_end_date = v + "T00:00:00+00:00";
+    } else {
+      state.water_filter_end_date = v;
+    }
+  }
   return state;
 }
 
