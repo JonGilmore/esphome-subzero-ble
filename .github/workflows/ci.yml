@@ -59,13 +59,19 @@ jobs:
           EOF
 
       - name: Patch package refs for CI
+        env:
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
         run: |
           # Point package refs to the code under test instead of a published tag.
-          # PRs: use the source branch name. Pushes: use the commit SHA.
+          # PRs: use the head repo + source branch name (supports fork PRs).
+          # Pushes: stay on the default repo and use the commit SHA.
           # Use # as sed delimiter — branch names may contain / (so | was used
           # before), but extended-regex alternation also needs |, which GNU
           # sed eats as the delimiter. # is safe in both pattern and replacement.
           REF="${GITHUB_HEAD_REF:-$GITHUB_SHA}"
+          REPO="${HEAD_REPO:-$GITHUB_REPOSITORY}"
+          sed -i -E "s#url: https://github.com/[^[:space:]]+#url: https://github.com/${REPO}#" \
+            cove-minimal-dishwasher.yaml wolf-minimal-range.yaml wolf-minimal-fridge.yaml
           sed -i -E "s#ref: (v[0-9]+\.[0-9]+\.[0-9]+|main)#ref: ${REF}#" \
             cove-minimal-dishwasher.yaml wolf-minimal-range.yaml wolf-minimal-fridge.yaml
 
@@ -112,11 +118,15 @@ jobs:
           EOF
 
       - name: Patch package refs for CI
+        env:
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
         run: |
           # Use # as sed delimiter — branch names may contain / (so | was used
           # before), but extended-regex alternation also needs |, which GNU
           # sed eats as the delimiter. # is safe in both pattern and replacement.
           REF="${GITHUB_HEAD_REF:-$GITHUB_SHA}"
+          REPO="${HEAD_REPO:-$GITHUB_REPOSITORY}"
+          sed -i -E "s#url: https://github.com/[^[:space:]]+#url: https://github.com/${REPO}#" "${{ matrix.file }}"
           sed -i -E "s#ref: (v[0-9]+\.[0-9]+\.[0-9]+|main)#ref: ${REF}#" "${{ matrix.file }}"
 
       - name: Compile ${{ matrix.file }}
