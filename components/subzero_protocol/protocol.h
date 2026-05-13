@@ -60,6 +60,7 @@ struct FridgeState {
   // to an ISO8601 timestamp ("YYYY-MM-DDT00:00:00+00:00") by the parser so
   // Home Assistant's timestamp device_class accepts it.
   std::optional<std::string> water_filter_end_date;
+  std::optional<std::string> air_filter_end_date;
 };
 
 struct DishwasherState {

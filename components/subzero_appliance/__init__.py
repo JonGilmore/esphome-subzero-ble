@@ -427,6 +427,16 @@ FRIDGE_TEXT_SENSORS = [
         },
         "hide_water_filter_extra",
     ),
+    (
+        "air_filter_end_date",
+        "Air Filter Expires",
+        "set_air_filter_end_date_sensor",
+        {
+            CONF_DEVICE_CLASS: DEVICE_CLASS_TIMESTAMP,
+            CONF_ICON: "mdi:calendar-clock",
+        },
+        "hide_air_filter",
+    ),
 ]
 
 # Writable numbers — entry shape: (suffix, name_suffix, setter, property_key,

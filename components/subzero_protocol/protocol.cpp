@@ -278,6 +278,14 @@ FridgeState parse_fridge(const std::string &json) {
       state.water_filter_end_date = v;
     }
   }
+  if (auto raw = opt_str(data["air_filter_end_date"])) {
+    const std::string &v = *raw;
+    if (v.size() == 10 && v[4] == '-' && v[7] == '-') {
+      state.air_filter_end_date = v + "T00:00:00+00:00";
+    } else {
+      state.air_filter_end_date = v;
+    }
+  }
   return state;
 }
 

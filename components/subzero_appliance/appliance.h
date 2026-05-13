@@ -87,6 +87,9 @@ public:
   void set_water_filter_end_date_sensor(esphome::text_sensor::TextSensor *s) {
     bus_.water_filter_end_date = s;
   }
+  void set_air_filter_end_date_sensor(esphome::text_sensor::TextSensor *s) {
+    bus_.air_filter_end_date = s;
+  }
 
 protected:
   SubzeroHub *hub() override { return &hub_; }

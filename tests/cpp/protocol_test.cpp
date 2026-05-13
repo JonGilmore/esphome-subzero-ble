@@ -111,6 +111,7 @@ json fridge_to_json(const FridgeState &s) {
   OPT_PUT(o, s, water_filter_pct_remaining);
   OPT_PUT(o, s, water_filter_gal_remaining);
   OPT_PUT(o, s, water_filter_end_date);
+  OPT_PUT(o, s, air_filter_end_date);
   return o;
 }
 
