@@ -51,6 +51,7 @@ constexpr const char *kTimeoutSubscribeGet = "subscribe_get";
 constexpr const char *kTimeoutFastReconnect = "fast_reconnect";
 constexpr const char *kTimeoutSubmitPinPoll = "submit_pin_poll";
 constexpr const char *kTimeoutVerbFallbackRetry = "verb_fallback_retry";
+constexpr const char *kTimeoutSessionRefresh = "session_refresh";
 } // namespace
 
 // =============================================================================
@@ -111,23 +112,34 @@ void SubzeroHub::handle_disconnected() {
   scheduler_->cancel_timeout(kTimeoutFastReconnect);
   scheduler_->cancel_timeout(kTimeoutSubmitPinPoll);
   scheduler_->cancel_timeout(kTimeoutVerbFallbackRetry);
+  scheduler_->cancel_timeout(kTimeoutSessionRefresh);
   post_bond_running_ = false;
   subscribe_running_ = false;
   fast_reconnect_running_ = false;
 
   if (d5_handle_ > 0 && phase_ >= 1) {
-    fast_retries_ += 1;
-    if (fast_retries_ >= kStaleBondsThreshold) {
-      HUB_LOGW("ble", "[%s] Stale bond (%d failures), clearing for re-pair",
-               name_.c_str(), fast_retries_);
-      transport_->remove_bond();
-      clear_handles_();
-      phase_ = 0;
-      fast_retries_ = 0;
-      publish_status_("Bond cleared, re-pairing on next connect...");
+    if (intentional_disconnect_) {
+      // Scheduled session refresh — we initiated this. Don't let it
+      // contribute to stale-bond detection; the bond is fine, we're
+      // just rotating the unlock session.
+      intentional_disconnect_ = false;
+      HUB_LOGI("ble",
+               "[%s] Disconnected (intentional refresh, handles cached, d5=%d)",
+               name_.c_str(), d5_handle_);
     } else {
-      HUB_LOGI("ble", "[%s] Disconnected (handles cached, d5=%d, retries=%d)",
-               name_.c_str(), d5_handle_, fast_retries_);
+      fast_retries_ += 1;
+      if (fast_retries_ >= kStaleBondsThreshold) {
+        HUB_LOGW("ble", "[%s] Stale bond (%d failures), clearing for re-pair",
+                 name_.c_str(), fast_retries_);
+        transport_->remove_bond();
+        clear_handles_();
+        phase_ = 0;
+        fast_retries_ = 0;
+        publish_status_("Bond cleared, re-pairing on next connect...");
+      } else {
+        HUB_LOGI("ble", "[%s] Disconnected (handles cached, d5=%d, retries=%d)",
+                 name_.c_str(), d5_handle_, fast_retries_);
+      }
     }
   } else {
     phase_ = 0;
@@ -157,26 +169,11 @@ std::uint32_t SubzeroHub::handle_passkey_request() {
 void SubzeroHub::handle_d5_notify(const std::uint8_t * /*data*/,
                                   std::size_t /*len*/) {
   // D5 indications are control-channel responses (display_pin /
-  // unlock_channel / set / scan acks) and duplicate copies of D6 push
-  // notifications — never poll responses. Setting poll_ok_=true here
-  // would mask the fw 8.5 silent-D6-poll case the same way D6 push
-  // traffic used to (the appliance keeps acking D5 commands AND
-  // mirroring D6 pushes onto D5 even when get_async on D6 has gone
-  // silent). poll_ok_ flips only in process_message_complete_ on a
-  // successful POLL RESPONSE — see CodeRabbit review on PR f795296.
-  // Body intentionally empty.
+  // unlock_channel / set / scan acks) and mirror copies of D6 pushes.
+  // Body intentionally empty - all useful state lands on D6.
 }
 
 void SubzeroHub::handle_d6_notify(const std::uint8_t *data, std::size_t len) {
-  // Don't set poll_ok_ here — push notifications on D6 (msg_types:1
-  // diagnostic_status, msg_types:2 props) would mask the fw 8.5
-  // silent-poll case where the appliance keeps pushing but never
-  // answers get_async. poll_ok_ is set in process_message_complete_
-  // only when a parsed message is a real POLL RESPONSE (status:0).
-  // The zombie detector then correctly forces a reconnect every ~3 min
-  // on fw 8.5, which is the only way to refresh full state on those
-  // devices (D6 unlock session expires server-side after ~60-80s of
-  // idle).
   if (json_buf_.feed(data, len)) {
     process_message_complete_();
   }
@@ -215,13 +212,6 @@ void SubzeroHub::process_message_complete_() {
     return;
   }
   fast_retries_ = 0;
-  // poll_ok_ tracks specifically successful POLL RESPONSES (full state),
-  // not pushes. Setting it on incidental pushes (msg_types:1
-  // diagnostic_status, msg_types:2 props) would mask the fw 8.5
-  // silent-poll case — appliance keeps pushing but never answers
-  // get_async, so the zombie detector must still trigger a reconnect.
-  // has_status_value is whitespace-tolerant and digit-suffix-safe (won't
-  // false-match `"status":01` or `"status": 0` or `"status":09`).
   if (esphome::subzero_protocol::has_status_value(*msg, '0')) {
     poll_ok_ = true;
   }
@@ -302,22 +292,10 @@ void SubzeroHub::do_periodic_poll() {
     return;
   if (!transport_->connected())
     return;
-
   if (poll_ok_) {
     poll_miss_ = 0;
   } else {
     poll_miss_ += 1;
-    if (poll_miss_ >= kZombiePollMissThreshold) {
-      HUB_LOGW("szg",
-               "[%s] Appliance unresponsive (%d intervals, no data), "
-               "forcing reconnect",
-               name_.c_str(), poll_miss_);
-      poll_miss_ = 0;
-      json_buf_.clear();
-      publish_status_("Connection stale, reconnecting...");
-      transport_->disconnect();
-      return;
-    }
   }
   poll_ok_ = false;
   json_buf_.clear();
@@ -546,6 +524,35 @@ void SubzeroHub::subscribe_initial_get_() {
   poll_ok_ = false;
   write_poll_command_(d6_handle_);
   publish_status_("Connected and polling.");
+
+  // Arm scheduled session refresh: ~18 min from now, proactively
+  // disconnect-and-reconnect to refresh the appliance's BLE unlock
+  // session before the firmware's own ~20-25 min expiry kicks us off
+  // unpredictably. handle_disconnected cancels the timer if the link
+  // drops for any other reason, so we never carry it across sessions.
+  scheduler_->set_timeout(kTimeoutSessionRefresh, kSessionRefreshIntervalMs,
+                          [this]() { disconnect_for_session_refresh_(); });
+}
+
+// =============================================================================
+// Scheduled session refresh
+// =============================================================================
+
+void SubzeroHub::disconnect_for_session_refresh_() {
+  if (transport_ == nullptr)
+    return;
+  if (!transport_->connected())
+    return;
+  HUB_LOGI(
+      "ble",
+      "[%s] Scheduled session refresh (%u min), reconnecting via fast path",
+      name_.c_str(), static_cast<unsigned>(kSessionRefreshIntervalMs / 60000));
+  json_buf_.clear();
+  publish_status_("Refreshing session...");
+  // Tag the next disconnect callback so handle_disconnected skips
+  // fast_retries_ accounting — see intentional_disconnect_ comment.
+  intentional_disconnect_ = true;
+  transport_->disconnect();
 }
 
 // =============================================================================
@@ -588,6 +595,7 @@ void SubzeroHub::press_connect() {
     scheduler_->cancel_timeout(kTimeoutFastReconnect);
     scheduler_->cancel_timeout(kTimeoutSubmitPinPoll);
     scheduler_->cancel_timeout(kTimeoutVerbFallbackRetry);
+    scheduler_->cancel_timeout(kTimeoutSessionRefresh);
   }
   post_bond_running_ = false;
   subscribe_running_ = false;
@@ -681,6 +689,7 @@ void SubzeroHub::press_reset_pairing() {
     scheduler_->cancel_timeout(kTimeoutFastReconnect);
     scheduler_->cancel_timeout(kTimeoutSubmitPinPoll);
     scheduler_->cancel_timeout(kTimeoutVerbFallbackRetry);
+    scheduler_->cancel_timeout(kTimeoutSessionRefresh);
   }
   pin_confirmed_ = false;
   clear_handles_();
