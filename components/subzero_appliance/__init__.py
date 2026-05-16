@@ -907,7 +907,7 @@ TYPE_SCHEMAS = {
         cv.Optional("hide_crisper", default=True): cv.boolean,
         cv.Optional("hide_air_filter", default=True): cv.boolean,
         cv.Optional("hide_water_filter", default=True): cv.boolean,
-        cv.Optional("hide_water_filter_extra", default=False): cv.boolean,
+        cv.Optional("hide_water_filter_extra", default=True): cv.boolean,
     },
     "dishwasher": {
         cv.Optional("hide_softener", default=True): cv.boolean,

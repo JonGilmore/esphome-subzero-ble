@@ -185,7 +185,7 @@ subzero_appliance:
 | `hide_crisper` | `true` | Crisper Drawer Set Temperature
 | `hide_air_filter` | `true` | Air Filter, Air Filter Remaining
 | `hide_water_filter` | `true` | Water Filter Remaining (%)
-| `hide_water_filter_extra` | `false` | Water Filter Gallons Remaining, Water Filter Expires (set true on models that don't expose these)
+| `hide_water_filter_extra` | `true` | Water Filter Gallons Remaining, Water Filter Expires (set false on models that expose these)
 | `hide_softener` | `true` | Water Softener Low (dishwasher only)
 | `hide_oven2` | `true` | All Oven 2 sensors (range only - for dual-oven)
 |===
