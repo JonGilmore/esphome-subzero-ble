@@ -265,6 +265,8 @@ TEST(Dispatch, FridgeFieldsRouted) {
   s.air_filter_on = true;
   s.air_filter_pct_remaining = 80.0f;
   s.water_filter_pct_remaining = 50.0f;
+  s.water_filter_gal_remaining = 220.0f;
+  s.water_filter_end_date = std::string("2027-04-26T00:00:00+00:00");
 
   FridgeRecorder rec;
   dispatch_fridge(s, rec);
@@ -284,6 +286,8 @@ TEST(Dispatch, FridgeFieldsRouted) {
   EXPECT_EQ(rec.bools["air_filter_on"], true);
   EXPECT_FLOAT_EQ(rec.floats["air_filter_pct"], 80.0f);
   EXPECT_FLOAT_EQ(rec.floats["water_filter_pct"], 50.0f);
+  EXPECT_FLOAT_EQ(rec.floats["water_filter_gal"], 220.0f);
+  EXPECT_EQ(rec.strings["water_filter_end_date"], "2027-04-26T00:00:00+00:00");
 }
 
 // Some fridges (e.g. PRO3650G) wire the main door and the refrigerator drawer

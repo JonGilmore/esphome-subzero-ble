@@ -412,7 +412,7 @@ FRIDGE_SENSORS = [
             "accuracy_decimals": 1,
             CONF_ICON: "mdi:water",
         },
-        "hide_water_filter",
+        "hide_water_filter_extra",
     ),
 ]
 
@@ -425,7 +425,7 @@ FRIDGE_TEXT_SENSORS = [
             CONF_DEVICE_CLASS: DEVICE_CLASS_TIMESTAMP,
             CONF_ICON: "mdi:calendar-clock",
         },
-        "hide_water_filter",
+        "hide_water_filter_extra",
     ),
 ]
 
@@ -907,6 +907,7 @@ TYPE_SCHEMAS = {
         cv.Optional("hide_crisper", default=True): cv.boolean,
         cv.Optional("hide_air_filter", default=True): cv.boolean,
         cv.Optional("hide_water_filter", default=True): cv.boolean,
+        cv.Optional("hide_water_filter_extra", default=True): cv.boolean,
     },
     "dishwasher": {
         cv.Optional("hide_softener", default=True): cv.boolean,

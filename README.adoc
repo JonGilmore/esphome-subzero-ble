@@ -184,7 +184,8 @@ subzero_appliance:
 | `hide_ref_drawer` | `true` | Refrigerator Drawer Set Temperature, Refrigerator Drawer Door
 | `hide_crisper` | `true` | Crisper Drawer Set Temperature
 | `hide_air_filter` | `true` | Air Filter, Air Filter Remaining
-| `hide_water_filter` | `true` | Water Filter Remaining
+| `hide_water_filter` | `true` | Water Filter Remaining (%)
+| `hide_water_filter_extra` | `true` | Water Filter Gallons Remaining, Water Filter Expires (set false on models that expose these)
 | `hide_softener` | `true` | Water Softener Low (dishwasher only)
 | `hide_oven2` | `true` | All Oven 2 sensors (range only - for dual-oven)
 |===
@@ -329,6 +330,8 @@ NOTE: Sub-Zero fridge firmware only exposes _set points_ over BLE - actual/measu
 | *Air Filter* | Air filter on/off binary sensor _(optional)_
 | *Air Filter Remaining* | Air filter life remaining (%) _(optional)_
 | *Water Filter Remaining* | Water filter life remaining (%) _(optional)_
+| *Water Filter Gallons Remaining* | Water filter life remaining (gallons), supported on some fridges _(optional)_
+| *Water Filter Expires* | Water filter expiration date (timestamp), supported on some fridges _(optional)_
 | *Service Required* | Alerts when the appliance flags a service need
 | *Appliance Model* | Model number (e.g. `DEU2450R`, `313`)
 | *Appliance Uptime* | Time since last power cycle
