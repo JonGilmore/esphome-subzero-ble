@@ -435,7 +435,7 @@ FRIDGE_TEXT_SENSORS = [
             CONF_DEVICE_CLASS: DEVICE_CLASS_TIMESTAMP,
             CONF_ICON: "mdi:calendar-clock",
         },
-        "hide_air_filter",
+        "hide_air_filter_extra",
     ),
 ]
 
@@ -916,6 +916,7 @@ TYPE_SCHEMAS = {
         cv.Optional("hide_ref_drawer", default=True): cv.boolean,
         cv.Optional("hide_crisper", default=True): cv.boolean,
         cv.Optional("hide_air_filter", default=True): cv.boolean,
+        cv.Optional("hide_air_filter_extra", default=True): cv.boolean,
         cv.Optional("hide_water_filter", default=True): cv.boolean,
         cv.Optional("hide_water_filter_extra", default=True): cv.boolean,
     },
