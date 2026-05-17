@@ -10,6 +10,7 @@
   "water_filter_pct_remaining": 0,
   "water_filter_gal_remaining": 107,
   "water_filter_end_date": "2023-10-04T00:00:00+00:00",
+  "air_filter_end_date": "2024-05-11T00:00:00+00:00",
   "common": {
     "sabbath_on": false,
     "service_required": false,

@@ -142,6 +142,7 @@ struct FridgeBus : CommonBus {
   esphome::sensor::Sensor *water_filter_pct = nullptr;
   esphome::sensor::Sensor *water_filter_gal = nullptr;
   esphome::text_sensor::TextSensor *water_filter_end_date = nullptr;
+  esphome::text_sensor::TextSensor *air_filter_end_date = nullptr;
 
   void publish_door_ajar(bool v) { detail::publish_if(door_ajar, v); }
   void publish_frz_door_ajar(bool v) { detail::publish_if(frz_door_ajar, v); }
@@ -174,6 +175,9 @@ struct FridgeBus : CommonBus {
   }
   void publish_water_filter_end_date(const std::string &v) {
     detail::publish_if(water_filter_end_date, v);
+  }
+  void publish_air_filter_end_date(const std::string &v) {
+    detail::publish_if(air_filter_end_date, v);
   }
 };
 

@@ -75,6 +75,9 @@ struct FridgeRecorder : CommonRecorder {
   void publish_water_filter_end_date(const std::string &v) {
     strings["water_filter_end_date"] = v;
   }
+  void publish_air_filter_end_date(const std::string &v) {
+    strings["air_filter_end_date"] = v;
+  }
 };
 
 struct DishwasherRecorder : CommonRecorder {

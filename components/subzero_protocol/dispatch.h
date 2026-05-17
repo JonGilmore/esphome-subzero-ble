@@ -108,6 +108,8 @@ inline void dispatch_fridge(const FridgeState &s, Bus &bus) {
     bus.publish_water_filter_gal(*s.water_filter_gal_remaining);
   if (s.water_filter_end_date)
     bus.publish_water_filter_end_date(*s.water_filter_end_date);
+  if (s.air_filter_end_date)
+    bus.publish_air_filter_end_date(*s.air_filter_end_date);
 }
 
 template <typename Bus>
