@@ -324,13 +324,6 @@ FRIDGE_BINARY_SENSORS = [
         "hide_wine",
     ),
     (
-        "air_filter_on",
-        "Air Filter",
-        "set_air_filter_on_sensor",
-        {CONF_ICON: "mdi:air-filter"},
-        "hide_air_filter",
-    ),
-    (
         "long_vacation_on",
         "Long Vacation Mode",
         "set_long_vacation_on_sensor",
@@ -650,6 +643,33 @@ FRIDGE_WRITABLE_NUMBERS = [
 FRIDGE_WRITABLE_SWITCHES: list = []  # sabbath_on write is confirmed working
 # (2026-07-25), but only via the Appliance Mode grouped select below —
 # no separate standalone switch is needed.
+
+# air_filter_on read-only vs writable, split the same way as the temp
+# control fields above (FRIDGE_TEMP_CONTROL_READONLY / FRIDGE_WRITABLE_NUMBERS).
+# Confirmed 2026-07-25 via live BLE testing that writing this field
+# actually works — it's the "Air Purifier" toggle on the appliance's
+# display (turning it off there was independently observed to flip this
+# same BLE field). Gated by enable_mode_selects since it's a general
+# "extra writable control" opt-in, not specifically about temperature.
+FRIDGE_AIR_FILTER_READONLY = [
+    (
+        "air_filter_on",
+        "Air Filter",
+        "set_air_filter_on_sensor",
+        {CONF_ICON: "mdi:air-filter"},
+        "hide_air_filter",
+    ),
+]
+FRIDGE_AIR_FILTER_WRITABLE_SWITCH = [
+    (
+        "air_filter_on",
+        "Air Filter",
+        "set_air_filter_on_switch",
+        "air_filter_on",
+        {CONF_ICON: "mdi:air-filter"},
+        "hide_air_filter",
+    ),
+]
 
 # "Automatic crisper temperature" toggle from the app. Gates whether
 # crisp_set_temp writes take effect at all (confirmed via live BLE
@@ -1597,9 +1617,13 @@ async def to_code(config):
 
     # ---- Type-specific entities ----
     if type_ == "fridge":
-        bs_list = FRIDGE_BINARY_SENSORS
         ts_list = FRIDGE_TEXT_SENSORS
-        sw_list = FRIDGE_WRITABLE_SWITCHES
+        if config.get("enable_mode_selects"):
+            bs_list = FRIDGE_BINARY_SENSORS
+            sw_list = FRIDGE_WRITABLE_SWITCHES + FRIDGE_AIR_FILTER_WRITABLE_SWITCH
+        else:
+            bs_list = FRIDGE_BINARY_SENSORS + FRIDGE_AIR_FILTER_READONLY
+            sw_list = FRIDGE_WRITABLE_SWITCHES
         if config.get("enable_temp_control"):
             s_list = FRIDGE_SENSORS
             n_list = FRIDGE_WRITABLE_NUMBERS

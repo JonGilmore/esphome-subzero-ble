@@ -329,7 +329,7 @@ NOTE: Sub-Zero fridge firmware only exposes _set points_ over BLE - actual/measu
 | *Refrigerator Drawer Set Temperature* | Drawer compartment setpoint (°F) _(optional)_
 | *Refrigerator Drawer Door* | Drawer open/closed binary sensor _(optional)_. On models that wire the main door and drawer to a single switch (e.g. PRO3650G), this mirrors the Refrigerator Door state.
 | *Crisper Drawer Set Temperature* | Crisper drawer setpoint (°F) _(optional)_
-| *Air Filter* | Air filter on/off binary sensor _(optional)_
+| *Air Filter* | Air filter on/off binary sensor _(optional)_. This is the appliance's "Air Purifier" toggle - confirmed writable, see <<fridge-write-support>>.
 | *Air Filter Remaining* | Air filter life remaining (%) _(optional)_
 | *Water Filter Remaining* | Water filter life remaining (%) _(optional)_
 | *Water Filter Gallons Remaining* | Water filter life remaining (gallons), supported on some fridges _(optional)_
@@ -350,7 +350,7 @@ NOTE: Sub-Zero fridge firmware only exposes _set points_ over BLE - actual/measu
 | *Appliance Uptime* | Time since last power cycle
 |===
 
-NOTE: **The following fridge features are only available on this fork** (not yet merged upstream): opt-in setpoint writes, the Ice Maker Mode / Appliance Mode / Night Mode / Humidity Control selects, and the Automatic Crisper Temperature switch. See <<fridge-write-support>> below. To use them, point `external_components` at `https://github.com/bob-laz/esphome-subzero-ble` (`ref: main`, or pin to a specific commit) instead of the upstream URL shown in the examples above.
+NOTE: **The following fridge features are only available on this fork** (not yet merged upstream): opt-in setpoint writes, the Ice Maker Mode / Appliance Mode / Night Mode / Humidity Control selects, and the Automatic Crisper Temperature / Air Filter switches. See <<fridge-write-support>> below. To use them, point `external_components` at `https://github.com/bob-laz/esphome-subzero-ble` (`ref: main`, or pin to a specific commit) instead of the upstream URL shown in the examples above.
 
 === Dishwasher
 
@@ -482,7 +482,7 @@ subzero_appliance:
     enable_mode_selects: true    # <2>
 ----
 <1> Turns Set Temperature, Freezer Set Temperature, and Crisper Drawer Set Temperature from read-only Sensors into writable Numbers, and adds an Automatic Crisper Temperature switch.
-<2> Adds the Ice Maker Mode, Appliance Mode, Night Mode, and Humidity Control selects.
+<2> Adds the Ice Maker Mode, Appliance Mode, Night Mode, and Humidity Control selects, and turns Air Filter into a writable switch.
 
 **`enable_temp_control`**
 
@@ -506,11 +506,14 @@ subzero_appliance:
 | *Appliance Mode* (`Normal`/`High Usage`/`Short Vacation`/`Long Vacation`/`Sabbath`) | Same grouped-write pattern across `high_use_on`/`short_vacation_on`/`long_vacation_on`/`sabbath_on`. All five options confirmed, including Sabbath.
 | *Night Mode* (`Disabled`/`Enabled`) | Single-field select, confirmed both directions. Wire encoding is a plain `0`/`1`.
 | *Humidity Control* (`Normal`/`Enhanced`) | Single-field select, confirmed both directions. **Wire encoding is `1`=Normal / `2`=Enhanced** - notably not `0`/`1` like Night Mode. An earlier version of this fork assumed `0`/`1` here, which meant the write silently no-opped (the appliance ignores the invalid value `0`) and the displayed label was backwards.
+| *Air Filter* | Turns from a read-only binary sensor into a writable switch. This is the appliance's "Air Purifier" toggle - confirmed by turning it off on the display and observing this exact BLE field flip, then confirmed independently as a direct BLE write (`true`/`false` JSON boolean, not int). Both directions hold.
 |===
 
 NOTE: **Smart Grid Mode was briefly a writable switch here too, and has been reverted to a plain read-only sensor.** Live testing confirmed writes don't take effect - toggling it off in HA reverted back to `true` within seconds - and no corresponding control exists in the official app or the appliance's own display. It's documented as a regular sensor above (gated by `hide_extra_diagnostics`, available regardless of `enable_mode_selects`).
 
 Every writable entity (both flags) shares one serialized write queue that drains one BLE write roughly every 750ms, regardless of which entity triggered it. Firing several writes back-to-back in the same moment was found to occasionally drop or corrupt one of them under live testing; this pacing is what prevents that.
+
+**Confirmed NOT exposed over BLE at all** (2026-07-25, by diffing a full state poll before/after changing each on the physical display - no BLE field changed for any of these): Celsius/Fahrenheit unit, language, internal water dispenser on/off, interior light options, door alarm sound, and door alarm delay. These all appear to be purely local display preferences that never sync to the BLE state - there's no known way to read or write them through this integration. (Door alarm *on/off* specifically wasn't cleanly isolated during testing and remains untested rather than confirmed absent.)
 
 === "Clear Cloud Token" Diagnostic Button
 

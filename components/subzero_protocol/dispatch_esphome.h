@@ -127,7 +127,13 @@ struct FridgeBus : CommonBus {
   esphome::binary_sensor::BinarySensor *ref2_door_ajar = nullptr;
   esphome::binary_sensor::BinarySensor *wine_door_ajar = nullptr;
   esphome::binary_sensor::BinarySensor *wine_temp_alert = nullptr;
+  // Confirmed 2026-07-25 via live BLE testing that this is genuinely
+  // writable (not just a diagnostic flag) — corresponds to the "Air
+  // Purifier" toggle on the appliance's display. Read-only by default;
+  // opt-in writable via enable_mode_selects, matching the dual-pointer
+  // pattern used for temp control.
   esphome::binary_sensor::BinarySensor *air_filter_on = nullptr;
+  esphome::switch_::Switch *air_filter_on_switch = nullptr;
 
   // Set-temps are read-only Sensors by default. Writing them via `set`
   // was assumed not to work, based on testing on fw 8.5 units (appliance
@@ -274,7 +280,10 @@ struct FridgeBus : CommonBus {
   void publish_wine_temp_alert(bool v) {
     detail::publish_if(wine_temp_alert, v);
   }
-  void publish_air_filter_on(bool v) { detail::publish_if(air_filter_on, v); }
+  void publish_air_filter_on(bool v) {
+    detail::publish_if(air_filter_on, v);
+    detail::publish_if(air_filter_on_switch, v);
+  }
 
   void publish_set_temp(float v) {
     detail::publish_if(set_temp, v);

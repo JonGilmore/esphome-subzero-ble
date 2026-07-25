@@ -56,6 +56,9 @@ public:
   void set_air_filter_on_sensor(esphome::binary_sensor::BinarySensor *s) {
     bus_.air_filter_on = s;
   }
+  void set_air_filter_on_switch(esphome::switch_::Switch *s) {
+    bus_.air_filter_on_switch = s;
+  }
 
   // Set-temps are read-only Sensors by default; see FridgeBus comment in
   // dispatch_esphome.h. When `enable_temp_control: true`, the codegen
