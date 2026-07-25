@@ -63,6 +63,17 @@ JsonObjectConst extract_data(JsonObjectConst root, bool &is_poll) {
     is_poll = false;
     return root;
   }
+  // Unsolicited full-state push with no wrapper at all — confirmed via
+  // live device testing 2026-07-25: after a burst of `set` writes, the
+  // appliance sometimes sends a bare property dump directly at JSON root,
+  // with none of the status/props/msg_types markers above. Shape-wise
+  // it's identical to the msg_types:1 case, just missing that marker.
+  // Recognize it via appliance_serial, which every real full dump (poll
+  // or push, any appliance type) includes.
+  if (root["appliance_serial"].is<const char *>()) {
+    is_poll = false;
+    return root;
+  }
   return JsonObjectConst();
 }
 
@@ -261,6 +272,7 @@ FridgeState parse_fridge(const std::string &json) {
   state.wine2_set_temp = opt_float(data["wine2_set_temp"]);
   state.wine_temp_alert_on = opt_bool(data["wine_temp_alert_on"]);
   state.crisp_set_temp = opt_float(data["crisp_set_temp"]);
+  state.crisp_temp_mode = opt_int(data["crisp_temp_mode"]);
   state.air_filter_on = opt_bool(data["air_filter_on"]);
   state.air_filter_pct_remaining = opt_float(data["air_filter_pct_remaining"]);
   state.water_filter_pct_remaining =
@@ -278,6 +290,35 @@ FridgeState parse_fridge(const std::string &json) {
       state.water_filter_end_date = v;
     }
   }
+
+  // Vacation / ice modes.
+  state.long_vacation_on = opt_bool(data["long_vacation_on"]);
+  state.short_vacation_on = opt_bool(data["short_vacation_on"]);
+  state.high_use_on = opt_bool(data["high_use_on"]);
+  state.high_use_start_time = opt_str(data["high_use_start_time"]);
+  state.high_use_end_time = opt_str(data["high_use_end_time"]);
+  state.night_mode = opt_int(data["night_mode"]);
+  state.night_ice_on = opt_bool(data["night_ice_on"]);
+  state.max_ice_on = opt_bool(data["max_ice_on"]);
+  state.max_ice_start_time = opt_str(data["max_ice_start_time"]);
+  state.max_ice_end_time = opt_str(data["max_ice_end_time"]);
+
+  // Power / smart grid.
+  state.unit_on = opt_bool(data["unit_on"]);
+  state.smart_grid_on = opt_bool(data["smart_grid_on"]);
+
+  // Misc diagnostics.
+  state.pin_window_open = opt_bool(data["pin_window_open"]);
+  state.active_faults = opt_str(data["active_faults"]);
+  state.humidity_control = opt_int(data["humidity_control"]);
+  state.door_ajar_timeout = opt_int(data["door_ajar_timeout"]);
+
+  // WiFi diagnostics.
+  state.ap_ssid = opt_str(data["ap_ssid"]);
+  state.ap_rssi = opt_int(data["ap_rssi"]);
+  state.ap_chan = opt_int(data["ap_chan"]);
+  state.ap_enc = opt_int(data["ap_enc"]);
+
   return state;
 }
 

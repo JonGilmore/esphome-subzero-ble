@@ -106,11 +106,32 @@ json fridge_to_json(const FridgeState &s) {
   OPT_PUT(o, s, wine2_set_temp);
   OPT_PUT(o, s, wine_temp_alert_on);
   OPT_PUT(o, s, crisp_set_temp);
+  OPT_PUT(o, s, crisp_temp_mode);
   OPT_PUT(o, s, air_filter_on);
   OPT_PUT(o, s, air_filter_pct_remaining);
   OPT_PUT(o, s, water_filter_pct_remaining);
   OPT_PUT(o, s, water_filter_gal_remaining);
   OPT_PUT(o, s, water_filter_end_date);
+  OPT_PUT(o, s, long_vacation_on);
+  OPT_PUT(o, s, short_vacation_on);
+  OPT_PUT(o, s, high_use_on);
+  OPT_PUT(o, s, high_use_start_time);
+  OPT_PUT(o, s, high_use_end_time);
+  OPT_PUT(o, s, night_mode);
+  OPT_PUT(o, s, night_ice_on);
+  OPT_PUT(o, s, max_ice_on);
+  OPT_PUT(o, s, max_ice_start_time);
+  OPT_PUT(o, s, max_ice_end_time);
+  OPT_PUT(o, s, unit_on);
+  OPT_PUT(o, s, smart_grid_on);
+  OPT_PUT(o, s, pin_window_open);
+  OPT_PUT(o, s, active_faults);
+  OPT_PUT(o, s, humidity_control);
+  OPT_PUT(o, s, door_ajar_timeout);
+  OPT_PUT(o, s, ap_ssid);
+  OPT_PUT(o, s, ap_rssi);
+  OPT_PUT(o, s, ap_chan);
+  OPT_PUT(o, s, ap_enc);
   return o;
 }
 

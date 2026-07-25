@@ -57,11 +57,18 @@ public:
     bus_.air_filter_on = s;
   }
 
-  // Set-temps are read-only Sensors. See FRIDGE_SENSORS comment in
-  // __init__.py for why they're not yet exposed as writable Numbers.
+  // Set-temps are read-only Sensors by default; see FridgeBus comment in
+  // dispatch_esphome.h. When `enable_temp_control: true`, the codegen
+  // instead calls the `_number` setter below with a writable Number.
   void set_set_temp_sensor(esphome::sensor::Sensor *s) { bus_.set_temp = s; }
+  void set_set_temp_number(esphome::number::Number *n) {
+    bus_.set_temp_number = n;
+  }
   void set_frz_set_temp_sensor(esphome::sensor::Sensor *s) {
     bus_.frz_set_temp = s;
+  }
+  void set_frz_set_temp_number(esphome::number::Number *n) {
+    bus_.frz_set_temp_number = n;
   }
   void set_ref2_set_temp_sensor(esphome::sensor::Sensor *s) {
     bus_.ref2_set_temp = s;
@@ -75,6 +82,12 @@ public:
   void set_crisp_set_temp_sensor(esphome::sensor::Sensor *s) {
     bus_.crisp_set_temp = s;
   }
+  void set_crisp_set_temp_number(esphome::number::Number *n) {
+    bus_.crisp_set_temp_number = n;
+  }
+  void set_crisp_temp_mode_switch(esphome::switch_::Switch *s) {
+    bus_.crisp_temp_mode = s;
+  }
   void set_air_filter_pct_sensor(esphome::sensor::Sensor *s) {
     bus_.air_filter_pct = s;
   }
@@ -87,6 +100,77 @@ public:
   void set_water_filter_end_date_sensor(esphome::text_sensor::TextSensor *s) {
     bus_.water_filter_end_date = s;
   }
+
+  // Vacation / ice modes
+  void set_long_vacation_on_sensor(esphome::binary_sensor::BinarySensor *s) {
+    bus_.long_vacation_on = s;
+  }
+  void set_short_vacation_on_sensor(esphome::binary_sensor::BinarySensor *s) {
+    bus_.short_vacation_on = s;
+  }
+  void set_high_use_on_sensor(esphome::binary_sensor::BinarySensor *s) {
+    bus_.high_use_on = s;
+  }
+  void set_high_use_start_time_sensor(esphome::text_sensor::TextSensor *s) {
+    bus_.high_use_start_time = s;
+  }
+  void set_high_use_end_time_sensor(esphome::text_sensor::TextSensor *s) {
+    bus_.high_use_end_time = s;
+  }
+  void set_night_ice_on_sensor(esphome::binary_sensor::BinarySensor *s) {
+    bus_.night_ice_on = s;
+  }
+  void set_max_ice_on_sensor(esphome::binary_sensor::BinarySensor *s) {
+    bus_.max_ice_on = s;
+  }
+  void set_max_ice_start_time_sensor(esphome::text_sensor::TextSensor *s) {
+    bus_.max_ice_start_time = s;
+  }
+  void set_max_ice_end_time_sensor(esphome::text_sensor::TextSensor *s) {
+    bus_.max_ice_end_time = s;
+  }
+
+  // Derived selects (see FridgeBus comment in dispatch_esphome.h).
+  void set_ice_maker_mode_select(esphome::select::Select *s) {
+    bus_.ice_maker_mode = s;
+  }
+  void set_appliance_mode_select(esphome::select::Select *s) {
+    bus_.appliance_mode = s;
+  }
+  void set_night_mode_select(esphome::select::Select *s) {
+    bus_.night_mode_select = s;
+  }
+  void set_humidity_control_select(esphome::select::Select *s) {
+    bus_.humidity_control_select = s;
+  }
+
+  // Power / smart grid
+  void set_unit_on_sensor(esphome::binary_sensor::BinarySensor *s) {
+    bus_.unit_on = s;
+  }
+  // Writable: smart_grid_on is a Switch.
+  void set_smart_grid_on_switch(esphome::switch_::Switch *s) {
+    bus_.smart_grid_on = s;
+  }
+
+  // Misc diagnostics
+  void set_pin_window_open_sensor(esphome::binary_sensor::BinarySensor *s) {
+    bus_.pin_window_open = s;
+  }
+  void set_active_faults_sensor(esphome::text_sensor::TextSensor *s) {
+    bus_.active_faults = s;
+  }
+  void set_door_ajar_timeout_sensor(esphome::sensor::Sensor *s) {
+    bus_.door_ajar_timeout = s;
+  }
+
+  // WiFi diagnostics
+  void set_ap_ssid_sensor(esphome::text_sensor::TextSensor *s) {
+    bus_.ap_ssid = s;
+  }
+  void set_ap_rssi_sensor(esphome::sensor::Sensor *s) { bus_.ap_rssi = s; }
+  void set_ap_chan_sensor(esphome::sensor::Sensor *s) { bus_.ap_chan = s; }
+  void set_ap_enc_sensor(esphome::sensor::Sensor *s) { bus_.ap_enc = s; }
 
 protected:
   SubzeroHub *hub() override { return &hub_; }

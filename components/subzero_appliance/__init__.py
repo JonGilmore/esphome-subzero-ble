@@ -40,6 +40,7 @@ from esphome.components import (
     ble_client,
     button,
     number,
+    select,
     sensor,
     switch,
     text,
@@ -78,6 +79,7 @@ AUTO_LOAD = [
     "button",
     "json",
     "number",
+    "select",
     "sensor",
     "subzero_protocol",
     "switch",
@@ -100,7 +102,16 @@ ApplianceDebugSwitch = subzero_appliance_ns.class_(
     "ApplianceDebugSwitch", switch.Switch
 )
 ApplianceSetSwitch = subzero_appliance_ns.class_("ApplianceSetSwitch", switch.Switch)
+ApplianceSetIntSwitch = subzero_appliance_ns.class_(
+    "ApplianceSetIntSwitch", switch.Switch
+)
 ApplianceSetNumber = subzero_appliance_ns.class_("ApplianceSetNumber", number.Number)
+ApplianceSetIntSelect = subzero_appliance_ns.class_(
+    "ApplianceSetIntSelect", select.Select
+)
+ApplianceSetGroupedSelect = subzero_appliance_ns.class_(
+    "ApplianceSetGroupedSelect", select.Select
+)
 AppliancePinText = subzero_appliance_ns.class_("AppliancePinText", text.Text)
 ApplianceButtonKind = subzero_appliance_ns.enum("ApplianceButtonKind", is_class=True)
 
@@ -319,6 +330,55 @@ FRIDGE_BINARY_SENSORS = [
         {CONF_ICON: "mdi:air-filter"},
         "hide_air_filter",
     ),
+    (
+        "long_vacation_on",
+        "Long Vacation Mode",
+        "set_long_vacation_on_sensor",
+        {CONF_ICON: "mdi:bag-suitcase"},
+        "hide_vacation_ice_modes",
+    ),
+    (
+        "short_vacation_on",
+        "Short Vacation Mode",
+        "set_short_vacation_on_sensor",
+        {CONF_ICON: "mdi:bag-suitcase-outline"},
+        "hide_vacation_ice_modes",
+    ),
+    (
+        "night_ice_on",
+        "Night Ice Mode",
+        "set_night_ice_on_sensor",
+        {CONF_ICON: "mdi:weather-night"},
+        "hide_vacation_ice_modes",
+    ),
+    (
+        "max_ice_on",
+        "Max Ice Mode",
+        "set_max_ice_on_sensor",
+        {CONF_ICON: "mdi:snowflake"},
+        "hide_vacation_ice_modes",
+    ),
+    (
+        "high_use_on",
+        "High Usage Mode",
+        "set_high_use_on_sensor",
+        {CONF_ICON: "mdi:chart-line"},
+        "hide_vacation_ice_modes",
+    ),
+    (
+        "unit_on",
+        "Power On",
+        "set_unit_on_sensor",
+        {CONF_ICON: "mdi:power"},
+        None,
+    ),
+    (
+        "pin_window_open",
+        "Pairing Window Open",
+        "set_pin_window_open_sensor",
+        {CONF_ICON: "mdi:lock-clock", CONF_ENTITY_CATEGORY: ENTITY_CATEGORY_DIAGNOSTIC},
+        "hide_extra_diagnostics",
+    ),
 ]
 
 TEMP_KWARGS = {
@@ -329,27 +389,6 @@ TEMP_KWARGS = {
 }
 
 FRIDGE_SENSORS = [
-    # Set-temps are read-only Sensors. Writing them via `set` does NOT
-    # appear to work on the fridges we've tested — the appliance accepts
-    # the write (status:0) but never actually changes the setpoint, and
-    # the user has no recourse if a typo'd value somehow does take. Until
-    # we understand the appliance's set-temp guard mode (suspect: needs
-    # some "edit mode" enabled at the front panel first, similar to oven
-    # cav_set_temp requiring an active cook mode), keep these read-only.
-    (
-        "set_temp",
-        "Set Temperature",
-        "set_set_temp_sensor",
-        {**TEMP_KWARGS, CONF_ICON: "mdi:thermometer"},
-        "hide_fridge_zone",
-    ),
-    (
-        "frz_set_temp",
-        "Freezer Set Temperature",
-        "set_frz_set_temp_sensor",
-        {**TEMP_KWARGS, CONF_ICON: "mdi:snowflake-thermometer"},
-        "hide_freezer",
-    ),
     (
         "wine_set_temp",
         "Wine Zone Upper Set Temperature",
@@ -370,13 +409,6 @@ FRIDGE_SENSORS = [
         "set_ref2_set_temp_sensor",
         {**TEMP_KWARGS, CONF_ICON: "mdi:thermometer"},
         "hide_ref_drawer",
-    ),
-    (
-        "crisp_set_temp",
-        "Crisper Drawer Set Temperature",
-        "set_crisp_set_temp_sensor",
-        {**TEMP_KWARGS, CONF_ICON: "mdi:thermometer"},
-        "hide_crisper",
     ),
     (
         "air_filter_pct",
@@ -414,6 +446,51 @@ FRIDGE_SENSORS = [
         },
         "hide_water_filter_extra",
     ),
+    (
+        "door_ajar_timeout",
+        "Door Ajar Alarm Timeout",
+        "set_door_ajar_timeout_sensor",
+        {
+            CONF_ICON: "mdi:door-open",
+            "accuracy_decimals": 0,
+            CONF_ENTITY_CATEGORY: ENTITY_CATEGORY_DIAGNOSTIC,
+        },
+        "hide_extra_diagnostics",
+    ),
+    (
+        "ap_rssi",
+        "WiFi Signal",
+        "set_ap_rssi_sensor",
+        {
+            CONF_UNIT_OF_MEASUREMENT: "dBm",
+            "accuracy_decimals": 0,
+            CONF_ICON: "mdi:wifi-strength-2",
+            CONF_ENTITY_CATEGORY: ENTITY_CATEGORY_DIAGNOSTIC,
+        },
+        "hide_extra_diagnostics",
+    ),
+    (
+        "ap_chan",
+        "WiFi Channel",
+        "set_ap_chan_sensor",
+        {
+            CONF_ICON: "mdi:wifi",
+            "accuracy_decimals": 0,
+            CONF_ENTITY_CATEGORY: ENTITY_CATEGORY_DIAGNOSTIC,
+        },
+        "hide_extra_diagnostics",
+    ),
+    (
+        "ap_enc",
+        "WiFi Encryption Type",
+        "set_ap_enc_sensor",
+        {
+            CONF_ICON: "mdi:wifi-lock",
+            "accuracy_decimals": 0,
+            CONF_ENTITY_CATEGORY: ENTITY_CATEGORY_DIAGNOSTIC,
+        },
+        "hide_extra_diagnostics",
+    ),
 ]
 
 FRIDGE_TEXT_SENSORS = [
@@ -426,6 +503,85 @@ FRIDGE_TEXT_SENSORS = [
             CONF_ICON: "mdi:calendar-clock",
         },
         "hide_water_filter_extra",
+    ),
+    (
+        "max_ice_start_time",
+        "Max Ice Start Time",
+        "set_max_ice_start_time_sensor",
+        {CONF_ICON: "mdi:clock-start"},
+        "hide_vacation_ice_modes",
+    ),
+    (
+        "max_ice_end_time",
+        "Max Ice End Time",
+        "set_max_ice_end_time_sensor",
+        {CONF_ICON: "mdi:clock-end"},
+        "hide_vacation_ice_modes",
+    ),
+    (
+        "high_use_start_time",
+        "High Usage Start Time",
+        "set_high_use_start_time_sensor",
+        {CONF_ICON: "mdi:clock-start"},
+        "hide_vacation_ice_modes",
+    ),
+    (
+        "high_use_end_time",
+        "High Usage End Time",
+        "set_high_use_end_time_sensor",
+        {CONF_ICON: "mdi:clock-end"},
+        "hide_vacation_ice_modes",
+    ),
+    (
+        "ap_ssid",
+        "WiFi Network",
+        "set_ap_ssid_sensor",
+        {CONF_ICON: "mdi:wifi", CONF_ENTITY_CATEGORY: ENTITY_CATEGORY_DIAGNOSTIC},
+        "hide_extra_diagnostics",
+    ),
+    (
+        "active_faults",
+        "Active Faults",
+        "set_active_faults_sensor",
+        {
+            CONF_ICON: "mdi:alert-circle-outline",
+            CONF_ENTITY_CATEGORY: ENTITY_CATEGORY_DIAGNOSTIC,
+        },
+        "hide_extra_diagnostics",
+    ),
+]
+
+# Set-temps are read-only Sensors by default (this list). Writing them via
+# `set` was assumed inert based on testing on fw 8.5 units — the appliance
+# accepts the write (status:0) but never actually changes the setpoint.
+# Confirmed via community testing that writes DO take real physical effect
+# on at least one fw 2.27 unit (front-panel display, official app, and BLE
+# state all agreed after a write). Since this may still vary by
+# firmware/model, it stays opt-in: set `enable_temp_control: true` to swap
+# these for the writable Number versions in FRIDGE_WRITABLE_NUMBERS below,
+# after first verifying on your own appliance that a written value actually
+# reaches the physical setpoint (not just the mirrored BLE state).
+FRIDGE_TEMP_CONTROL_READONLY = [
+    (
+        "set_temp",
+        "Set Temperature",
+        "set_set_temp_sensor",
+        {**TEMP_KWARGS, CONF_ICON: "mdi:thermometer"},
+        "hide_fridge_zone",
+    ),
+    (
+        "frz_set_temp",
+        "Freezer Set Temperature",
+        "set_frz_set_temp_sensor",
+        {**TEMP_KWARGS, CONF_ICON: "mdi:snowflake-thermometer"},
+        "hide_freezer",
+    ),
+    (
+        "crisp_set_temp",
+        "Crisper Drawer Set Temperature",
+        "set_crisp_set_temp_sensor",
+        {**TEMP_KWARGS, CONF_ICON: "mdi:thermometer"},
+        "hide_crisper",
     ),
 ]
 
@@ -441,9 +597,205 @@ NUMBER_KWARGS = {
     CONF_MODE: "box",
 }
 
-# Fridge has no writable numbers yet — see comment on FRIDGE_SENSORS above.
-FRIDGE_WRITABLE_NUMBERS: list = []
-FRIDGE_WRITABLE_SWITCHES: list = []  # sabbath_on writability also unconfirmed
+# Used only when `enable_temp_control: true` — see FRIDGE_TEMP_CONTROL_READONLY
+# comment above. Fridge zone range 33-45°F and freezer -10-10°F are
+# conservative bounds from typical Sub-Zero manuals; the appliance enforces
+# its own real limits regardless of what HA's UI allows selecting.
+FRIDGE_WRITABLE_NUMBERS = [
+    (
+        "set_temp",
+        "Set Temperature",
+        "set_set_temp_number",
+        "ref_set_temp",
+        33,
+        45,
+        1,
+        {**NUMBER_KWARGS, CONF_ICON: "mdi:thermometer"},
+        "hide_fridge_zone",
+    ),
+    (
+        "frz_set_temp",
+        "Freezer Set Temperature",
+        "set_frz_set_temp_number",
+        "frz_set_temp",
+        -10,
+        10,
+        1,
+        {**NUMBER_KWARGS, CONF_ICON: "mdi:snowflake-thermometer"},
+        "hide_freezer",
+    ),
+    (
+        "crisp_set_temp",
+        "Crisper Drawer Set Temperature",
+        "set_crisp_set_temp_number",
+        "crisp_set_temp",
+        33,
+        45,
+        1,
+        {**NUMBER_KWARGS, CONF_ICON: "mdi:thermometer"},
+        "hide_crisper",
+    ),
+]
+FRIDGE_WRITABLE_SWITCHES: list = []  # sabbath_on write is confirmed working
+# (2026-07-25), but only via the Appliance Mode grouped select below —
+# no separate standalone switch is needed.
+
+# "Automatic crisper temperature" toggle from the app. Gates whether
+# crisp_set_temp writes take effect at all (confirmed via live BLE
+# testing 2026-07-25 — writes were silently ignored while this was on).
+# Built alongside crisp_set_temp_number, under the same enable_temp_control
+# opt-in. Wire format is an int 0/1, not a JSON bool — see
+# ApplianceSetIntSwitch in appliance_base.h.
+FRIDGE_TEMP_INT_SWITCHES = [
+    (
+        "crisp_temp_mode",
+        "Automatic Crisper Temperature",
+        "set_crisp_temp_mode_switch",
+        "crisp_temp_mode",
+        {CONF_ICON: "mdi:thermostat-auto"},
+        "hide_crisper",
+    ),
+]
+
+# Mode selects — opt-in via `enable_mode_selects: true`. Every option below
+# was confirmed via live BLE testing 2026-07-25 (see TYPE_SCHEMAS comment).
+
+# Grouped selects: (suffix, name_suffix, setter, options, hide_key). Each
+# option is (label, [(property_key, bool_value), ...]) — selecting it
+# writes every (property_key, bool_value) pair via `set`.
+FRIDGE_GROUPED_SELECTS = [
+    (
+        "ice_maker_mode",
+        "Ice Maker Mode",
+        "set_ice_maker_mode_select",
+        [
+            (
+                "Off",
+                [
+                    ("ice_maker_on", False),
+                    ("max_ice_on", False),
+                    ("night_ice_on", False),
+                ],
+            ),
+            (
+                "Normal",
+                [
+                    ("ice_maker_on", True),
+                    ("max_ice_on", False),
+                    ("night_ice_on", False),
+                ],
+            ),
+            (
+                "Max Ice",
+                [
+                    ("ice_maker_on", True),
+                    ("max_ice_on", True),
+                    ("night_ice_on", False),
+                ],
+            ),
+            (
+                "Night Ice",
+                [
+                    ("ice_maker_on", True),
+                    ("max_ice_on", False),
+                    ("night_ice_on", True),
+                ],
+            ),
+        ],
+        "hide_ice_maker",
+    ),
+    (
+        "appliance_mode",
+        "Appliance Mode",
+        "set_appliance_mode_select",
+        [
+            (
+                "Normal",
+                [
+                    ("high_use_on", False),
+                    ("short_vacation_on", False),
+                    ("long_vacation_on", False),
+                    ("sabbath_on", False),
+                ],
+            ),
+            (
+                "High Usage",
+                [
+                    ("high_use_on", True),
+                    ("short_vacation_on", False),
+                    ("long_vacation_on", False),
+                    ("sabbath_on", False),
+                ],
+            ),
+            (
+                "Short Vacation",
+                [
+                    ("high_use_on", False),
+                    ("short_vacation_on", True),
+                    ("long_vacation_on", False),
+                    ("sabbath_on", False),
+                ],
+            ),
+            (
+                "Long Vacation",
+                [
+                    ("high_use_on", False),
+                    ("short_vacation_on", False),
+                    ("long_vacation_on", True),
+                    ("sabbath_on", False),
+                ],
+            ),
+            (
+                "Sabbath",
+                [
+                    ("high_use_on", False),
+                    ("short_vacation_on", False),
+                    ("long_vacation_on", False),
+                    ("sabbath_on", True),
+                ],
+            ),
+        ],
+        "hide_vacation_ice_modes",
+    ),
+]
+
+# Simple 2-option selects backed by a single int property. Entry shape:
+# (suffix, name_suffix, setter, property_key, [(label, value), ...],
+# hide_key). Each label carries its own explicit wire value — confirmed
+# on a real appliance that these do NOT always match option index order
+# (night_mode is 0/1, but humidity_control is 1=Normal/2=Enhanced).
+FRIDGE_INT_SELECTS = [
+    (
+        "night_mode_select",
+        "Night Mode",
+        "set_night_mode_select",
+        "night_mode",
+        [("Disabled", 0), ("Enabled", 1)],
+        "hide_vacation_ice_modes",
+    ),
+    (
+        "humidity_control_select",
+        "Humidity Control",
+        "set_humidity_control_select",
+        "humidity_control",
+        [("Normal", 1), ("Enhanced", 2)],
+        "hide_extra_diagnostics",
+    ),
+]
+
+# Writable switch for smart_grid_on, built only under enable_mode_selects
+# (see TYPE_SCHEMAS comment). Entry shape matches RANGE_WRITABLE_SWITCHES:
+# (suffix, name_suffix, setter, property_key, kwargs, hide_key).
+FRIDGE_MODE_SWITCHES = [
+    (
+        "smart_grid_on",
+        "Smart Grid Mode",
+        "set_smart_grid_on_switch",
+        "smart_grid_on",
+        {CONF_ICON: "mdi:transmission-tower"},
+        "hide_extra_diagnostics",
+    ),
+]
 
 DISHWASHER_BINARY_SENSORS = [
     (
@@ -908,6 +1260,37 @@ TYPE_SCHEMAS = {
         cv.Optional("hide_air_filter", default=True): cv.boolean,
         cv.Optional("hide_water_filter", default=True): cv.boolean,
         cv.Optional("hide_water_filter_extra", default=True): cv.boolean,
+        cv.Optional("hide_vacation_ice_modes", default=True): cv.boolean,
+        cv.Optional("hide_extra_diagnostics", default=True): cv.boolean,
+        # Opt-in: writes to `ref_set_temp`/`frz_set_temp`/`crisp_set_temp`
+        # were assumed inert (see FridgeBus comment in dispatch_esphome.h),
+        # but this was only verified on fw 8.5 units. Confirmed via live
+        # BLE testing 2026-07-25 on a fw 2.27 CL4850UFDID unit that all
+        # three actually change the physical setpoint — ref_set_temp and
+        # frz_set_temp unconditionally, crisp_set_temp only once
+        # crisp_temp_mode is 0/Manual (see the Automatic Crisper
+        # Temperature switch below). Since behavior may vary by
+        # firmware/model, this defaults to False so existing users keep
+        # the safe read-only Sensor behavior; set to True only after
+        # verifying writes actually take effect on your own appliance
+        # (write a value, physically check the front panel).
+        cv.Optional("enable_temp_control", default=False): cv.boolean,
+        # Opt-in: builds Ice Maker Mode / Appliance Mode selects plus
+        # Night Mode / Humidity Control selects and a Smart Grid switch.
+        # The BLE protocol only has one write verb (`set`, one field at a
+        # time) — there's no dedicated "pick a mode" command, so these
+        # selects write every field in the chosen option's mapping (see
+        # FridgeBus / ApplianceSetGroupedSelect comments). Confirmed via
+        # live BLE testing 2026-07-25 on a fw 2.27 CL4850UFDID unit: every
+        # option in both grouped selects (including Sabbath and both
+        # vacation modes) and both int selects round-trips correctly.
+        # smart_grid_on itself remains unconfirmed as a write — it's only
+        # ever been observed at its default `true` value, never
+        # independently toggled and verified. Since option encodings and
+        # write semantics may still vary by firmware/model, this defaults
+        # False so existing users are unaffected; verify against your own
+        # appliance before relying on it.
+        cv.Optional("enable_mode_selects", default=False): cv.boolean,
     },
     "dishwasher": {
         cv.Optional("hide_softener", default=True): cv.boolean,
@@ -1064,6 +1447,26 @@ async def _build_set_switch(
     return sw
 
 
+async def _build_set_int_switch(
+    parent_id, parent_var, suffix, name_suffix, property_key, kwargs, hidden
+):
+    """Like _build_set_switch, but for properties whose wire format is an
+    int (0/1) rather than a JSON boolean literal — see ApplianceSetIntSwitch."""
+    cfg_raw = {
+        CONF_ID: _entity_id(parent_id, suffix, ApplianceSetIntSwitch),
+        CONF_NAME: name_suffix,
+        CONF_DEVICE_ID: _subdevice_id(parent_id),
+    }
+    cfg_raw.update(kwargs)
+    if hidden:
+        cfg_raw[CONF_INTERNAL] = True
+    cfg = switch.switch_schema(ApplianceSetIntSwitch)(cfg_raw)
+    sw = await switch.new_switch(cfg)
+    cg.add(sw.set_parent(parent_var))
+    cg.add(sw.set_property_key(property_key))
+    return sw
+
+
 async def _build_set_number(
     parent_id,
     parent_var,
@@ -1096,6 +1499,55 @@ async def _build_set_number(
     cg.add(n.set_parent(parent_var))
     cg.add(n.set_property_key(property_key))
     return n
+
+
+async def _build_set_int_select(
+    parent_id, parent_var, suffix, name_suffix, property_key, value_mappings, hidden
+):
+    """Instantiates an ApplianceSetIntSelect HA entity backed by a single
+    int property. value_mappings is [(label, int_value), ...] — each
+    label writes its own explicit value (not necessarily its list index)."""
+    cfg_raw = {
+        CONF_ID: _entity_id(parent_id, suffix, ApplianceSetIntSelect),
+        CONF_NAME: name_suffix,
+        CONF_DEVICE_ID: _subdevice_id(parent_id),
+    }
+    if hidden:
+        cfg_raw[CONF_INTERNAL] = True
+    cfg = select.select_schema(ApplianceSetIntSelect)(cfg_raw)
+    options = [label for label, _value in value_mappings]
+    s = await select.new_select(cfg, options=options)
+    cg.add(s.set_parent(parent_var))
+    cg.add(s.set_property_key(property_key))
+    for label, value in value_mappings:
+        cg.add(s.add_value(label, value))
+    return s
+
+
+async def _build_set_grouped_select(
+    parent_id, parent_var, suffix, name_suffix, option_mappings, hidden
+):
+    """Instantiates an ApplianceSetGroupedSelect HA entity. option_mappings
+    is [(label, [(property_key, bool_value), ...]), ...] — selecting a
+    label writes every (property_key, bool_value) pair in its list. Each
+    write is registered as its own add_write() call with three plain
+    scalar arguments (label, key, value) rather than passing a nested
+    structure through codegen."""
+    cfg_raw = {
+        CONF_ID: _entity_id(parent_id, suffix, ApplianceSetGroupedSelect),
+        CONF_NAME: name_suffix,
+        CONF_DEVICE_ID: _subdevice_id(parent_id),
+    }
+    if hidden:
+        cfg_raw[CONF_INTERNAL] = True
+    cfg = select.select_schema(ApplianceSetGroupedSelect)(cfg_raw)
+    options = [label for label, _writes in option_mappings]
+    s = await select.new_select(cfg, options=options)
+    cg.add(s.set_parent(parent_var))
+    for label, writes in option_mappings:
+        for key, value in writes:
+            cg.add(s.add_write(label, key, value))
+    return s
 
 
 # ----------------------------------------------------------------------
@@ -1146,10 +1598,16 @@ async def to_code(config):
     # ---- Type-specific entities ----
     if type_ == "fridge":
         bs_list = FRIDGE_BINARY_SENSORS
-        s_list = FRIDGE_SENSORS
         ts_list = FRIDGE_TEXT_SENSORS
-        sw_list = FRIDGE_WRITABLE_SWITCHES
-        n_list = FRIDGE_WRITABLE_NUMBERS
+        sw_list = FRIDGE_WRITABLE_SWITCHES + (
+            FRIDGE_MODE_SWITCHES if config.get("enable_mode_selects") else []
+        )
+        if config.get("enable_temp_control"):
+            s_list = FRIDGE_SENSORS
+            n_list = FRIDGE_WRITABLE_NUMBERS
+        else:
+            s_list = FRIDGE_SENSORS + FRIDGE_TEMP_CONTROL_READONLY
+            n_list = []
     elif type_ == "dishwasher":
         bs_list = DISHWASHER_BINARY_SENSORS
         s_list = DISHWASHER_SENSORS
@@ -1224,6 +1682,61 @@ async def to_code(config):
             _resolve_hidden(config, hide_key),
         )
         cg.add(getattr(var, setter)(n))
+
+    # Int-wire writable switches (fridge only, opt-in via enable_temp_control) —
+    # currently just crisp_temp_mode, built alongside crisp_set_temp_number.
+    if type_ == "fridge" and config.get("enable_temp_control"):
+        for (
+            suffix,
+            name_suffix,
+            setter,
+            prop_key,
+            kwargs,
+            hide_key,
+        ) in FRIDGE_TEMP_INT_SWITCHES:
+            isw = await _build_set_int_switch(
+                parent_id,
+                var,
+                suffix,
+                f"{name} {name_suffix}",
+                prop_key,
+                kwargs,
+                _resolve_hidden(config, hide_key),
+            )
+            cg.add(getattr(var, setter)(isw))
+
+    # Mode selects (fridge only, opt-in via enable_mode_selects) — see
+    # TYPE_SCHEMAS comment for confirmation status.
+    if type_ == "fridge" and config.get("enable_mode_selects"):
+        for suffix, name_suffix, setter, options, hide_key in FRIDGE_GROUPED_SELECTS:
+            gs = await _build_set_grouped_select(
+                parent_id,
+                var,
+                suffix,
+                f"{name} {name_suffix}",
+                options,
+                _resolve_hidden(config, hide_key),
+            )
+            cg.add(getattr(var, setter)(gs))
+
+        for (
+            suffix,
+            name_suffix,
+            setter,
+            prop_key,
+            options,
+            hide_key,
+        ) in FRIDGE_INT_SELECTS:
+            iselect = await _build_set_int_select(
+                parent_id,
+                var,
+                suffix,
+                f"{name} {name_suffix}",
+                prop_key,
+                options,
+                _resolve_hidden(config, hide_key),
+            )
+            cg.add(getattr(var, setter)(iselect))
 
     # ---- PIN text input ----
     # esphome::text::Text is abstract (control() is pure virtual); use

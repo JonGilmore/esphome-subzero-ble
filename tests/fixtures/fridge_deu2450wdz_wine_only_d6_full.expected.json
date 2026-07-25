@@ -1,21 +1,30 @@
 {
-  "valid": true,
-  "wine_door_ajar": false,
-  "wine_set_temp": 40,
-  "wine2_set_temp": 55,
-  "wine_temp_alert_on": false,
+  "ap_chan": 48,
+  "ap_enc": 3,
+  "ap_rssi": 58,
   "common": {
-    "sabbath_on": false,
-    "service_required": false,
     "appliance_model": "DEU2450WDZ",
-    "uptime": "113:12:02",
     "appliance_serial": "23154640",
     "appliance_type": "1.14.2.0",
     "diagnostic_status": "0x11111111111",
+    "sabbath_on": false,
+    "service_required": false,
+    "uptime": "113:12:02",
     "version": {
-      "fw": "8.5",
       "api": "5.4",
-      "appliance": "main: 11.29.11342; conf: 1.0.27; ccm: 11.23.8049; uim: N/A"
+      "appliance": "main: 11.29.11342; conf: 1.0.27; ccm: 11.23.8049; uim: N/A",
+      "fw": "8.5"
     }
-  }
+  },
+  "door_ajar_timeout": 5,
+  "high_use_on": false,
+  "long_vacation_on": false,
+  "pin_window_open": true,
+  "short_vacation_on": false,
+  "smart_grid_on": true,
+  "valid": true,
+  "wine2_set_temp": 55.0,
+  "wine_door_ajar": false,
+  "wine_set_temp": 40.0,
+  "wine_temp_alert_on": false
 }
