@@ -238,21 +238,24 @@ COMMON_TEXT_SENSORS = [
 
 # Buttons — same across all appliance types.
 BUTTON_DEFINITIONS = [
-    # (kind, friendly-name format string {name})
-    ("kConnect", "Connect to {name}", "mdi:bluetooth-connect", None),
-    ("kStartPairing", "{name} Start Pairing", "mdi:key-plus", None),
-    ("kSubmitPin", "{name} Submit PIN & Unlock", "mdi:lock-open-variant", None),
-    ("kPoll", "Poll {name}", "mdi:refresh", None),
+    # (kind, friendly name, icon, entity_category). HA already prefixes the
+    # device name for grouped entities, so these are bare action names —
+    # embedding the appliance name here too used to cause a doubled label
+    # (e.g. "Refrigerator Connect to Refrigerator").
+    ("kConnect", "Connect", "mdi:bluetooth-connect", None),
+    ("kStartPairing", "Start Pairing", "mdi:key-plus", None),
+    ("kSubmitPin", "Submit PIN & Unlock", "mdi:lock-open-variant", None),
+    ("kPoll", "Poll", "mdi:refresh", None),
     (
         "kLogDebugInfo",
-        "{name} Log Debug Info",
+        "Log Debug Info",
         "mdi:bug-play",
         ENTITY_CATEGORY_DIAGNOSTIC,
     ),
-    ("kDisconnect", "Disconnect {name}", "mdi:bluetooth-off", None),
+    ("kDisconnect", "Disconnect", "mdi:bluetooth-off", None),
     (
         "kResetPairing",
-        "Reset {name} Pairing",
+        "Reset Pairing",
         "mdi:bluetooth-settings",
         ENTITY_CATEGORY_CONFIG,
     ),
@@ -263,7 +266,7 @@ BUTTON_DEFINITIONS = [
     # specifically want to disable the cloud path.
     (
         "kClearCloudToken",
-        "{name} Clear Cloud Token (BT-Only)",
+        "Clear Cloud Token (BT-Only)",
         "mdi:cloud-off-outline",
         ENTITY_CATEGORY_DIAGNOSTIC,
     ),
@@ -304,7 +307,7 @@ FRIDGE_BINARY_SENSORS = [
     ),
     (
         "ref2_door_ajar",
-        "Refrigerator Drawer Door",
+        "Drawer Door",
         "set_ref2_door_ajar_sensor",
         {CONF_DEVICE_CLASS: DEVICE_CLASS_DOOR},
         "hide_ref_drawer",
@@ -409,7 +412,7 @@ FRIDGE_SENSORS = [
     ),
     (
         "ref2_set_temp",
-        "Refrigerator Drawer Set Temperature",
+        "Drawer Set Temperature",
         "set_ref2_set_temp_sensor",
         {**TEMP_KWARGS, CONF_ICON: "mdi:thermometer"},
         "hide_ref_drawer",
@@ -649,12 +652,16 @@ FRIDGE_WRITABLE_SWITCHES: list = []  # sabbath_on write is confirmed working
 # Confirmed 2026-07-25 via live BLE testing that writing this field
 # actually works — it's the "Air Purifier" toggle on the appliance's
 # display (turning it off there was independently observed to flip this
-# same BLE field). Gated by enable_mode_selects since it's a general
-# "extra writable control" opt-in, not specifically about temperature.
+# same BLE field), so the entity is named "Air Purifier" to match, even
+# though the underlying property key/hide flag stays air_filter_on /
+# hide_air_filter (renaming the config flag itself would be a breaking
+# change for existing users). Gated by enable_mode_selects since it's a
+# general "extra writable control" opt-in, not specifically about
+# temperature.
 FRIDGE_AIR_FILTER_READONLY = [
     (
         "air_filter_on",
-        "Air Filter",
+        "Air Purifier",
         "set_air_filter_on_sensor",
         {CONF_ICON: "mdi:air-filter"},
         "hide_air_filter",
@@ -663,7 +670,7 @@ FRIDGE_AIR_FILTER_READONLY = [
 FRIDGE_AIR_FILTER_WRITABLE_SWITCH = [
     (
         "air_filter_on",
-        "Air Filter",
+        "Air Purifier",
         "set_air_filter_on_switch",
         "air_filter_on",
         {CONF_ICON: "mdi:air-filter"},
@@ -1592,7 +1599,7 @@ async def to_code(config):
     status_cfg = _validate_text_sensor(
         {
             CONF_ID: _entity_id(parent_id, "status", text_sensor.TextSensor),
-            CONF_NAME: f"{name} Status",
+            CONF_NAME: "Status",
             CONF_DEVICE_ID: _subdevice_id(parent_id),
         }
     )
@@ -1602,7 +1609,7 @@ async def to_code(config):
     # ---- Common binary sensors ----
     for suffix, name_suffix, setter, kwargs in COMMON_BINARY_SENSORS:
         cfg = _build_binary_sensor_config(
-            parent_id, suffix, f"{name} {name_suffix}", kwargs, False
+            parent_id, suffix, name_suffix, kwargs, False
         )
         bs = await binary_sensor.new_binary_sensor(cfg)
         cg.add(getattr(var, setter)(bs))
@@ -1610,7 +1617,7 @@ async def to_code(config):
     # ---- Common text sensors ----
     for suffix, name_suffix, setter, kwargs in COMMON_TEXT_SENSORS:
         cfg = _build_text_sensor_config(
-            parent_id, suffix, f"{name} {name_suffix}", kwargs, False
+            parent_id, suffix, name_suffix, kwargs, False
         )
         ts = await text_sensor.new_text_sensor(cfg)
         cg.add(getattr(var, setter)(ts))
@@ -1647,7 +1654,7 @@ async def to_code(config):
         cfg = _build_binary_sensor_config(
             parent_id,
             suffix,
-            f"{name} {name_suffix}",
+            name_suffix,
             kwargs,
             _resolve_hidden(config, hide_key),
         )
@@ -1658,7 +1665,7 @@ async def to_code(config):
         cfg = _build_sensor_config(
             parent_id,
             suffix,
-            f"{name} {name_suffix}",
+            name_suffix,
             kwargs,
             _resolve_hidden(config, hide_key),
         )
@@ -1669,7 +1676,7 @@ async def to_code(config):
         cfg = _build_text_sensor_config(
             parent_id,
             suffix,
-            f"{name} {name_suffix}",
+            name_suffix,
             kwargs,
             _resolve_hidden(config, hide_key),
         )
@@ -1682,7 +1689,7 @@ async def to_code(config):
             parent_id,
             var,
             suffix,
-            f"{name} {name_suffix}",
+            name_suffix,
             prop_key,
             kwargs,
             _resolve_hidden(config, hide_key),
@@ -1695,7 +1702,7 @@ async def to_code(config):
             parent_id,
             var,
             suffix,
-            f"{name} {name_suffix}",
+            name_suffix,
             prop_key,
             mn,
             mx,
@@ -1720,7 +1727,7 @@ async def to_code(config):
                 parent_id,
                 var,
                 suffix,
-                f"{name} {name_suffix}",
+                name_suffix,
                 prop_key,
                 kwargs,
                 _resolve_hidden(config, hide_key),
@@ -1735,7 +1742,7 @@ async def to_code(config):
                 parent_id,
                 var,
                 suffix,
-                f"{name} {name_suffix}",
+                name_suffix,
                 options,
                 _resolve_hidden(config, hide_key),
             )
@@ -1753,7 +1760,7 @@ async def to_code(config):
                 parent_id,
                 var,
                 suffix,
-                f"{name} {name_suffix}",
+                name_suffix,
                 prop_key,
                 options,
                 _resolve_hidden(config, hide_key),
@@ -1766,7 +1773,7 @@ async def to_code(config):
     # the generated main.cpp resolves.
     pin_cfg_raw = {
         CONF_ID: _entity_id(parent_id, "pin_input", AppliancePinText),
-        CONF_NAME: f"{name} PIN",
+        CONF_NAME: "PIN",
         CONF_DEVICE_ID: _subdevice_id(parent_id),
         CONF_ICON: "mdi:key-variant",
         CONF_ENTITY_CATEGORY: ENTITY_CATEGORY_CONFIG,
@@ -1783,7 +1790,7 @@ async def to_code(config):
     # ---- Debug switch ----
     debug_sw_cfg_raw = {
         CONF_ID: _entity_id(parent_id, "debug_switch", ApplianceDebugSwitch),
-        CONF_NAME: f"{name} Debug Mode",
+        CONF_NAME: "Debug Mode",
         CONF_DEVICE_ID: _subdevice_id(parent_id),
         CONF_ICON: "mdi:bug",
         CONF_ENTITY_CATEGORY: ENTITY_CATEGORY_DIAGNOSTIC,
@@ -1794,14 +1801,14 @@ async def to_code(config):
     cg.add(var.set_debug_switch(debug_sw))
 
     # ---- Buttons ----
-    for kind_name, name_fmt, icon, entity_category in BUTTON_DEFINITIONS:
+    for kind_name, btn_name, icon, entity_category in BUTTON_DEFINITIONS:
         btn_cfg_raw = {
             CONF_ID: _entity_id(
                 parent_id,
                 f"btn_{kind_name.lstrip('k').lower()}",
                 ApplianceButton,
             ),
-            CONF_NAME: name_fmt.format(name=name),
+            CONF_NAME: btn_name,
             CONF_DEVICE_ID: _subdevice_id(parent_id),
             CONF_ICON: icon,
         }
