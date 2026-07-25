@@ -385,7 +385,12 @@ void SubzeroHub::post_bond_poll_attempt_(int attempt) {
     return;
   }
   if (attempt < kPostBondMaxPolls) {
-    char status[24];
+    // 32 bytes comfortably covers the worst-case %d width (a full signed
+    // int, up to 11 digits+sign) even though `attempt` is always 1-2 in
+    // practice (bounded by kPostBondMaxPolls); silences a false-positive
+    // -Wformat-truncation the compiler can't resolve across the
+    // recursive call.
+    char status[32];
     std::snprintf(status, sizeof(status), "Poll %d: waiting...", attempt);
     publish_status_(status);
     const char *next_name =
