@@ -194,6 +194,16 @@ protected:
   EspIdfTransport transport_;
   EsphomeScheduler scheduler_;
 
+  // Config (set from Python codegen)
+  std::string pending_pin_;
+  std::string name_str_;
+  std::uint32_t poll_offset_ms_ = 0;
+
+  // Entity refs (set from Python codegen)
+  esphome::text_sensor::TextSensor *status_ts_ = nullptr;
+  esphome::text::Text *pin_input_ = nullptr;
+  esphome::switch_::Switch *debug_switch_ = nullptr;
+
 private:
   // See enqueue_write() above.
   static constexpr std::uint32_t kWriteSpacingMs = 750;
@@ -210,18 +220,6 @@ private:
                          [this]() { this->drain_write_queue_(); });
     }
   }
-
-protected:
-
-  // Config (set from Python codegen)
-  std::string pending_pin_;
-  std::string name_str_;
-  std::uint32_t poll_offset_ms_ = 0;
-
-  // Entity refs (set from Python codegen)
-  esphome::text_sensor::TextSensor *status_ts_ = nullptr;
-  esphome::text::Text *pin_input_ = nullptr;
-  esphome::switch_::Switch *debug_switch_ = nullptr;
 };
 
 // One Button subclass for all 7 button actions. Python codegen

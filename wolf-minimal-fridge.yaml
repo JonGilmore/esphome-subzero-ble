@@ -62,3 +62,8 @@ subzero_appliance:
     ble_client_id: main_fridge_ble
     name: "Main Fridge"
     pin: !secret main_fridge_pin
+    # Enabled here (rather than left at their conservative defaults) so CI's
+    # compile step exercises the writable Number/Select codegen paths, not
+    # just the read-only default path.
+    enable_temp_control: true
+    enable_mode_selects: true
