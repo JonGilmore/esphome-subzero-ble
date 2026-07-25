@@ -97,6 +97,8 @@ inline void dispatch_fridge(const FridgeState &s, Bus &bus) {
   // Crisper
   if (s.crisp_set_temp)
     bus.publish_crisp_set_temp(*s.crisp_set_temp);
+  if (s.crisp_temp_mode)
+    bus.publish_crisp_temp_mode(*s.crisp_temp_mode);
   // Filters
   if (s.air_filter_on)
     bus.publish_air_filter_on(*s.air_filter_on);

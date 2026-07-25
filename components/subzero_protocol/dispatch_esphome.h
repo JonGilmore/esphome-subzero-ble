@@ -150,6 +150,10 @@ struct FridgeBus : CommonBus {
   esphome::sensor::Sensor *wine2_set_temp = nullptr;
   esphome::sensor::Sensor *crisp_set_temp = nullptr;
   esphome::number::Number *crisp_set_temp_number = nullptr;
+  // "Automatic crisper temperature" toggle from the app. Gates whether
+  // crisp_set_temp writes actually take effect (see protocol.h comment) —
+  // opt-in alongside crisp_set_temp_number via enable_temp_control.
+  esphome::switch_::Switch *crisp_temp_mode = nullptr;
   esphome::sensor::Sensor *air_filter_pct = nullptr;
   esphome::sensor::Sensor *water_filter_pct = nullptr;
   esphome::sensor::Sensor *water_filter_gal = nullptr;
@@ -283,6 +287,10 @@ struct FridgeBus : CommonBus {
     detail::publish_if(crisp_set_temp, v);
     detail::publish_if(crisp_set_temp_number, v);
   }
+  // 1 = Automatic (matches the app's toggle "on" state), 0 = Manual.
+  void publish_crisp_temp_mode(int v) {
+    detail::publish_if(crisp_temp_mode, v == 1);
+  }
   void publish_air_filter_pct(float v) {
     detail::publish_if(air_filter_pct, v);
   }
@@ -357,12 +365,13 @@ struct FridgeBus : CommonBus {
   void publish_active_faults(const std::string &v) {
     detail::publish_if(active_faults, v);
   }
-  // Enum-to-label mapping (0="Normal", 1="Enhanced") matches the app's
-  // Humidity Control screen ordering but is unconfirmed against a live
-  // toggle.
+  // Enum-to-label mapping confirmed 2026-07-25 by changing the setting in
+  // the official app while watching raw BLE state: 1="Normal",
+  // 2="Enhanced" (NOT 0/1 like night_mode — do not assume index order for
+  // this field).
   void publish_humidity_control(int v) {
     if (humidity_control_select != nullptr)
-      humidity_control_select->publish_state(v == 1 ? "Enhanced" : "Normal");
+      humidity_control_select->publish_state(v == 2 ? "Enhanced" : "Normal");
   }
   void publish_door_ajar_timeout(int v) {
     detail::publish_if(door_ajar_timeout, static_cast<float>(v));

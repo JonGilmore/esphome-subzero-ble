@@ -102,6 +102,9 @@ ApplianceDebugSwitch = subzero_appliance_ns.class_(
     "ApplianceDebugSwitch", switch.Switch
 )
 ApplianceSetSwitch = subzero_appliance_ns.class_("ApplianceSetSwitch", switch.Switch)
+ApplianceSetIntSwitch = subzero_appliance_ns.class_(
+    "ApplianceSetIntSwitch", switch.Switch
+)
 ApplianceSetNumber = subzero_appliance_ns.class_("ApplianceSetNumber", number.Number)
 ApplianceSetIntSelect = subzero_appliance_ns.class_(
     "ApplianceSetIntSelect", select.Select
@@ -635,6 +638,23 @@ FRIDGE_WRITABLE_NUMBERS = [
 ]
 FRIDGE_WRITABLE_SWITCHES: list = []  # sabbath_on writability also unconfirmed
 
+# "Automatic crisper temperature" toggle from the app. Gates whether
+# crisp_set_temp writes take effect at all (confirmed via live BLE
+# testing 2026-07-25 — writes were silently ignored while this was on).
+# Built alongside crisp_set_temp_number, under the same enable_temp_control
+# opt-in. Wire format is an int 0/1, not a JSON bool — see
+# ApplianceSetIntSwitch in appliance_base.h.
+FRIDGE_TEMP_INT_SWITCHES = [
+    (
+        "crisp_temp_mode",
+        "Automatic Crisper Temperature",
+        "set_crisp_temp_mode_switch",
+        "crisp_temp_mode",
+        {CONF_ICON: "mdi:thermostat-auto"},
+        "hide_crisper",
+    ),
+]
+
 # Mode selects — opt-in via `enable_mode_selects: true`. See TYPE_SCHEMAS
 # comment above for why these are best-effort/unconfirmed.
 
@@ -738,15 +758,17 @@ FRIDGE_GROUPED_SELECTS = [
 ]
 
 # Simple 2-option selects backed by a single int property. Entry shape:
-# (suffix, name_suffix, setter, property_key, options, hide_key). Option
-# order matches the int value written (index 0 -> 0, index 1 -> 1).
+# (suffix, name_suffix, setter, property_key, [(label, value), ...],
+# hide_key). Each label carries its own explicit wire value — confirmed
+# on a real appliance that these do NOT always match option index order
+# (night_mode is 0/1, but humidity_control is 1=Normal/2=Enhanced).
 FRIDGE_INT_SELECTS = [
     (
         "night_mode_select",
         "Night Mode",
         "set_night_mode_select",
         "night_mode",
-        ["Disabled", "Enabled"],
+        [("Disabled", 0), ("Enabled", 1)],
         "hide_vacation_ice_modes",
     ),
     (
@@ -754,7 +776,7 @@ FRIDGE_INT_SELECTS = [
         "Humidity Control",
         "set_humidity_control_select",
         "humidity_control",
-        ["Normal", "Enhanced"],
+        [("Normal", 1), ("Enhanced", 2)],
         "hide_extra_diagnostics",
     ),
 ]
@@ -1415,6 +1437,26 @@ async def _build_set_switch(
     return sw
 
 
+async def _build_set_int_switch(
+    parent_id, parent_var, suffix, name_suffix, property_key, kwargs, hidden
+):
+    """Like _build_set_switch, but for properties whose wire format is an
+    int (0/1) rather than a JSON boolean literal — see ApplianceSetIntSwitch."""
+    cfg_raw = {
+        CONF_ID: _entity_id(parent_id, suffix, ApplianceSetIntSwitch),
+        CONF_NAME: name_suffix,
+        CONF_DEVICE_ID: _subdevice_id(parent_id),
+    }
+    cfg_raw.update(kwargs)
+    if hidden:
+        cfg_raw[CONF_INTERNAL] = True
+    cfg = switch.switch_schema(ApplianceSetIntSwitch)(cfg_raw)
+    sw = await switch.new_switch(cfg)
+    cg.add(sw.set_parent(parent_var))
+    cg.add(sw.set_property_key(property_key))
+    return sw
+
+
 async def _build_set_number(
     parent_id,
     parent_var,
@@ -1450,10 +1492,11 @@ async def _build_set_number(
 
 
 async def _build_set_int_select(
-    parent_id, parent_var, suffix, name_suffix, property_key, options, hidden
+    parent_id, parent_var, suffix, name_suffix, property_key, value_mappings, hidden
 ):
     """Instantiates an ApplianceSetIntSelect HA entity backed by a single
-    int property (option index N -> write N)."""
+    int property. value_mappings is [(label, int_value), ...] — each
+    label writes its own explicit value (not necessarily its list index)."""
     cfg_raw = {
         CONF_ID: _entity_id(parent_id, suffix, ApplianceSetIntSelect),
         CONF_NAME: name_suffix,
@@ -1462,9 +1505,12 @@ async def _build_set_int_select(
     if hidden:
         cfg_raw[CONF_INTERNAL] = True
     cfg = select.select_schema(ApplianceSetIntSelect)(cfg_raw)
+    options = [label for label, _value in value_mappings]
     s = await select.new_select(cfg, options=options)
     cg.add(s.set_parent(parent_var))
     cg.add(s.set_property_key(property_key))
+    for label, value in value_mappings:
+        cg.add(s.add_value(label, value))
     return s
 
 
@@ -1626,6 +1672,28 @@ async def to_code(config):
             _resolve_hidden(config, hide_key),
         )
         cg.add(getattr(var, setter)(n))
+
+    # Int-wire writable switches (fridge only, opt-in via enable_temp_control) —
+    # currently just crisp_temp_mode, built alongside crisp_set_temp_number.
+    if type_ == "fridge" and config.get("enable_temp_control"):
+        for (
+            suffix,
+            name_suffix,
+            setter,
+            prop_key,
+            kwargs,
+            hide_key,
+        ) in FRIDGE_TEMP_INT_SWITCHES:
+            isw = await _build_set_int_switch(
+                parent_id,
+                var,
+                suffix,
+                f"{name} {name_suffix}",
+                prop_key,
+                kwargs,
+                _resolve_hidden(config, hide_key),
+            )
+            cg.add(getattr(var, setter)(isw))
 
     # Mode selects (fridge only, opt-in via enable_mode_selects) — see
     # TYPE_SCHEMAS comment for why these are best-effort/unconfirmed.

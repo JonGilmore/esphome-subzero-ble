@@ -106,6 +106,7 @@ json fridge_to_json(const FridgeState &s) {
   OPT_PUT(o, s, wine2_set_temp);
   OPT_PUT(o, s, wine_temp_alert_on);
   OPT_PUT(o, s, crisp_set_temp);
+  OPT_PUT(o, s, crisp_temp_mode);
   OPT_PUT(o, s, air_filter_on);
   OPT_PUT(o, s, air_filter_pct_remaining);
   OPT_PUT(o, s, water_filter_pct_remaining);

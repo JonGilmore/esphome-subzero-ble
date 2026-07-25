@@ -85,6 +85,9 @@ public:
   void set_crisp_set_temp_number(esphome::number::Number *n) {
     bus_.crisp_set_temp_number = n;
   }
+  void set_crisp_temp_mode_switch(esphome::switch_::Switch *s) {
+    bus_.crisp_temp_mode = s;
+  }
   void set_air_filter_pct_sensor(esphome::sensor::Sensor *s) {
     bus_.air_filter_pct = s;
   }

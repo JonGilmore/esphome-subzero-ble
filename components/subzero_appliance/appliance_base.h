@@ -19,6 +19,7 @@
 #include "esphome/components/text_sensor/text_sensor.h"
 #include "esphome/core/component.h"
 
+#include <deque>
 #include <string>
 #include <utility>
 #include <vector>
@@ -140,6 +141,24 @@ public:
     hub()->write_set_string(key, value);
   }
 
+  // Used by ApplianceSetGroupedSelect when a mode picker needs to write
+  // several fields for one selection (e.g. Ice Maker Mode writes up to
+  // three bools). Firing them back-to-back in the same loop iteration
+  // overwhelmed the BLE stack during live testing — a write landed with
+  // the wrong value under load. Queuing and draining one write per
+  // timeout tick keeps every write isolated. A deque (rather than
+  // overwriting a single pending batch) lets two selects fire close
+  // together without clobbering each other's writes.
+  void write_set_bool_sequence(std::vector<std::pair<std::string, bool>> writes) {
+    bool was_idle = write_queue_.empty();
+    for (auto &w : writes) {
+      write_queue_.push_back(std::move(w));
+    }
+    if (was_idle) {
+      drain_write_queue_();
+    }
+  }
+
   // ---- Button actions (called from ApplianceButton::press_action) ----
 
   // Connect: reset hub state and trigger ble_client connect.
@@ -163,6 +182,25 @@ protected:
   // Collaborators owned by this component (lifetime = ours)
   EspIdfTransport transport_;
   EsphomeScheduler scheduler_;
+
+private:
+  // See write_set_bool_sequence() above.
+  static constexpr std::uint32_t kGroupedWriteSpacingMs = 750;
+  std::deque<std::pair<std::string, bool>> write_queue_;
+
+  void drain_write_queue_() {
+    if (write_queue_.empty())
+      return;
+    auto entry = write_queue_.front();
+    write_queue_.pop_front();
+    write_set_bool(entry.first, entry.second);
+    if (!write_queue_.empty()) {
+      this->set_timeout("subzero_grouped_write", kGroupedWriteSpacingMs,
+                         [this]() { this->drain_write_queue_(); });
+    }
+  }
+
+protected:
 
   // Config (set from Python codegen)
   std::string pending_pin_;
@@ -276,6 +314,29 @@ private:
   std::string property_key_;
 };
 
+// Switch subclass for a boolean-like property whose wire format is an int
+// (0/1) rather than a JSON boolean literal — needed for crisp_temp_mode,
+// which was confirmed via live BLE testing to accept `{"crisp_temp_mode":
+// 0}` (never tested with a JSON `true`/`false`, so this stays int to match
+// the confirmed-working format exactly).
+class ApplianceSetIntSwitch : public esphome::switch_::Switch {
+public:
+  void set_parent(ApplianceBase *p) { parent_ = p; }
+  void set_property_key(const std::string &k) { property_key_ = k; }
+
+protected:
+  void write_state(bool state) override {
+    if (parent_ != nullptr && !property_key_.empty()) {
+      parent_->write_set_int(property_key_, state ? 1 : 0);
+    }
+    this->publish_state(state);
+  }
+
+private:
+  ApplianceBase *parent_ = nullptr;
+  std::string property_key_;
+};
+
 // Number subclass for writable numeric properties (set_temp, frz_set_temp,
 // kitchen_timer_duration, etc.). Sub-Zero's protocol uses integers for all
 // the writable numerics we've observed (temps in whole degrees F, timer
@@ -299,24 +360,29 @@ private:
   std::string property_key_;
 };
 
-// Select subclass for a picker that writes ONE underlying int property
-// (0 = first configured option, 1 = second, ...), for enum-like fields
-// such as night_mode / humidity_control. The enum-to-index mapping is
-// inferred from the app's own picker screens (option order), not
-// confirmed against the app's own BLE traffic — verify against a real
-// appliance before trusting the labels.
+// Select subclass for a picker that writes ONE underlying int property,
+// for enum-like fields such as night_mode / humidity_control. Each label
+// carries its own explicit int value via add_value() rather than assuming
+// the option's list index is the wire value — confirmed necessary on a
+// real appliance: night_mode is 0/1 (matches index order), but
+// humidity_control is 1=Normal/2=Enhanced (does NOT match index order;
+// writing index 0 for "Normal" was a silently-ignored invalid value).
 class ApplianceSetIntSelect : public esphome::select::Select {
 public:
   void set_parent(ApplianceBase *p) { parent_ = p; }
   void set_property_key(const std::string &k) { property_key_ = k; }
+  void add_value(const std::string &label, int value) {
+    values_.emplace_back(label, value);
+  }
 
 protected:
   void control(const std::string &value) override {
     if (parent_ != nullptr && !property_key_.empty()) {
-      auto index = this->index_of(value);
-      if (index.has_value()) {
-        parent_->write_set_int(property_key_,
-                               static_cast<int>(index.value()));
+      for (auto &entry : values_) {
+        if (entry.first == value) {
+          parent_->write_set_int(property_key_, entry.second);
+          break;
+        }
       }
     }
     this->publish_state(value);
@@ -325,6 +391,7 @@ protected:
 private:
   ApplianceBase *parent_ = nullptr;
   std::string property_key_;
+  std::vector<std::pair<std::string, int>> values_;
 };
 
 // Select subclass for a picker that maps to a *group* of independent
@@ -342,6 +409,11 @@ private:
 // the app's own writes do; it has NOT been confirmed against the app's
 // own BLE traffic, particularly for the exact "Off"/"Normal" baseline
 // semantics.
+//
+// Writes are paced (via ApplianceBase::write_set_bool_sequence) rather
+// than fired back-to-back: live testing showed that issuing several BLE
+// writes in the same loop iteration could overwhelm the stack and drop
+// or corrupt one of them.
 class ApplianceSetGroupedSelect : public esphome::select::Select {
 public:
   void set_parent(ApplianceBase *p) { parent_ = p; }
@@ -357,10 +429,14 @@ public:
 protected:
   void control(const std::string &value) override {
     if (parent_ != nullptr) {
+      std::vector<std::pair<std::string, bool>> writes;
       for (auto &entry : writes_) {
         if (entry.first == value) {
-          parent_->write_set_bool(entry.second.first, entry.second.second);
+          writes.push_back(entry.second);
         }
+      }
+      if (!writes.empty()) {
+        parent_->write_set_bool_sequence(std::move(writes));
       }
     }
     this->publish_state(value);

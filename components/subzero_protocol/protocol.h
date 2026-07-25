@@ -52,6 +52,12 @@ struct FridgeState {
   std::optional<float> wine2_set_temp;
   std::optional<bool> wine_temp_alert_on;
   std::optional<float> crisp_set_temp;
+  // Confirmed 2026-07-25 via live BLE testing: crisp_set_temp writes are
+  // silently ignored whenever crisp_temp_mode == 1 (the app's "Automatic
+  // crisper temperature" toggle, on by default). Writes only take effect
+  // once this is set to 0 (manual). Integer 0/1 on the wire, not a JSON
+  // bool.
+  std::optional<int> crisp_temp_mode;
   std::optional<bool> air_filter_on;
   std::optional<float> air_filter_pct_remaining;
   std::optional<float> water_filter_pct_remaining;

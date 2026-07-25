@@ -69,6 +69,7 @@ struct FridgeRecorder : CommonRecorder {
   void publish_wine_set_temp(float v) { floats["wine_set_temp"] = v; }
   void publish_wine2_set_temp(float v) { floats["wine2_set_temp"] = v; }
   void publish_crisp_set_temp(float v) { floats["crisp_set_temp"] = v; }
+  void publish_crisp_temp_mode(int v) { ints["crisp_temp_mode"] = v; }
   void publish_air_filter_pct(float v) { floats["air_filter_pct"] = v; }
   void publish_water_filter_pct(float v) { floats["water_filter_pct"] = v; }
   void publish_water_filter_gal(float v) { floats["water_filter_gal"] = v; }
@@ -293,6 +294,7 @@ TEST(Dispatch, FridgeFieldsRouted) {
   s.wine2_set_temp = 65.0f;
   s.wine_temp_alert_on = false;
   s.crisp_set_temp = 33.0f;
+  s.crisp_temp_mode = 1;
   s.air_filter_on = true;
   s.air_filter_pct_remaining = 80.0f;
   s.water_filter_pct_remaining = 50.0f;
@@ -314,6 +316,7 @@ TEST(Dispatch, FridgeFieldsRouted) {
   EXPECT_FLOAT_EQ(rec.floats["wine2_set_temp"], 65.0f);
   EXPECT_EQ(rec.bools["wine_temp_alert"], false);
   EXPECT_FLOAT_EQ(rec.floats["crisp_set_temp"], 33.0f);
+  EXPECT_EQ(rec.ints["crisp_temp_mode"], 1);
   EXPECT_EQ(rec.bools["air_filter_on"], true);
   EXPECT_FLOAT_EQ(rec.floats["air_filter_pct"], 80.0f);
   EXPECT_FLOAT_EQ(rec.floats["water_filter_pct"], 50.0f);

@@ -24,6 +24,7 @@
     }
   },
   "crisp_set_temp": 36.0,
+  "crisp_temp_mode": 1,
   "door_ajar": false,
   "door_ajar_timeout": 5,
   "frz_door_ajar": false,

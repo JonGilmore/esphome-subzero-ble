@@ -261,6 +261,7 @@ FridgeState parse_fridge(const std::string &json) {
   state.wine2_set_temp = opt_float(data["wine2_set_temp"]);
   state.wine_temp_alert_on = opt_bool(data["wine_temp_alert_on"]);
   state.crisp_set_temp = opt_float(data["crisp_set_temp"]);
+  state.crisp_temp_mode = opt_int(data["crisp_temp_mode"]);
   state.air_filter_on = opt_bool(data["air_filter_on"]);
   state.air_filter_pct_remaining = opt_float(data["air_filter_pct_remaining"]);
   state.water_filter_pct_remaining =
