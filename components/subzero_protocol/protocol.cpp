@@ -63,6 +63,17 @@ JsonObjectConst extract_data(JsonObjectConst root, bool &is_poll) {
     is_poll = false;
     return root;
   }
+  // Unsolicited full-state push with no wrapper at all — confirmed via
+  // live device testing 2026-07-25: after a burst of `set` writes, the
+  // appliance sometimes sends a bare property dump directly at JSON root,
+  // with none of the status/props/msg_types markers above. Shape-wise
+  // it's identical to the msg_types:1 case, just missing that marker.
+  // Recognize it via appliance_serial, which every real full dump (poll
+  // or push, any appliance type) includes.
+  if (root["appliance_serial"].is<const char *>()) {
+    is_poll = false;
+    return root;
+  }
   return JsonObjectConst();
 }
 
