@@ -28,6 +28,7 @@
   "door_ajar_timeout": 5,
   "frz_door_ajar": false,
   "frz_set_temp": 0.0,
+  "high_use_on": false,
   "humidity_control": 1,
   "ice_maker_on": true,
   "long_vacation_on": false,

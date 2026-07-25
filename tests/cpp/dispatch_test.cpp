@@ -78,6 +78,13 @@ struct FridgeRecorder : CommonRecorder {
 
   void publish_long_vacation_on(bool v) { bools["long_vacation_on"] = v; }
   void publish_short_vacation_on(bool v) { bools["short_vacation_on"] = v; }
+  void publish_high_use_on(bool v) { bools["high_use_on"] = v; }
+  void publish_high_use_start_time(const std::string &v) {
+    strings["high_use_start_time"] = v;
+  }
+  void publish_high_use_end_time(const std::string &v) {
+    strings["high_use_end_time"] = v;
+  }
   void publish_night_mode(int v) { ints["night_mode"] = v; }
   void publish_night_ice_on(bool v) { bools["night_ice_on"] = v; }
   void publish_max_ice_on(bool v) { bools["max_ice_on"] = v; }

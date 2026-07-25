@@ -36,9 +36,13 @@
 
 #include "esphome/components/binary_sensor/binary_sensor.h"
 #include "esphome/components/number/number.h"
+#include "esphome/components/select/select.h"
 #include "esphome/components/sensor/sensor.h"
 #include "esphome/components/switch/switch.h"
 #include "esphome/components/text_sensor/text_sensor.h"
+
+#include <optional>
+#include <string>
 
 namespace esphome {
 namespace subzero_protocol {
@@ -145,28 +149,101 @@ struct FridgeBus : CommonBus {
   esphome::sensor::Sensor *wine_set_temp = nullptr;
   esphome::sensor::Sensor *wine2_set_temp = nullptr;
   esphome::sensor::Sensor *crisp_set_temp = nullptr;
+  esphome::number::Number *crisp_set_temp_number = nullptr;
   esphome::sensor::Sensor *air_filter_pct = nullptr;
   esphome::sensor::Sensor *water_filter_pct = nullptr;
   esphome::sensor::Sensor *water_filter_gal = nullptr;
   esphome::text_sensor::TextSensor *water_filter_end_date = nullptr;
 
-  // Vacation / ice modes.
+  // Vacation / ice modes. `long_vacation_on`/`short_vacation_on`/
+  // `high_use_on`/`sabbath_on` (the last inherited from CommonBus) and
+  // `ice_maker_on`/`max_ice_on`/`night_ice_on` are each still parsed as
+  // independent booleans (that's what the appliance actually sends), but
+  // the app presents each group as a single mutually-exclusive picker —
+  // see `appliance_mode`/`ice_maker_mode` below, which derive a select
+  // state from these cached values. Kept as plain BinarySensor pointers
+  // too (still populated, still useful for automations that want just
+  // one flag) — Python codegen decides whether to wire them.
   esphome::binary_sensor::BinarySensor *long_vacation_on = nullptr;
   esphome::binary_sensor::BinarySensor *short_vacation_on = nullptr;
-  esphome::sensor::Sensor *night_mode = nullptr;
+  esphome::binary_sensor::BinarySensor *high_use_on = nullptr;
+  esphome::text_sensor::TextSensor *high_use_start_time = nullptr;
+  esphome::text_sensor::TextSensor *high_use_end_time = nullptr;
   esphome::binary_sensor::BinarySensor *night_ice_on = nullptr;
   esphome::binary_sensor::BinarySensor *max_ice_on = nullptr;
   esphome::text_sensor::TextSensor *max_ice_start_time = nullptr;
   esphome::text_sensor::TextSensor *max_ice_end_time = nullptr;
 
-  // Power / smart grid.
+  // Derived selects (opt-in via `enable_mode_selects: true`). Mirror the
+  // app's own grouped pickers. Writing one of these sends a `set` for
+  // every field in that option's mapping (see ApplianceSetGroupedSelect
+  // in appliance_base.h) — this is inferred from the app's UI, not
+  // confirmed against the app's own BLE traffic, since the exact
+  // multi-field write semantics for the "Off"/"Normal" baseline are
+  // unconfirmed. Verify each transition against the real appliance.
+  esphome::select::Select *ice_maker_mode = nullptr;
+  esphome::select::Select *appliance_mode = nullptr;
+  // 2-option selects backed by a single int field. Enum-to-label mapping
+  // (0/1 -> first/second option) is a best guess pending confirmation.
+  esphome::select::Select *night_mode_select = nullptr;
+  esphome::select::Select *humidity_control_select = nullptr;
+
+  // Cached last-known values, used only to recompute the derived selects
+  // above when any one contributing field changes (a push may update
+  // just one of several fields at a time).
+  std::optional<bool> ice_maker_on_cached_;
+  std::optional<bool> max_ice_on_cached_;
+  std::optional<bool> night_ice_on_cached_;
+  std::optional<bool> high_use_on_cached_;
+  std::optional<bool> short_vacation_on_cached_;
+  std::optional<bool> long_vacation_on_cached_;
+  std::optional<bool> sabbath_on_cached_;
+
+  void recompute_ice_maker_mode_() {
+    if (ice_maker_mode == nullptr || !ice_maker_on_cached_.has_value())
+      return;
+    std::string label;
+    if (max_ice_on_cached_.value_or(false))
+      label = "Max Ice";
+    else if (night_ice_on_cached_.value_or(false))
+      label = "Night Ice";
+    else if (ice_maker_on_cached_.value_or(false))
+      label = "Normal";
+    else
+      label = "Off";
+    ice_maker_mode->publish_state(label);
+  }
+
+  void recompute_appliance_mode_() {
+    if (appliance_mode == nullptr)
+      return;
+    if (!sabbath_on_cached_.has_value() && !high_use_on_cached_.has_value() &&
+        !short_vacation_on_cached_.has_value() &&
+        !long_vacation_on_cached_.has_value())
+      return;
+    std::string label;
+    if (sabbath_on_cached_.value_or(false))
+      label = "Sabbath";
+    else if (long_vacation_on_cached_.value_or(false))
+      label = "Long Vacation";
+    else if (short_vacation_on_cached_.value_or(false))
+      label = "Short Vacation";
+    else if (high_use_on_cached_.value_or(false))
+      label = "High Usage";
+    else
+      label = "Normal";
+    appliance_mode->publish_state(label);
+  }
+
+  // Power / smart grid. smart_grid_on is a Switch (writable) rather than
+  // a BinarySensor — same publish_if() call works for either since both
+  // expose publish_state().
   esphome::binary_sensor::BinarySensor *unit_on = nullptr;
-  esphome::binary_sensor::BinarySensor *smart_grid_on = nullptr;
+  esphome::switch_::Switch *smart_grid_on = nullptr;
 
   // Misc diagnostics.
   esphome::binary_sensor::BinarySensor *pin_window_open = nullptr;
   esphome::text_sensor::TextSensor *active_faults = nullptr;
-  esphome::sensor::Sensor *humidity_control = nullptr;
   esphome::sensor::Sensor *door_ajar_timeout = nullptr;
 
   // WiFi diagnostics.
@@ -177,7 +254,11 @@ struct FridgeBus : CommonBus {
 
   void publish_door_ajar(bool v) { detail::publish_if(door_ajar, v); }
   void publish_frz_door_ajar(bool v) { detail::publish_if(frz_door_ajar, v); }
-  void publish_ice_maker(bool v) { detail::publish_if(ice_maker, v); }
+  void publish_ice_maker(bool v) {
+    detail::publish_if(ice_maker, v);
+    ice_maker_on_cached_ = v;
+    recompute_ice_maker_mode_();
+  }
   void publish_ref2_door_ajar(bool v) { detail::publish_if(ref2_door_ajar, v); }
   void publish_wine_door_ajar(bool v) { detail::publish_if(wine_door_ajar, v); }
   void publish_wine_temp_alert(bool v) {
@@ -200,6 +281,7 @@ struct FridgeBus : CommonBus {
   }
   void publish_crisp_set_temp(float v) {
     detail::publish_if(crisp_set_temp, v);
+    detail::publish_if(crisp_set_temp_number, v);
   }
   void publish_air_filter_pct(float v) {
     detail::publish_if(air_filter_pct, v);
@@ -216,15 +298,51 @@ struct FridgeBus : CommonBus {
 
   void publish_long_vacation_on(bool v) {
     detail::publish_if(long_vacation_on, v);
+    long_vacation_on_cached_ = v;
+    recompute_appliance_mode_();
   }
   void publish_short_vacation_on(bool v) {
     detail::publish_if(short_vacation_on, v);
+    short_vacation_on_cached_ = v;
+    recompute_appliance_mode_();
   }
+  void publish_high_use_on(bool v) {
+    detail::publish_if(high_use_on, v);
+    high_use_on_cached_ = v;
+    recompute_appliance_mode_();
+  }
+  void publish_high_use_start_time(const std::string &v) {
+    detail::publish_if(high_use_start_time, v);
+  }
+  void publish_high_use_end_time(const std::string &v) {
+    detail::publish_if(high_use_end_time, v);
+  }
+  // Shadows CommonBus::publish_sabbath_on (resolved statically per Bus
+  // type by dispatch_common<Bus>, so this override is picked up when
+  // called through a FridgeBus instance). Preserves the existing
+  // read-only sabbath_on binary_sensor, and additionally feeds
+  // appliance_mode.
+  void publish_sabbath_on(bool v) {
+    CommonBus::publish_sabbath_on(v);
+    sabbath_on_cached_ = v;
+    recompute_appliance_mode_();
+  }
+  // Enum-to-label mapping (0="Disabled", 1="Enabled") matches the app's
+  // Night Mode screen ordering but is unconfirmed against a live toggle.
   void publish_night_mode(int v) {
-    detail::publish_if(night_mode, static_cast<float>(v));
+    if (night_mode_select != nullptr)
+      night_mode_select->publish_state(v == 1 ? "Enabled" : "Disabled");
   }
-  void publish_night_ice_on(bool v) { detail::publish_if(night_ice_on, v); }
-  void publish_max_ice_on(bool v) { detail::publish_if(max_ice_on, v); }
+  void publish_night_ice_on(bool v) {
+    detail::publish_if(night_ice_on, v);
+    night_ice_on_cached_ = v;
+    recompute_ice_maker_mode_();
+  }
+  void publish_max_ice_on(bool v) {
+    detail::publish_if(max_ice_on, v);
+    max_ice_on_cached_ = v;
+    recompute_ice_maker_mode_();
+  }
   void publish_max_ice_start_time(const std::string &v) {
     detail::publish_if(max_ice_start_time, v);
   }
@@ -239,8 +357,12 @@ struct FridgeBus : CommonBus {
   void publish_active_faults(const std::string &v) {
     detail::publish_if(active_faults, v);
   }
+  // Enum-to-label mapping (0="Normal", 1="Enhanced") matches the app's
+  // Humidity Control screen ordering but is unconfirmed against a live
+  // toggle.
   void publish_humidity_control(int v) {
-    detail::publish_if(humidity_control, static_cast<float>(v));
+    if (humidity_control_select != nullptr)
+      humidity_control_select->publish_state(v == 1 ? "Enhanced" : "Normal");
   }
   void publish_door_ajar_timeout(int v) {
     detail::publish_if(door_ajar_timeout, static_cast<float>(v));

@@ -64,6 +64,9 @@ struct FridgeState {
   // Vacation / ice modes.
   std::optional<bool> long_vacation_on;
   std::optional<bool> short_vacation_on;
+  std::optional<bool> high_use_on;
+  std::optional<std::string> high_use_start_time;
+  std::optional<std::string> high_use_end_time;
   // Integer mode enum, not a boolean — observed values 0/1 in the wild but
   // the appliance may support more; expose the raw int rather than guess
   // at a mapping.

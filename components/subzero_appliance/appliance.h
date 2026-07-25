@@ -82,6 +82,9 @@ public:
   void set_crisp_set_temp_sensor(esphome::sensor::Sensor *s) {
     bus_.crisp_set_temp = s;
   }
+  void set_crisp_set_temp_number(esphome::number::Number *n) {
+    bus_.crisp_set_temp_number = n;
+  }
   void set_air_filter_pct_sensor(esphome::sensor::Sensor *s) {
     bus_.air_filter_pct = s;
   }
@@ -102,8 +105,14 @@ public:
   void set_short_vacation_on_sensor(esphome::binary_sensor::BinarySensor *s) {
     bus_.short_vacation_on = s;
   }
-  void set_night_mode_sensor(esphome::sensor::Sensor *s) {
-    bus_.night_mode = s;
+  void set_high_use_on_sensor(esphome::binary_sensor::BinarySensor *s) {
+    bus_.high_use_on = s;
+  }
+  void set_high_use_start_time_sensor(esphome::text_sensor::TextSensor *s) {
+    bus_.high_use_start_time = s;
+  }
+  void set_high_use_end_time_sensor(esphome::text_sensor::TextSensor *s) {
+    bus_.high_use_end_time = s;
   }
   void set_night_ice_on_sensor(esphome::binary_sensor::BinarySensor *s) {
     bus_.night_ice_on = s;
@@ -118,11 +127,26 @@ public:
     bus_.max_ice_end_time = s;
   }
 
+  // Derived selects (see FridgeBus comment in dispatch_esphome.h).
+  void set_ice_maker_mode_select(esphome::select::Select *s) {
+    bus_.ice_maker_mode = s;
+  }
+  void set_appliance_mode_select(esphome::select::Select *s) {
+    bus_.appliance_mode = s;
+  }
+  void set_night_mode_select(esphome::select::Select *s) {
+    bus_.night_mode_select = s;
+  }
+  void set_humidity_control_select(esphome::select::Select *s) {
+    bus_.humidity_control_select = s;
+  }
+
   // Power / smart grid
   void set_unit_on_sensor(esphome::binary_sensor::BinarySensor *s) {
     bus_.unit_on = s;
   }
-  void set_smart_grid_on_sensor(esphome::binary_sensor::BinarySensor *s) {
+  // Writable: smart_grid_on is a Switch.
+  void set_smart_grid_on_switch(esphome::switch_::Switch *s) {
     bus_.smart_grid_on = s;
   }
 
@@ -132,9 +156,6 @@ public:
   }
   void set_active_faults_sensor(esphome::text_sensor::TextSensor *s) {
     bus_.active_faults = s;
-  }
-  void set_humidity_control_sensor(esphome::sensor::Sensor *s) {
-    bus_.humidity_control = s;
   }
   void set_door_ajar_timeout_sensor(esphome::sensor::Sensor *s) {
     bus_.door_ajar_timeout = s;

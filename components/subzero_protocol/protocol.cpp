@@ -282,6 +282,9 @@ FridgeState parse_fridge(const std::string &json) {
   // Vacation / ice modes.
   state.long_vacation_on = opt_bool(data["long_vacation_on"]);
   state.short_vacation_on = opt_bool(data["short_vacation_on"]);
+  state.high_use_on = opt_bool(data["high_use_on"]);
+  state.high_use_start_time = opt_str(data["high_use_start_time"]);
+  state.high_use_end_time = opt_str(data["high_use_end_time"]);
   state.night_mode = opt_int(data["night_mode"]);
   state.night_ice_on = opt_bool(data["night_ice_on"]);
   state.max_ice_on = opt_bool(data["max_ice_on"]);

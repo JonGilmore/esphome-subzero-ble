@@ -12,6 +12,7 @@
 #include "esphome/components/ble_client/ble_client.h"
 #include "esphome/components/button/button.h"
 #include "esphome/components/number/number.h"
+#include "esphome/components/select/select.h"
 #include "esphome/components/sensor/sensor.h"
 #include "esphome/components/switch/switch.h"
 #include "esphome/components/text/text.h"
@@ -19,6 +20,8 @@
 #include "esphome/core/component.h"
 
 #include <string>
+#include <utility>
+#include <vector>
 
 namespace esphome {
 namespace subzero_appliance {
@@ -294,6 +297,78 @@ protected:
 private:
   ApplianceBase *parent_ = nullptr;
   std::string property_key_;
+};
+
+// Select subclass for a picker that writes ONE underlying int property
+// (0 = first configured option, 1 = second, ...), for enum-like fields
+// such as night_mode / humidity_control. The enum-to-index mapping is
+// inferred from the app's own picker screens (option order), not
+// confirmed against the app's own BLE traffic — verify against a real
+// appliance before trusting the labels.
+class ApplianceSetIntSelect : public esphome::select::Select {
+public:
+  void set_parent(ApplianceBase *p) { parent_ = p; }
+  void set_property_key(const std::string &k) { property_key_ = k; }
+
+protected:
+  void control(const std::string &value) override {
+    if (parent_ != nullptr && !property_key_.empty()) {
+      auto index = this->index_of(value);
+      if (index.has_value()) {
+        parent_->write_set_int(property_key_,
+                               static_cast<int>(index.value()));
+      }
+    }
+    this->publish_state(value);
+  }
+
+private:
+  ApplianceBase *parent_ = nullptr;
+  std::string property_key_;
+};
+
+// Select subclass for a picker that maps to a *group* of independent
+// boolean properties rather than one field — e.g. Ice Maker Mode
+// (Off/Normal/Max Ice/Night Ice covers ice_maker_on/max_ice_on/
+// night_ice_on) and Appliance Mode (Normal/High Usage/Short Vacation/
+// Long Vacation/Sabbath covers high_use_on/short_vacation_on/
+// long_vacation_on/sabbath_on). The app presents these as single
+// mutually-exclusive pickers, but the BLE protocol has no dedicated
+// "set mode" verb — `set` is the only write command, one field at a
+// time. Selecting an option here writes every field registered against
+// it via add_write() (called once per (option, property_key, value)
+// triple from Python codegen), setting the chosen field(s) true and all
+// others in the group false. This is a best-effort inference of what
+// the app's own writes do; it has NOT been confirmed against the app's
+// own BLE traffic, particularly for the exact "Off"/"Normal" baseline
+// semantics.
+class ApplianceSetGroupedSelect : public esphome::select::Select {
+public:
+  void set_parent(ApplianceBase *p) { parent_ = p; }
+  // Registers one (property_key, value) write to perform when `option`
+  // is selected. Call once per write per option — e.g. for a 3-field
+  // group with 4 options, that's up to 12 calls total, each with three
+  // plain scalar arguments (kept deliberately simple for codegen).
+  void add_write(const std::string &option, const std::string &property_key,
+                 bool value) {
+    writes_.emplace_back(option, std::make_pair(property_key, value));
+  }
+
+protected:
+  void control(const std::string &value) override {
+    if (parent_ != nullptr) {
+      for (auto &entry : writes_) {
+        if (entry.first == value) {
+          parent_->write_set_bool(entry.second.first, entry.second.second);
+        }
+      }
+    }
+    this->publish_state(value);
+  }
+
+private:
+  ApplianceBase *parent_ = nullptr;
+  std::vector<std::pair<std::string, std::pair<std::string, bool>>> writes_;
 };
 
 // Text input subclass for the PIN field. esphome::text::Text is abstract

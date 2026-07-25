@@ -17,6 +17,7 @@
     }
   },
   "door_ajar_timeout": 5,
+  "high_use_on": false,
   "long_vacation_on": false,
   "pin_window_open": true,
   "short_vacation_on": false,

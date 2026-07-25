@@ -113,6 +113,12 @@ inline void dispatch_fridge(const FridgeState &s, Bus &bus) {
     bus.publish_long_vacation_on(*s.long_vacation_on);
   if (s.short_vacation_on)
     bus.publish_short_vacation_on(*s.short_vacation_on);
+  if (s.high_use_on)
+    bus.publish_high_use_on(*s.high_use_on);
+  if (s.high_use_start_time)
+    bus.publish_high_use_start_time(*s.high_use_start_time);
+  if (s.high_use_end_time)
+    bus.publish_high_use_end_time(*s.high_use_end_time);
   if (s.night_mode)
     bus.publish_night_mode(*s.night_mode);
   if (s.night_ice_on)

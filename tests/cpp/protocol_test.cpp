@@ -113,6 +113,9 @@ json fridge_to_json(const FridgeState &s) {
   OPT_PUT(o, s, water_filter_end_date);
   OPT_PUT(o, s, long_vacation_on);
   OPT_PUT(o, s, short_vacation_on);
+  OPT_PUT(o, s, high_use_on);
+  OPT_PUT(o, s, high_use_start_time);
+  OPT_PUT(o, s, high_use_end_time);
   OPT_PUT(o, s, night_mode);
   OPT_PUT(o, s, night_ice_on);
   OPT_PUT(o, s, max_ice_on);
