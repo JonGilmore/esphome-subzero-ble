@@ -278,6 +278,32 @@ FridgeState parse_fridge(const std::string &json) {
       state.water_filter_end_date = v;
     }
   }
+
+  // Vacation / ice modes.
+  state.long_vacation_on = opt_bool(data["long_vacation_on"]);
+  state.short_vacation_on = opt_bool(data["short_vacation_on"]);
+  state.night_mode = opt_int(data["night_mode"]);
+  state.night_ice_on = opt_bool(data["night_ice_on"]);
+  state.max_ice_on = opt_bool(data["max_ice_on"]);
+  state.max_ice_start_time = opt_str(data["max_ice_start_time"]);
+  state.max_ice_end_time = opt_str(data["max_ice_end_time"]);
+
+  // Power / smart grid.
+  state.unit_on = opt_bool(data["unit_on"]);
+  state.smart_grid_on = opt_bool(data["smart_grid_on"]);
+
+  // Misc diagnostics.
+  state.pin_window_open = opt_bool(data["pin_window_open"]);
+  state.active_faults = opt_str(data["active_faults"]);
+  state.humidity_control = opt_int(data["humidity_control"]);
+  state.door_ajar_timeout = opt_int(data["door_ajar_timeout"]);
+
+  // WiFi diagnostics.
+  state.ap_ssid = opt_str(data["ap_ssid"]);
+  state.ap_rssi = opt_int(data["ap_rssi"]);
+  state.ap_chan = opt_int(data["ap_chan"]);
+  state.ap_enc = opt_int(data["ap_enc"]);
+
   return state;
 }
 

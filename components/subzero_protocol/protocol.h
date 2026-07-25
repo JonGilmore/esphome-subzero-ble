@@ -60,6 +60,37 @@ struct FridgeState {
   // to an ISO8601 timestamp ("YYYY-MM-DDT00:00:00+00:00") by the parser so
   // Home Assistant's timestamp device_class accepts it.
   std::optional<std::string> water_filter_end_date;
+
+  // Vacation / ice modes.
+  std::optional<bool> long_vacation_on;
+  std::optional<bool> short_vacation_on;
+  // Integer mode enum, not a boolean — observed values 0/1 in the wild but
+  // the appliance may support more; expose the raw int rather than guess
+  // at a mapping.
+  std::optional<int> night_mode;
+  std::optional<bool> night_ice_on;
+  std::optional<bool> max_ice_on;
+  std::optional<std::string> max_ice_start_time;
+  std::optional<std::string> max_ice_end_time;
+
+  // Power / smart grid.
+  std::optional<bool> unit_on;
+  std::optional<bool> smart_grid_on;
+
+  // Misc diagnostics.
+  std::optional<bool> pin_window_open;
+  // Only populated when the appliance sends a plain string. Observed as
+  // `null` on every unit tested so far; shape when populated (string vs.
+  // array/bitmask) is unconfirmed.
+  std::optional<std::string> active_faults;
+  std::optional<int> humidity_control;
+  std::optional<int> door_ajar_timeout;
+
+  // WiFi diagnostics (the appliance's own view of its AP connection).
+  std::optional<std::string> ap_ssid;
+  std::optional<int> ap_rssi;
+  std::optional<int> ap_chan;
+  std::optional<int> ap_enc;
 };
 
 struct DishwasherState {

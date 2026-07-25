@@ -75,6 +75,30 @@ struct FridgeRecorder : CommonRecorder {
   void publish_water_filter_end_date(const std::string &v) {
     strings["water_filter_end_date"] = v;
   }
+
+  void publish_long_vacation_on(bool v) { bools["long_vacation_on"] = v; }
+  void publish_short_vacation_on(bool v) { bools["short_vacation_on"] = v; }
+  void publish_night_mode(int v) { ints["night_mode"] = v; }
+  void publish_night_ice_on(bool v) { bools["night_ice_on"] = v; }
+  void publish_max_ice_on(bool v) { bools["max_ice_on"] = v; }
+  void publish_max_ice_start_time(const std::string &v) {
+    strings["max_ice_start_time"] = v;
+  }
+  void publish_max_ice_end_time(const std::string &v) {
+    strings["max_ice_end_time"] = v;
+  }
+  void publish_unit_on(bool v) { bools["unit_on"] = v; }
+  void publish_smart_grid_on(bool v) { bools["smart_grid_on"] = v; }
+  void publish_pin_window_open(bool v) { bools["pin_window_open"] = v; }
+  void publish_active_faults(const std::string &v) {
+    strings["active_faults"] = v;
+  }
+  void publish_humidity_control(int v) { ints["humidity_control"] = v; }
+  void publish_door_ajar_timeout(int v) { ints["door_ajar_timeout"] = v; }
+  void publish_ap_ssid(const std::string &v) { strings["ap_ssid"] = v; }
+  void publish_ap_rssi(int v) { ints["ap_rssi"] = v; }
+  void publish_ap_chan(int v) { ints["ap_chan"] = v; }
+  void publish_ap_enc(int v) { ints["ap_enc"] = v; }
 };
 
 struct DishwasherRecorder : CommonRecorder {

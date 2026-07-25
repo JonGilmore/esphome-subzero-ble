@@ -125,15 +125,22 @@ struct FridgeBus : CommonBus {
   esphome::binary_sensor::BinarySensor *wine_temp_alert = nullptr;
   esphome::binary_sensor::BinarySensor *air_filter_on = nullptr;
 
-  // Set-temps are read-only Sensors for now. Writing them via `set`
-  // doesn't appear to work on the fridges we've tested — the appliance
-  // accepts the write (status:0) but the setpoint never actually
-  // changes. Suspect this needs an "edit mode" on the front panel
-  // first, similar to how oven cav_set_temp only accepts writes once
-  // the oven is in an active cook mode. Keep these read-only until
-  // that's understood.
+  // Set-temps are read-only Sensors by default. Writing them via `set`
+  // was assumed not to work, based on testing on fw 8.5 units (appliance
+  // accepts the write with status:0 but the setpoint never actually
+  // changes). Confirmed via community testing that writes DO take real
+  // effect on at least one fw 2.27 unit (front-panel display, official
+  // app, and BLE state all agreed after a write). Since behavior may
+  // still vary by firmware/model, this stays opt-in: the `set_temp`
+  // Sensor pointer is used by default (read-only, existing behavior
+  // unchanged); when a user sets `enable_temp_control: true`, the Python
+  // codegen instead populates `set_temp_number` (a writable Number) and
+  // leaves `set_temp` null. Exactly one of the two is ever non-null for
+  // a given config; publish_set_temp() forwards to whichever is set.
   esphome::sensor::Sensor *set_temp = nullptr;
+  esphome::number::Number *set_temp_number = nullptr;
   esphome::sensor::Sensor *frz_set_temp = nullptr;
+  esphome::number::Number *frz_set_temp_number = nullptr;
   esphome::sensor::Sensor *ref2_set_temp = nullptr;
   esphome::sensor::Sensor *wine_set_temp = nullptr;
   esphome::sensor::Sensor *wine2_set_temp = nullptr;
@@ -142,6 +149,31 @@ struct FridgeBus : CommonBus {
   esphome::sensor::Sensor *water_filter_pct = nullptr;
   esphome::sensor::Sensor *water_filter_gal = nullptr;
   esphome::text_sensor::TextSensor *water_filter_end_date = nullptr;
+
+  // Vacation / ice modes.
+  esphome::binary_sensor::BinarySensor *long_vacation_on = nullptr;
+  esphome::binary_sensor::BinarySensor *short_vacation_on = nullptr;
+  esphome::sensor::Sensor *night_mode = nullptr;
+  esphome::binary_sensor::BinarySensor *night_ice_on = nullptr;
+  esphome::binary_sensor::BinarySensor *max_ice_on = nullptr;
+  esphome::text_sensor::TextSensor *max_ice_start_time = nullptr;
+  esphome::text_sensor::TextSensor *max_ice_end_time = nullptr;
+
+  // Power / smart grid.
+  esphome::binary_sensor::BinarySensor *unit_on = nullptr;
+  esphome::binary_sensor::BinarySensor *smart_grid_on = nullptr;
+
+  // Misc diagnostics.
+  esphome::binary_sensor::BinarySensor *pin_window_open = nullptr;
+  esphome::text_sensor::TextSensor *active_faults = nullptr;
+  esphome::sensor::Sensor *humidity_control = nullptr;
+  esphome::sensor::Sensor *door_ajar_timeout = nullptr;
+
+  // WiFi diagnostics.
+  esphome::text_sensor::TextSensor *ap_ssid = nullptr;
+  esphome::sensor::Sensor *ap_rssi = nullptr;
+  esphome::sensor::Sensor *ap_chan = nullptr;
+  esphome::sensor::Sensor *ap_enc = nullptr;
 
   void publish_door_ajar(bool v) { detail::publish_if(door_ajar, v); }
   void publish_frz_door_ajar(bool v) { detail::publish_if(frz_door_ajar, v); }
@@ -153,8 +185,14 @@ struct FridgeBus : CommonBus {
   }
   void publish_air_filter_on(bool v) { detail::publish_if(air_filter_on, v); }
 
-  void publish_set_temp(float v) { detail::publish_if(set_temp, v); }
-  void publish_frz_set_temp(float v) { detail::publish_if(frz_set_temp, v); }
+  void publish_set_temp(float v) {
+    detail::publish_if(set_temp, v);
+    detail::publish_if(set_temp_number, v);
+  }
+  void publish_frz_set_temp(float v) {
+    detail::publish_if(frz_set_temp, v);
+    detail::publish_if(frz_set_temp_number, v);
+  }
   void publish_ref2_set_temp(float v) { detail::publish_if(ref2_set_temp, v); }
   void publish_wine_set_temp(float v) { detail::publish_if(wine_set_temp, v); }
   void publish_wine2_set_temp(float v) {
@@ -174,6 +212,48 @@ struct FridgeBus : CommonBus {
   }
   void publish_water_filter_end_date(const std::string &v) {
     detail::publish_if(water_filter_end_date, v);
+  }
+
+  void publish_long_vacation_on(bool v) {
+    detail::publish_if(long_vacation_on, v);
+  }
+  void publish_short_vacation_on(bool v) {
+    detail::publish_if(short_vacation_on, v);
+  }
+  void publish_night_mode(int v) {
+    detail::publish_if(night_mode, static_cast<float>(v));
+  }
+  void publish_night_ice_on(bool v) { detail::publish_if(night_ice_on, v); }
+  void publish_max_ice_on(bool v) { detail::publish_if(max_ice_on, v); }
+  void publish_max_ice_start_time(const std::string &v) {
+    detail::publish_if(max_ice_start_time, v);
+  }
+  void publish_max_ice_end_time(const std::string &v) {
+    detail::publish_if(max_ice_end_time, v);
+  }
+  void publish_unit_on(bool v) { detail::publish_if(unit_on, v); }
+  void publish_smart_grid_on(bool v) { detail::publish_if(smart_grid_on, v); }
+  void publish_pin_window_open(bool v) {
+    detail::publish_if(pin_window_open, v);
+  }
+  void publish_active_faults(const std::string &v) {
+    detail::publish_if(active_faults, v);
+  }
+  void publish_humidity_control(int v) {
+    detail::publish_if(humidity_control, static_cast<float>(v));
+  }
+  void publish_door_ajar_timeout(int v) {
+    detail::publish_if(door_ajar_timeout, static_cast<float>(v));
+  }
+  void publish_ap_ssid(const std::string &v) { detail::publish_if(ap_ssid, v); }
+  void publish_ap_rssi(int v) {
+    detail::publish_if(ap_rssi, static_cast<float>(v));
+  }
+  void publish_ap_chan(int v) {
+    detail::publish_if(ap_chan, static_cast<float>(v));
+  }
+  void publish_ap_enc(int v) {
+    detail::publish_if(ap_enc, static_cast<float>(v));
   }
 };
 

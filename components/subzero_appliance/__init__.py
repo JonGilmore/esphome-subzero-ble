@@ -319,6 +319,55 @@ FRIDGE_BINARY_SENSORS = [
         {CONF_ICON: "mdi:air-filter"},
         "hide_air_filter",
     ),
+    (
+        "long_vacation_on",
+        "Long Vacation Mode",
+        "set_long_vacation_on_sensor",
+        {CONF_ICON: "mdi:bag-suitcase"},
+        "hide_vacation_ice_modes",
+    ),
+    (
+        "short_vacation_on",
+        "Short Vacation Mode",
+        "set_short_vacation_on_sensor",
+        {CONF_ICON: "mdi:bag-suitcase-outline"},
+        "hide_vacation_ice_modes",
+    ),
+    (
+        "night_ice_on",
+        "Night Ice Mode",
+        "set_night_ice_on_sensor",
+        {CONF_ICON: "mdi:weather-night"},
+        "hide_vacation_ice_modes",
+    ),
+    (
+        "max_ice_on",
+        "Max Ice Mode",
+        "set_max_ice_on_sensor",
+        {CONF_ICON: "mdi:snowflake"},
+        "hide_vacation_ice_modes",
+    ),
+    (
+        "unit_on",
+        "Power On",
+        "set_unit_on_sensor",
+        {CONF_ICON: "mdi:power"},
+        None,
+    ),
+    (
+        "smart_grid_on",
+        "Smart Grid Mode",
+        "set_smart_grid_on_sensor",
+        {CONF_ICON: "mdi:transmission-tower"},
+        "hide_extra_diagnostics",
+    ),
+    (
+        "pin_window_open",
+        "Pairing Window Open",
+        "set_pin_window_open_sensor",
+        {CONF_ICON: "mdi:lock-clock", CONF_ENTITY_CATEGORY: ENTITY_CATEGORY_DIAGNOSTIC},
+        "hide_extra_diagnostics",
+    ),
 ]
 
 TEMP_KWARGS = {
@@ -329,27 +378,6 @@ TEMP_KWARGS = {
 }
 
 FRIDGE_SENSORS = [
-    # Set-temps are read-only Sensors. Writing them via `set` does NOT
-    # appear to work on the fridges we've tested — the appliance accepts
-    # the write (status:0) but never actually changes the setpoint, and
-    # the user has no recourse if a typo'd value somehow does take. Until
-    # we understand the appliance's set-temp guard mode (suspect: needs
-    # some "edit mode" enabled at the front panel first, similar to oven
-    # cav_set_temp requiring an active cook mode), keep these read-only.
-    (
-        "set_temp",
-        "Set Temperature",
-        "set_set_temp_sensor",
-        {**TEMP_KWARGS, CONF_ICON: "mdi:thermometer"},
-        "hide_fridge_zone",
-    ),
-    (
-        "frz_set_temp",
-        "Freezer Set Temperature",
-        "set_frz_set_temp_sensor",
-        {**TEMP_KWARGS, CONF_ICON: "mdi:snowflake-thermometer"},
-        "hide_freezer",
-    ),
     (
         "wine_set_temp",
         "Wine Zone Upper Set Temperature",
@@ -414,6 +442,73 @@ FRIDGE_SENSORS = [
         },
         "hide_water_filter_extra",
     ),
+    (
+        "night_mode",
+        "Night Mode",
+        "set_night_mode_sensor",
+        {
+            CONF_ICON: "mdi:weather-night",
+            "accuracy_decimals": 0,
+            CONF_ENTITY_CATEGORY: ENTITY_CATEGORY_DIAGNOSTIC,
+        },
+        "hide_vacation_ice_modes",
+    ),
+    (
+        "humidity_control",
+        "Humidity Control Mode",
+        "set_humidity_control_sensor",
+        {
+            CONF_ICON: "mdi:water-percent",
+            "accuracy_decimals": 0,
+            CONF_ENTITY_CATEGORY: ENTITY_CATEGORY_DIAGNOSTIC,
+        },
+        "hide_extra_diagnostics",
+    ),
+    (
+        "door_ajar_timeout",
+        "Door Ajar Alarm Timeout",
+        "set_door_ajar_timeout_sensor",
+        {
+            CONF_ICON: "mdi:door-open",
+            "accuracy_decimals": 0,
+            CONF_ENTITY_CATEGORY: ENTITY_CATEGORY_DIAGNOSTIC,
+        },
+        "hide_extra_diagnostics",
+    ),
+    (
+        "ap_rssi",
+        "WiFi Signal",
+        "set_ap_rssi_sensor",
+        {
+            CONF_UNIT_OF_MEASUREMENT: "dBm",
+            "accuracy_decimals": 0,
+            CONF_ICON: "mdi:wifi-strength-2",
+            CONF_ENTITY_CATEGORY: ENTITY_CATEGORY_DIAGNOSTIC,
+        },
+        "hide_extra_diagnostics",
+    ),
+    (
+        "ap_chan",
+        "WiFi Channel",
+        "set_ap_chan_sensor",
+        {
+            CONF_ICON: "mdi:wifi",
+            "accuracy_decimals": 0,
+            CONF_ENTITY_CATEGORY: ENTITY_CATEGORY_DIAGNOSTIC,
+        },
+        "hide_extra_diagnostics",
+    ),
+    (
+        "ap_enc",
+        "WiFi Encryption Type",
+        "set_ap_enc_sensor",
+        {
+            CONF_ICON: "mdi:wifi-lock",
+            "accuracy_decimals": 0,
+            CONF_ENTITY_CATEGORY: ENTITY_CATEGORY_DIAGNOSTIC,
+        },
+        "hide_extra_diagnostics",
+    ),
 ]
 
 FRIDGE_TEXT_SENSORS = [
@@ -426,6 +521,64 @@ FRIDGE_TEXT_SENSORS = [
             CONF_ICON: "mdi:calendar-clock",
         },
         "hide_water_filter_extra",
+    ),
+    (
+        "max_ice_start_time",
+        "Max Ice Start Time",
+        "set_max_ice_start_time_sensor",
+        {CONF_ICON: "mdi:clock-start"},
+        "hide_vacation_ice_modes",
+    ),
+    (
+        "max_ice_end_time",
+        "Max Ice End Time",
+        "set_max_ice_end_time_sensor",
+        {CONF_ICON: "mdi:clock-end"},
+        "hide_vacation_ice_modes",
+    ),
+    (
+        "ap_ssid",
+        "WiFi Network",
+        "set_ap_ssid_sensor",
+        {CONF_ICON: "mdi:wifi", CONF_ENTITY_CATEGORY: ENTITY_CATEGORY_DIAGNOSTIC},
+        "hide_extra_diagnostics",
+    ),
+    (
+        "active_faults",
+        "Active Faults",
+        "set_active_faults_sensor",
+        {
+            CONF_ICON: "mdi:alert-circle-outline",
+            CONF_ENTITY_CATEGORY: ENTITY_CATEGORY_DIAGNOSTIC,
+        },
+        "hide_extra_diagnostics",
+    ),
+]
+
+# Set-temps are read-only Sensors by default (this list). Writing them via
+# `set` was assumed inert based on testing on fw 8.5 units — the appliance
+# accepts the write (status:0) but never actually changes the setpoint.
+# Confirmed via community testing that writes DO take real physical effect
+# on at least one fw 2.27 unit (front-panel display, official app, and BLE
+# state all agreed after a write). Since this may still vary by
+# firmware/model, it stays opt-in: set `enable_temp_control: true` to swap
+# these for the writable Number versions in FRIDGE_WRITABLE_NUMBERS below,
+# after first verifying on your own appliance that a written value actually
+# reaches the physical setpoint (not just the mirrored BLE state).
+FRIDGE_TEMP_CONTROL_READONLY = [
+    (
+        "set_temp",
+        "Set Temperature",
+        "set_set_temp_sensor",
+        {**TEMP_KWARGS, CONF_ICON: "mdi:thermometer"},
+        "hide_fridge_zone",
+    ),
+    (
+        "frz_set_temp",
+        "Freezer Set Temperature",
+        "set_frz_set_temp_sensor",
+        {**TEMP_KWARGS, CONF_ICON: "mdi:snowflake-thermometer"},
+        "hide_freezer",
     ),
 ]
 
@@ -441,8 +594,34 @@ NUMBER_KWARGS = {
     CONF_MODE: "box",
 }
 
-# Fridge has no writable numbers yet — see comment on FRIDGE_SENSORS above.
-FRIDGE_WRITABLE_NUMBERS: list = []
+# Used only when `enable_temp_control: true` — see FRIDGE_TEMP_CONTROL_READONLY
+# comment above. Fridge zone range 33-45°F and freezer -10-10°F are
+# conservative bounds from typical Sub-Zero manuals; the appliance enforces
+# its own real limits regardless of what HA's UI allows selecting.
+FRIDGE_WRITABLE_NUMBERS = [
+    (
+        "set_temp",
+        "Set Temperature",
+        "set_set_temp_number",
+        "ref_set_temp",
+        33,
+        45,
+        1,
+        {**NUMBER_KWARGS, CONF_ICON: "mdi:thermometer"},
+        "hide_fridge_zone",
+    ),
+    (
+        "frz_set_temp",
+        "Freezer Set Temperature",
+        "set_frz_set_temp_number",
+        "frz_set_temp",
+        -10,
+        10,
+        1,
+        {**NUMBER_KWARGS, CONF_ICON: "mdi:snowflake-thermometer"},
+        "hide_freezer",
+    ),
+]
 FRIDGE_WRITABLE_SWITCHES: list = []  # sabbath_on writability also unconfirmed
 
 DISHWASHER_BINARY_SENSORS = [
@@ -908,6 +1087,17 @@ TYPE_SCHEMAS = {
         cv.Optional("hide_air_filter", default=True): cv.boolean,
         cv.Optional("hide_water_filter", default=True): cv.boolean,
         cv.Optional("hide_water_filter_extra", default=True): cv.boolean,
+        cv.Optional("hide_vacation_ice_modes", default=True): cv.boolean,
+        cv.Optional("hide_extra_diagnostics", default=True): cv.boolean,
+        # Opt-in: writes to `ref_set_temp`/`frz_set_temp` were assumed
+        # inert (see FridgeBus comment in dispatch_esphome.h), but this was
+        # only verified on fw 8.5 units. Confirmed via community testing to
+        # actually change the physical setpoint on a fw 2.27 unit. Since
+        # behavior may vary by firmware/model, this defaults to False so
+        # existing users keep the safe read-only Sensor behavior; set to
+        # True only after verifying writes actually take effect on your
+        # own appliance (write a value, physically check the front panel).
+        cv.Optional("enable_temp_control", default=False): cv.boolean,
     },
     "dishwasher": {
         cv.Optional("hide_softener", default=True): cv.boolean,
@@ -1146,10 +1336,14 @@ async def to_code(config):
     # ---- Type-specific entities ----
     if type_ == "fridge":
         bs_list = FRIDGE_BINARY_SENSORS
-        s_list = FRIDGE_SENSORS
         ts_list = FRIDGE_TEXT_SENSORS
         sw_list = FRIDGE_WRITABLE_SWITCHES
-        n_list = FRIDGE_WRITABLE_NUMBERS
+        if config.get("enable_temp_control"):
+            s_list = FRIDGE_SENSORS
+            n_list = FRIDGE_WRITABLE_NUMBERS
+        else:
+            s_list = FRIDGE_SENSORS + FRIDGE_TEMP_CONTROL_READONLY
+            n_list = []
     elif type_ == "dishwasher":
         bs_list = DISHWASHER_BINARY_SENSORS
         s_list = DISHWASHER_SENSORS

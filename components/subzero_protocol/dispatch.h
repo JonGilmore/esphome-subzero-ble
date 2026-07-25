@@ -108,6 +108,44 @@ inline void dispatch_fridge(const FridgeState &s, Bus &bus) {
     bus.publish_water_filter_gal(*s.water_filter_gal_remaining);
   if (s.water_filter_end_date)
     bus.publish_water_filter_end_date(*s.water_filter_end_date);
+  // Vacation / ice modes
+  if (s.long_vacation_on)
+    bus.publish_long_vacation_on(*s.long_vacation_on);
+  if (s.short_vacation_on)
+    bus.publish_short_vacation_on(*s.short_vacation_on);
+  if (s.night_mode)
+    bus.publish_night_mode(*s.night_mode);
+  if (s.night_ice_on)
+    bus.publish_night_ice_on(*s.night_ice_on);
+  if (s.max_ice_on)
+    bus.publish_max_ice_on(*s.max_ice_on);
+  if (s.max_ice_start_time)
+    bus.publish_max_ice_start_time(*s.max_ice_start_time);
+  if (s.max_ice_end_time)
+    bus.publish_max_ice_end_time(*s.max_ice_end_time);
+  // Power / smart grid
+  if (s.unit_on)
+    bus.publish_unit_on(*s.unit_on);
+  if (s.smart_grid_on)
+    bus.publish_smart_grid_on(*s.smart_grid_on);
+  // Misc diagnostics
+  if (s.pin_window_open)
+    bus.publish_pin_window_open(*s.pin_window_open);
+  if (s.active_faults)
+    bus.publish_active_faults(*s.active_faults);
+  if (s.humidity_control)
+    bus.publish_humidity_control(*s.humidity_control);
+  if (s.door_ajar_timeout)
+    bus.publish_door_ajar_timeout(*s.door_ajar_timeout);
+  // WiFi diagnostics
+  if (s.ap_ssid)
+    bus.publish_ap_ssid(*s.ap_ssid);
+  if (s.ap_rssi)
+    bus.publish_ap_rssi(*s.ap_rssi);
+  if (s.ap_chan)
+    bus.publish_ap_chan(*s.ap_chan);
+  if (s.ap_enc)
+    bus.publish_ap_enc(*s.ap_enc);
 }
 
 template <typename Bus>
