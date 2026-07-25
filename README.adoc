@@ -350,7 +350,7 @@ NOTE: Sub-Zero fridge firmware only exposes _set points_ over BLE - actual/measu
 | *Appliance Uptime* | Time since last power cycle
 |===
 
-NOTE: **The following fridge features are only available on this fork** (not yet merged upstream): opt-in setpoint writes, the Ice Maker Mode / Appliance Mode / Night Mode / Humidity Control selects, and the Automatic Crisper Temperature / Air Filter switches. See <<fridge-write-support>> below. To use them, point `external_components` at `https://github.com/bob-laz/esphome-subzero-ble` (`ref: main`, or pin to a specific commit) instead of the upstream URL shown in the examples above.
+NOTE: In addition to the read-only sensors above, several fridge properties are opt-in writable: setpoints, and the Ice Maker Mode / Appliance Mode / Night Mode / Humidity Control selects plus the Automatic Crisper Temperature / Air Purifier switches. See <<fridge-write-support>> below.
 
 === Dishwasher
 
@@ -459,14 +459,14 @@ In addition to the read-only sensors above, several properties are exposed as **
 
 IMPORTANT: **Oven Set Temperature only adjusts an already-running cycle.** The appliance silently ignores writes to `cav_set_temp` / `cav2_set_temp` when the cavity is off. To use this entity, first start a cook mode (Bake, Roast, etc.) at the appliance's front panel - once the oven is actively heating, HA can adjust the target temperature from there. Writing it from the off state does **not** turn the oven on. Probe Set Temperature behaves the same way (probe must be inserted with the appliance running in a probe-aware mode). This is an appliance-side restriction, not a limitation of the integration.
 
-NOTE: **Dishwasher light is intentionally read-only for now.** The appliance acks `set light_on` (status:0) but the actual state never changes. Until that's understood, it stays a read-only binary sensor so a misclick can't risk altering a running appliance. **Fridge set temperatures are a different story** - see <<fridge-write-support>> below, since this fork found the actual reason they looked inert.
+NOTE: **Dishwasher light is intentionally read-only for now.** The appliance acks `set light_on` (status:0) but the actual state never changes. Until that's understood, it stays a read-only binary sensor so a misclick can't risk altering a running appliance. **Fridge set temperatures are a different story** - see <<fridge-write-support>> below for the actual reason they looked inert.
 
-NOTE: Writes go to the **D5** control channel (the same one used for unlocking and pairing). The appliance must be connected and paired - if the connection is down or the pairing window is closed (status 302), writes are dropped (now logged as a `WARN` in this fork - see below) and the entity reverts on the next poll. The standard pairing flow is unchanged.
+NOTE: Writes go to the **D5** control channel (the same one used for unlocking and pairing). The appliance must be connected and paired - if the connection is down or the pairing window is closed (status 302), writes are dropped (logged as a `WARN` - see below) and the entity reverts on the next poll. The standard pairing flow is unchanged.
 
 [[fridge-write-support]]
 === Fridge Write Support
 
-WARNING: Everything in this section is **specific to this fork** (`https://github.com/bob-laz/esphome-subzero-ble`) and has not been merged upstream. Point `external_components` at this fork's URL (`ref: main`, or pin to a commit) to use it. Confirmed via live BLE testing against one appliance (Sub-Zero CL4850UFDID, firmware 2.27) on 2026-07-25 - option encodings and write behavior may differ on other models/firmware, so everything here is opt-in and defaults to the safe read-only behavior.
+WARNING: Confirmed via live BLE testing against one appliance (Sub-Zero CL4850UFDID, firmware 2.27) on 2026-07-25 - option encodings and write behavior may differ on other models/firmware, so everything here is opt-in and defaults to the safe read-only behavior.
 
 Two flags on a `type: fridge` `subzero_appliance:` entry unlock additional writable entities:
 
@@ -505,7 +505,7 @@ subzero_appliance:
 | *Ice Maker Mode* (`Off`/`Normal`/`Max Ice`/`Night Ice`) | Grouped select - the BLE protocol has no dedicated "set mode" command, so choosing an option writes all three underlying booleans (`ice_maker_on`/`max_ice_on`/`night_ice_on`) individually. All four options confirmed round-tripping correctly.
 | *Appliance Mode* (`Normal`/`High Usage`/`Short Vacation`/`Long Vacation`/`Sabbath`) | Same grouped-write pattern across `high_use_on`/`short_vacation_on`/`long_vacation_on`/`sabbath_on`. All five options confirmed, including Sabbath.
 | *Night Mode* (`Disabled`/`Enabled`) | Single-field select, confirmed both directions. Wire encoding is a plain `0`/`1`.
-| *Humidity Control* (`Normal`/`Enhanced`) | Single-field select, confirmed both directions. **Wire encoding is `1`=Normal / `2`=Enhanced** - notably not `0`/`1` like Night Mode. An earlier version of this fork assumed `0`/`1` here, which meant the write silently no-opped (the appliance ignores the invalid value `0`) and the displayed label was backwards.
+| *Humidity Control* (`Normal`/`Enhanced`) | Single-field select, confirmed both directions. **Wire encoding is `1`=Normal / `2`=Enhanced** - notably not `0`/`1` like Night Mode. An earlier implementation assumed `0`/`1` here, which meant the write silently no-opped (the appliance ignores the invalid value `0`) and the displayed label was backwards.
 | *Air Filter* | Turns from a read-only binary sensor into a writable switch. This is the appliance's "Air Purifier" toggle - confirmed by turning it off on the display and observing this exact BLE field flip, then confirmed independently as a direct BLE write (`true`/`false` JSON boolean, not int). Both directions hold.
 |===
 
@@ -558,7 +558,7 @@ These diagnostic text sensors are exposed under HA's Diagnostic section for ever
 | Sub-Zero | BI36UFDID | Built-in refrigerator/freezer with ice maker | Fully working
 | Sub-Zero | CL44750SID | Refrigerator/freezer with ice maker | Fully working
 | Sub-Zero | CL4850SID | Refrigerator/freezer with ice maker | Fully working
-| Sub-Zero | CL4850UFDID | Refrigerator/freezer with ice maker (fw 2.27) | Fully working, including <<fridge-write-support,fork-only write support>> - temp control, Ice Maker Mode, Appliance Mode, Night Mode, Humidity Control, Automatic Crisper Temperature
+| Sub-Zero | CL4850UFDID | Refrigerator/freezer with ice maker (fw 2.27) | Fully working, including <<fridge-write-support,write support>> - temp control, Ice Maker Mode, Appliance Mode, Night Mode, Humidity Control, Automatic Crisper Temperature
 | Sub-Zero | DEU2450BG | Under-counter beverage center refrigerator | Fully working
 | Sub-Zero | DEU2450R | Under-counter refrigerator | Fully working
 | Sub-Zero | DEU2450WDZ | Under-counter wine storage, dual-zone | Fully working
