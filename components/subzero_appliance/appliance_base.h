@@ -20,6 +20,7 @@
 #include "esphome/core/component.h"
 
 #include <deque>
+#include <functional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -128,34 +129,44 @@ public:
     hub()->set_stored_pin(pin);
   }
 
-  // Used by ApplianceSetSwitch / ApplianceSetNumber when HA writes a
-  // value. Forwards directly to the hub which handles JSON-formatting
-  // and the D5 write.
-  void write_set_bool(const std::string &key, bool value) {
-    hub()->write_set_bool(key, value);
+  // Used by every writable entity (switches, numbers, selects) when HA
+  // writes a value. All three enqueue rather than writing immediately —
+  // see enqueue_write() below for why.
+  void enqueue_write_bool(const std::string &key, bool value) {
+    enqueue_write([this, key, value]() { hub()->write_set_bool(key, value); });
   }
-  void write_set_int(const std::string &key, int value) {
-    hub()->write_set_int(key, value);
+  void enqueue_write_int(const std::string &key, int value) {
+    enqueue_write([this, key, value]() { hub()->write_set_int(key, value); });
   }
-  void write_set_string(const std::string &key, const std::string &value) {
-    hub()->write_set_string(key, value);
+  void enqueue_write_string(const std::string &key, const std::string &value) {
+    enqueue_write(
+        [this, key, value]() { hub()->write_set_string(key, value); });
+  }
+
+  // Queues one BLE write, draining one write per timeout tick rather than
+  // firing immediately. Live testing showed that issuing several BLE
+  // writes in the same loop iteration — whether from one grouped-select
+  // mode change or from two unrelated entities toggled close together —
+  // could overwhelm the stack and drop or corrupt one of them. Every
+  // writable entity goes through this single queue so the pacing
+  // protection isn't limited to grouped selects. A deque (rather than
+  // overwriting a single pending batch) lets writes queued from different
+  // entities interleave in FIFO order without clobbering each other.
+  void enqueue_write(std::function<void()> write_fn) {
+    bool was_idle = write_queue_.empty();
+    write_queue_.push_back(std::move(write_fn));
+    if (was_idle) {
+      drain_write_queue_();
+    }
   }
 
   // Used by ApplianceSetGroupedSelect when a mode picker needs to write
   // several fields for one selection (e.g. Ice Maker Mode writes up to
-  // three bools). Firing them back-to-back in the same loop iteration
-  // overwhelmed the BLE stack during live testing — a write landed with
-  // the wrong value under load. Queuing and draining one write per
-  // timeout tick keeps every write isolated. A deque (rather than
-  // overwriting a single pending batch) lets two selects fire close
-  // together without clobbering each other's writes.
+  // three bools) — each field is queued individually via
+  // enqueue_write_bool so they're paced the same as any other write.
   void write_set_bool_sequence(std::vector<std::pair<std::string, bool>> writes) {
-    bool was_idle = write_queue_.empty();
     for (auto &w : writes) {
-      write_queue_.push_back(std::move(w));
-    }
-    if (was_idle) {
-      drain_write_queue_();
+      enqueue_write_bool(w.first, w.second);
     }
   }
 
@@ -170,7 +181,7 @@ public:
   void press_log_debug_info();
   void press_reset_pairing();
   void press_clear_cloud_token() {
-    write_set_string("remote_svc_reg_token", "");
+    enqueue_write_string("remote_svc_reg_token", "");
   }
 
 protected:
@@ -184,18 +195,18 @@ protected:
   EsphomeScheduler scheduler_;
 
 private:
-  // See write_set_bool_sequence() above.
-  static constexpr std::uint32_t kGroupedWriteSpacingMs = 750;
-  std::deque<std::pair<std::string, bool>> write_queue_;
+  // See enqueue_write() above.
+  static constexpr std::uint32_t kWriteSpacingMs = 750;
+  std::deque<std::function<void()>> write_queue_;
 
   void drain_write_queue_() {
     if (write_queue_.empty())
       return;
-    auto entry = write_queue_.front();
+    auto write_fn = std::move(write_queue_.front());
     write_queue_.pop_front();
-    write_set_bool(entry.first, entry.second);
+    write_fn();
     if (!write_queue_.empty()) {
-      this->set_timeout("subzero_grouped_write", kGroupedWriteSpacingMs,
+      this->set_timeout("subzero_write_queue", kWriteSpacingMs,
                          [this]() { this->drain_write_queue_(); });
     }
   }
@@ -304,7 +315,7 @@ public:
 protected:
   void write_state(bool state) override {
     if (parent_ != nullptr && !property_key_.empty()) {
-      parent_->write_set_bool(property_key_, state);
+      parent_->enqueue_write_bool(property_key_, state);
     }
     this->publish_state(state);
   }
@@ -327,7 +338,7 @@ public:
 protected:
   void write_state(bool state) override {
     if (parent_ != nullptr && !property_key_.empty()) {
-      parent_->write_set_int(property_key_, state ? 1 : 0);
+      parent_->enqueue_write_int(property_key_, state ? 1 : 0);
     }
     this->publish_state(state);
   }
@@ -350,7 +361,7 @@ public:
 protected:
   void control(float value) override {
     if (parent_ != nullptr && !property_key_.empty()) {
-      parent_->write_set_int(property_key_, static_cast<int>(value));
+      parent_->enqueue_write_int(property_key_, static_cast<int>(value));
     }
     this->publish_state(value);
   }
@@ -380,7 +391,7 @@ protected:
     if (parent_ != nullptr && !property_key_.empty()) {
       for (auto &entry : values_) {
         if (entry.first == value) {
-          parent_->write_set_int(property_key_, entry.second);
+          parent_->enqueue_write_int(property_key_, entry.second);
           break;
         }
       }
@@ -405,15 +416,17 @@ private:
 // time. Selecting an option here writes every field registered against
 // it via add_write() (called once per (option, property_key, value)
 // triple from Python codegen), setting the chosen field(s) true and all
-// others in the group false. This is a best-effort inference of what
-// the app's own writes do; it has NOT been confirmed against the app's
-// own BLE traffic, particularly for the exact "Off"/"Normal" baseline
-// semantics.
+// others in the group false. Confirmed via live BLE testing 2026-07-25:
+// every option in both groups (all four Ice Maker Mode options, all five
+// Appliance Mode options including Sabbath) round-trips correctly with
+// proper write pacing.
 //
-// Writes are paced (via ApplianceBase::write_set_bool_sequence) rather
-// than fired back-to-back: live testing showed that issuing several BLE
-// writes in the same loop iteration could overwhelm the stack and drop
-// or corrupt one of them.
+// Writes are paced (via ApplianceBase::enqueue_write) rather than fired
+// back-to-back: live testing showed that issuing several BLE writes in
+// the same loop iteration could overwhelm the stack and drop or corrupt
+// one of them. All writable entities share one serialized queue, not
+// just grouped selects, since the same congestion risk applies to any
+// writes landing close together regardless of source.
 class ApplianceSetGroupedSelect : public esphome::select::Select {
 public:
   void set_parent(ApplianceBase *p) { parent_ = p; }

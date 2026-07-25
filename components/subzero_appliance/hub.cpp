@@ -771,9 +771,17 @@ void SubzeroHub::write_set_property_(const std::string &key,
   // populated after subscribe completes; pin_confirmed_ flips true when
   // the unlock_channel response lands. Drop the write if either guard
   // fails — the alternative is queueing, which adds complexity for no
-  // visible UX win (HA will retry on the next user action).
-  if (d5_handle_ == 0 || !pin_confirmed_)
+  // visible UX win (HA will retry on the next user action). Still log
+  // it: a silently-dropped write previously looked identical to "nothing
+  // happened" with no way to tell the two apart from the logs.
+  if (d5_handle_ == 0 || !pin_confirmed_) {
+    HUB_LOGW("szg",
+             "[%s] Dropping write %s=%s: control channel not ready "
+             "(d5_handle=%d, pin_confirmed=%d)",
+             name_.c_str(), key.c_str(), json_value.c_str(), d5_handle_,
+             pin_confirmed_);
     return;
+  }
   std::string cmd = esphome::subzero_protocol::build_set(key, json_value);
   transport_->write(d5_handle_,
                     reinterpret_cast<const std::uint8_t *>(cmd.data()),

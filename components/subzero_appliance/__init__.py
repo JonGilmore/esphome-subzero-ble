@@ -636,7 +636,9 @@ FRIDGE_WRITABLE_NUMBERS = [
         "hide_crisper",
     ),
 ]
-FRIDGE_WRITABLE_SWITCHES: list = []  # sabbath_on writability also unconfirmed
+FRIDGE_WRITABLE_SWITCHES: list = []  # sabbath_on write is confirmed working
+# (2026-07-25), but only via the Appliance Mode grouped select below —
+# no separate standalone switch is needed.
 
 # "Automatic crisper temperature" toggle from the app. Gates whether
 # crisp_set_temp writes take effect at all (confirmed via live BLE
@@ -655,8 +657,8 @@ FRIDGE_TEMP_INT_SWITCHES = [
     ),
 ]
 
-# Mode selects — opt-in via `enable_mode_selects: true`. See TYPE_SCHEMAS
-# comment above for why these are best-effort/unconfirmed.
+# Mode selects — opt-in via `enable_mode_selects: true`. Every option below
+# was confirmed via live BLE testing 2026-07-25 (see TYPE_SCHEMAS comment).
 
 # Grouped selects: (suffix, name_suffix, setter, options, hide_key). Each
 # option is (label, [(property_key, bool_value), ...]) — selecting it
@@ -1260,26 +1262,34 @@ TYPE_SCHEMAS = {
         cv.Optional("hide_water_filter_extra", default=True): cv.boolean,
         cv.Optional("hide_vacation_ice_modes", default=True): cv.boolean,
         cv.Optional("hide_extra_diagnostics", default=True): cv.boolean,
-        # Opt-in: writes to `ref_set_temp`/`frz_set_temp` were assumed
-        # inert (see FridgeBus comment in dispatch_esphome.h), but this was
-        # only verified on fw 8.5 units. Confirmed via community testing to
-        # actually change the physical setpoint on a fw 2.27 unit. Since
-        # behavior may vary by firmware/model, this defaults to False so
-        # existing users keep the safe read-only Sensor behavior; set to
-        # True only after verifying writes actually take effect on your
-        # own appliance (write a value, physically check the front panel).
+        # Opt-in: writes to `ref_set_temp`/`frz_set_temp`/`crisp_set_temp`
+        # were assumed inert (see FridgeBus comment in dispatch_esphome.h),
+        # but this was only verified on fw 8.5 units. Confirmed via live
+        # BLE testing 2026-07-25 on a fw 2.27 CL4850UFDID unit that all
+        # three actually change the physical setpoint — ref_set_temp and
+        # frz_set_temp unconditionally, crisp_set_temp only once
+        # crisp_temp_mode is 0/Manual (see the Automatic Crisper
+        # Temperature switch below). Since behavior may vary by
+        # firmware/model, this defaults to False so existing users keep
+        # the safe read-only Sensor behavior; set to True only after
+        # verifying writes actually take effect on your own appliance
+        # (write a value, physically check the front panel).
         cv.Optional("enable_temp_control", default=False): cv.boolean,
         # Opt-in: builds Ice Maker Mode / Appliance Mode selects plus
         # Night Mode / Humidity Control selects and a Smart Grid switch.
         # The BLE protocol only has one write verb (`set`, one field at a
         # time) — there's no dedicated "pick a mode" command, so these
         # selects write every field in the chosen option's mapping (see
-        # FridgeBus / ApplianceSetGroupedSelect comments). This is an
-        # inference from the app's own picker UI, NOT confirmed against
-        # the app's actual BLE traffic — verify each option (especially
-        # Sabbath and the vacation modes) against the real appliance
-        # before relying on it. Defaults False so existing users are
-        # unaffected; when False none of these five entities are built.
+        # FridgeBus / ApplianceSetGroupedSelect comments). Confirmed via
+        # live BLE testing 2026-07-25 on a fw 2.27 CL4850UFDID unit: every
+        # option in both grouped selects (including Sabbath and both
+        # vacation modes) and both int selects round-trips correctly.
+        # smart_grid_on itself remains unconfirmed as a write — it's only
+        # ever been observed at its default `true` value, never
+        # independently toggled and verified. Since option encodings and
+        # write semantics may still vary by firmware/model, this defaults
+        # False so existing users are unaffected; verify against your own
+        # appliance before relying on it.
         cv.Optional("enable_mode_selects", default=False): cv.boolean,
     },
     "dishwasher": {
@@ -1696,7 +1706,7 @@ async def to_code(config):
             cg.add(getattr(var, setter)(isw))
 
     # Mode selects (fridge only, opt-in via enable_mode_selects) — see
-    # TYPE_SCHEMAS comment for why these are best-effort/unconfirmed.
+    # TYPE_SCHEMAS comment for confirmation status.
     if type_ == "fridge" and config.get("enable_mode_selects"):
         for suffix, name_suffix, setter, options, hide_key in FRIDGE_GROUPED_SELECTS:
             gs = await _build_set_grouped_select(

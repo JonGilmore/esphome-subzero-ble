@@ -181,14 +181,16 @@ struct FridgeBus : CommonBus {
   // Derived selects (opt-in via `enable_mode_selects: true`). Mirror the
   // app's own grouped pickers. Writing one of these sends a `set` for
   // every field in that option's mapping (see ApplianceSetGroupedSelect
-  // in appliance_base.h) — this is inferred from the app's UI, not
-  // confirmed against the app's own BLE traffic, since the exact
-  // multi-field write semantics for the "Off"/"Normal" baseline are
-  // unconfirmed. Verify each transition against the real appliance.
+  // in appliance_base.h). Confirmed via live BLE testing 2026-07-25: every
+  // option in both selects (including the "Off"/"Normal" baselines,
+  // Sabbath, and both vacation modes) round-trips correctly.
   esphome::select::Select *ice_maker_mode = nullptr;
   esphome::select::Select *appliance_mode = nullptr;
-  // 2-option selects backed by a single int field. Enum-to-label mapping
-  // (0/1 -> first/second option) is a best guess pending confirmation.
+  // 2-option selects backed by a single int field. Confirmed via live BLE
+  // testing 2026-07-25 that the two fields do NOT share an encoding:
+  // night_mode is 0=Disabled/1=Enabled (matches option index order), but
+  // humidity_control is 1=Normal/2=Enhanced (does not — see
+  // ApplianceSetIntSelect::add_value in appliance_base.h).
   esphome::select::Select *night_mode_select = nullptr;
   esphome::select::Select *humidity_control_select = nullptr;
 
@@ -335,8 +337,8 @@ struct FridgeBus : CommonBus {
     sabbath_on_cached_ = v;
     recompute_appliance_mode_();
   }
-  // Enum-to-label mapping (0="Disabled", 1="Enabled") matches the app's
-  // Night Mode screen ordering but is unconfirmed against a live toggle.
+  // Enum-to-label mapping (0="Disabled", 1="Enabled") confirmed via live
+  // BLE testing 2026-07-25, both directions.
   void publish_night_mode(int v) {
     if (night_mode_select != nullptr)
       night_mode_select->publish_state(v == 1 ? "Enabled" : "Disabled");
