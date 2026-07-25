@@ -187,7 +187,7 @@ subzero_appliance:
 | `hide_water_filter` | `true` | Water Filter Remaining (%)
 | `hide_water_filter_extra` | `true` | Water Filter Gallons Remaining, Water Filter Expires (set false on models that expose these)
 | `hide_vacation_ice_modes` | `true` | Long/Short Vacation Mode, High Usage Mode (+ start/end time), Max Ice Mode (+ start/end time), Night Ice Mode, plus the derived Ice Maker Mode / Appliance Mode / Night Mode selects when `enable_mode_selects: true`
-| `hide_extra_diagnostics` | `true` | Power On, Pairing Window Open, Door Ajar Alarm Timeout, WiFi Network/Signal/Channel/Encryption Type, Active Faults, plus the derived Humidity Control select and Smart Grid Mode switch when `enable_mode_selects: true`
+| `hide_extra_diagnostics` | `true` | Smart Grid Mode, Pairing Window Open, Door Ajar Alarm Timeout, WiFi Network/Signal/Channel/Encryption Type, Active Faults, plus the derived Humidity Control select when `enable_mode_selects: true`
 | `hide_softener` | `true` | Water Softener Low (dishwasher only)
 | `hide_oven2` | `true` | All Oven 2 sensors (range only - for dual-oven)
 |===
@@ -339,7 +339,8 @@ NOTE: Sub-Zero fridge firmware only exposes _set points_ over BLE - actual/measu
 | *High Usage Mode* | On/off binary sensor, plus start/end time text sensors _(optional, `hide_vacation_ice_modes`)_
 | *Max Ice Mode* | On/off binary sensor, plus start/end time text sensors _(optional, `hide_vacation_ice_modes`)_
 | *Night Ice Mode* | On/off binary sensor _(optional, `hide_vacation_ice_modes`)_
-| *Power On* | Whether the unit is powered _(optional, `hide_extra_diagnostics`)_
+| *Power On* | Whether the unit is powered
+| *Smart Grid Mode* | Utility demand-response status flag. No corresponding control was found in the app or on the appliance's display, and writes to it don't take effect - treat as informational only _(optional, `hide_extra_diagnostics`)_
 | *Pairing Window Open* | Whether the appliance's BLE pairing window is currently open _(optional, `hide_extra_diagnostics`)_
 | *Door Ajar Alarm Timeout* | Minutes before the door-ajar alarm triggers _(optional, `hide_extra_diagnostics`)_
 | *WiFi Network / Signal / Channel / Encryption Type* | The appliance's own WiFi connection details, reported over BLE _(optional, `hide_extra_diagnostics`)_
@@ -349,7 +350,7 @@ NOTE: Sub-Zero fridge firmware only exposes _set points_ over BLE - actual/measu
 | *Appliance Uptime* | Time since last power cycle
 |===
 
-NOTE: **The following fridge features are only available on this fork** (not yet merged upstream): opt-in setpoint writes, the Ice Maker Mode / Appliance Mode / Night Mode / Humidity Control selects, and the Smart Grid Mode / Automatic Crisper Temperature switches. See <<fridge-write-support>> below. To use them, point `external_components` at `https://github.com/bob-laz/esphome-subzero-ble` (`ref: main`, or pin to a specific commit) instead of the upstream URL shown in the examples above.
+NOTE: **The following fridge features are only available on this fork** (not yet merged upstream): opt-in setpoint writes, the Ice Maker Mode / Appliance Mode / Night Mode / Humidity Control selects, and the Automatic Crisper Temperature switch. See <<fridge-write-support>> below. To use them, point `external_components` at `https://github.com/bob-laz/esphome-subzero-ble` (`ref: main`, or pin to a specific commit) instead of the upstream URL shown in the examples above.
 
 === Dishwasher
 
@@ -481,7 +482,7 @@ subzero_appliance:
     enable_mode_selects: true    # <2>
 ----
 <1> Turns Set Temperature, Freezer Set Temperature, and Crisper Drawer Set Temperature from read-only Sensors into writable Numbers, and adds an Automatic Crisper Temperature switch.
-<2> Adds the Ice Maker Mode, Appliance Mode, Night Mode, and Humidity Control selects, plus a Smart Grid Mode switch.
+<2> Adds the Ice Maker Mode, Appliance Mode, Night Mode, and Humidity Control selects.
 
 **`enable_temp_control`**
 
@@ -505,8 +506,9 @@ subzero_appliance:
 | *Appliance Mode* (`Normal`/`High Usage`/`Short Vacation`/`Long Vacation`/`Sabbath`) | Same grouped-write pattern across `high_use_on`/`short_vacation_on`/`long_vacation_on`/`sabbath_on`. All five options confirmed, including Sabbath.
 | *Night Mode* (`Disabled`/`Enabled`) | Single-field select, confirmed both directions. Wire encoding is a plain `0`/`1`.
 | *Humidity Control* (`Normal`/`Enhanced`) | Single-field select, confirmed both directions. **Wire encoding is `1`=Normal / `2`=Enhanced** - notably not `0`/`1` like Night Mode. An earlier version of this fork assumed `0`/`1` here, which meant the write silently no-opped (the appliance ignores the invalid value `0`) and the displayed label was backwards.
-| *Smart Grid Mode* | Writable switch, but **the write itself is unconfirmed** - it's only ever been observed at its default `true` value and has never been independently toggled and verified.
 |===
+
+NOTE: **Smart Grid Mode was briefly a writable switch here too, and has been reverted to a plain read-only sensor.** Live testing confirmed writes don't take effect - toggling it off in HA reverted back to `true` within seconds - and no corresponding control exists in the official app or the appliance's own display. It's documented as a regular sensor above (gated by `hide_extra_diagnostics`, available regardless of `enable_mode_selects`).
 
 Every writable entity (both flags) shares one serialized write queue that drains one BLE write roughly every 750ms, regardless of which entity triggered it. Firing several writes back-to-back in the same moment was found to occasionally drop or corrupt one of them under live testing; this pacing is what prevents that.
 

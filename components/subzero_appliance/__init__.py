@@ -372,6 +372,17 @@ FRIDGE_BINARY_SENSORS = [
         {CONF_ICON: "mdi:power"},
         None,
     ),
+    # Read-only: confirmed 2026-07-25 that writing smart_grid_on doesn't
+    # take effect (state reverts to true within seconds of a write) and
+    # there's no corresponding control in the app or on the appliance's
+    # own display - likely an automatically-managed status field.
+    (
+        "smart_grid_on",
+        "Smart Grid Mode",
+        "set_smart_grid_on_sensor",
+        {CONF_ICON: "mdi:transmission-tower"},
+        "hide_extra_diagnostics",
+    ),
     (
         "pin_window_open",
         "Pairing Window Open",
@@ -783,19 +794,6 @@ FRIDGE_INT_SELECTS = [
     ),
 ]
 
-# Writable switch for smart_grid_on, built only under enable_mode_selects
-# (see TYPE_SCHEMAS comment). Entry shape matches RANGE_WRITABLE_SWITCHES:
-# (suffix, name_suffix, setter, property_key, kwargs, hide_key).
-FRIDGE_MODE_SWITCHES = [
-    (
-        "smart_grid_on",
-        "Smart Grid Mode",
-        "set_smart_grid_on_switch",
-        "smart_grid_on",
-        {CONF_ICON: "mdi:transmission-tower"},
-        "hide_extra_diagnostics",
-    ),
-]
 
 DISHWASHER_BINARY_SENSORS = [
     (
@@ -1276,7 +1274,11 @@ TYPE_SCHEMAS = {
         # (write a value, physically check the front panel).
         cv.Optional("enable_temp_control", default=False): cv.boolean,
         # Opt-in: builds Ice Maker Mode / Appliance Mode selects plus
-        # Night Mode / Humidity Control selects and a Smart Grid switch.
+        # Night Mode / Humidity Control selects. (smart_grid_on was
+        # briefly included here as a writable switch, but confirmed
+        # 2026-07-25 that writes don't take effect - reverted to a
+        # plain read-only sensor, unconditionally built in
+        # FRIDGE_BINARY_SENSORS regardless of this flag.)
         # The BLE protocol only has one write verb (`set`, one field at a
         # time) — there's no dedicated "pick a mode" command, so these
         # selects write every field in the chosen option's mapping (see
@@ -1284,12 +1286,10 @@ TYPE_SCHEMAS = {
         # live BLE testing 2026-07-25 on a fw 2.27 CL4850UFDID unit: every
         # option in both grouped selects (including Sabbath and both
         # vacation modes) and both int selects round-trips correctly.
-        # smart_grid_on itself remains unconfirmed as a write — it's only
-        # ever been observed at its default `true` value, never
-        # independently toggled and verified. Since option encodings and
-        # write semantics may still vary by firmware/model, this defaults
-        # False so existing users are unaffected; verify against your own
-        # appliance before relying on it.
+        # Since option encodings and write semantics may still vary by
+        # firmware/model, this defaults False so existing users are
+        # unaffected; verify against your own appliance before relying
+        # on it.
         cv.Optional("enable_mode_selects", default=False): cv.boolean,
     },
     "dishwasher": {
@@ -1599,9 +1599,7 @@ async def to_code(config):
     if type_ == "fridge":
         bs_list = FRIDGE_BINARY_SENSORS
         ts_list = FRIDGE_TEXT_SENSORS
-        sw_list = FRIDGE_WRITABLE_SWITCHES + (
-            FRIDGE_MODE_SWITCHES if config.get("enable_mode_selects") else []
-        )
+        sw_list = FRIDGE_WRITABLE_SWITCHES
         if config.get("enable_temp_control"):
             s_list = FRIDGE_SENSORS
             n_list = FRIDGE_WRITABLE_NUMBERS

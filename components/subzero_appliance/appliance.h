@@ -148,8 +148,9 @@ public:
   void set_unit_on_sensor(esphome::binary_sensor::BinarySensor *s) {
     bus_.unit_on = s;
   }
-  // Writable: smart_grid_on is a Switch.
-  void set_smart_grid_on_switch(esphome::switch_::Switch *s) {
+  // Read-only: confirmed 2026-07-25 that writes to smart_grid_on don't
+  // take effect (see FridgeBus comment in dispatch_esphome.h).
+  void set_smart_grid_on_sensor(esphome::binary_sensor::BinarySensor *s) {
     bus_.smart_grid_on = s;
   }
 

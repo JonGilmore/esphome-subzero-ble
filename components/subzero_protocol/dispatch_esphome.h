@@ -241,11 +241,15 @@ struct FridgeBus : CommonBus {
     appliance_mode->publish_state(label);
   }
 
-  // Power / smart grid. smart_grid_on is a Switch (writable) rather than
-  // a BinarySensor — same publish_if() call works for either since both
-  // expose publish_state().
+  // Power / smart grid. smart_grid_on was briefly a writable Switch, but
+  // live testing 2026-07-25 confirmed writes are ignored (state reverts
+  // to `true` within seconds — same "wrote it, appliance's real value
+  // won" pattern as dishwasher light_on). No corresponding control exists
+  // in the official app or the appliance's own display, suggesting this
+  // is an automatically-managed status field, not a user setting. Back
+  // to a read-only BinarySensor.
   esphome::binary_sensor::BinarySensor *unit_on = nullptr;
-  esphome::switch_::Switch *smart_grid_on = nullptr;
+  esphome::binary_sensor::BinarySensor *smart_grid_on = nullptr;
 
   // Misc diagnostics.
   esphome::binary_sensor::BinarySensor *pin_window_open = nullptr;
