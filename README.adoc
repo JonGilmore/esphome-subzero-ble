@@ -177,7 +177,7 @@ subzero_appliance:
 | Option | Default | Hides
 
 | `hide_freezer` | `false` | Freezer Set Temperature, Freezer Door
-| `hide_ice_maker` | `false` | Ice Maker
+| `hide_ice_maker` | `false` | Ice Maker, plus the derived Ice Maker Mode select when `enable_mode_selects: true`
 | `hide_sabbath` | `false` | Sabbath Mode
 | `hide_fridge_zone` | `false` | Set Temperature, Door (set true for wine-only or freezer-only models that have no main fridge compartment)
 | `hide_wine` | `true` | Wine Door, Wine Zone Upper/Lower Set Temperature, Wine Temperature Alert
@@ -186,7 +186,7 @@ subzero_appliance:
 | `hide_air_filter` | `true` | Air Filter, Air Filter Remaining
 | `hide_water_filter` | `true` | Water Filter Remaining (%)
 | `hide_water_filter_extra` | `true` | Water Filter Gallons Remaining, Water Filter Expires (set false on models that expose these)
-| `hide_vacation_ice_modes` | `true` | Long/Short Vacation Mode, High Usage Mode (+ start/end time), Max Ice Mode (+ start/end time), Night Ice Mode, plus the derived Ice Maker Mode / Appliance Mode / Night Mode selects when `enable_mode_selects: true`
+| `hide_vacation_ice_modes` | `true` | Long/Short Vacation Mode, High Usage Mode (+ start/end time), Max Ice Mode (+ start/end time), Night Ice Mode, plus the derived Appliance Mode / Night Mode selects when `enable_mode_selects: true`
 | `hide_extra_diagnostics` | `true` | Smart Grid Mode, Pairing Window Open, Door Ajar Alarm Timeout, WiFi Network/Signal/Channel/Encryption Type, Active Faults, plus the derived Humidity Control select when `enable_mode_selects: true`
 | `hide_softener` | `true` | Water Softener Low (dishwasher only)
 | `hide_oven2` | `true` | All Oven 2 sensors (range only - for dual-oven)

@@ -152,12 +152,15 @@ public:
   // protection isn't limited to grouped selects. A deque (rather than
   // overwriting a single pending batch) lets writes queued from different
   // entities interleave in FIFO order without clobbering each other.
+  //
+  // Pacing is enforced against the last write's timestamp (not just "is
+  // the queue non-empty"), so two writes arriving a few ms apart but each
+  // finding an empty queue — e.g. two unrelated entities toggled close
+  // together, neither queued behind the other — still get spaced out
+  // instead of firing back-to-back.
   void enqueue_write(std::function<void()> write_fn) {
-    bool was_idle = write_queue_.empty();
     write_queue_.push_back(std::move(write_fn));
-    if (was_idle) {
-      drain_write_queue_();
-    }
+    schedule_drain_();
   }
 
   // Used by ApplianceSetGroupedSelect when a mode picker needs to write
@@ -208,17 +211,38 @@ private:
   // See enqueue_write() above.
   static constexpr std::uint32_t kWriteSpacingMs = 750;
   std::deque<std::function<void()>> write_queue_;
+  std::uint32_t last_write_ms_ = 0;
+  bool drain_scheduled_ = false;
+  bool have_written_ = false;
+
+  // Schedules drain_write_queue_() for whenever kWriteSpacingMs has
+  // elapsed since the last write (immediately, if it already has, or if
+  // this is the first write since boot). No-ops if a drain is already
+  // scheduled or the queue is empty, so this is safe to call after every
+  // enqueue and after every drain.
+  void schedule_drain_() {
+    if (drain_scheduled_ || write_queue_.empty())
+      return;
+    const std::uint32_t now = esphome::millis();
+    const std::uint32_t elapsed = now - last_write_ms_;
+    const std::uint32_t delay = (have_written_ && elapsed < kWriteSpacingMs)
+                                     ? (kWriteSpacingMs - elapsed)
+                                     : 0;
+    drain_scheduled_ = true;
+    this->set_timeout("subzero_write_queue", delay,
+                       [this]() { this->drain_write_queue_(); });
+  }
 
   void drain_write_queue_() {
+    drain_scheduled_ = false;
     if (write_queue_.empty())
       return;
     auto write_fn = std::move(write_queue_.front());
     write_queue_.pop_front();
+    last_write_ms_ = esphome::millis();
+    have_written_ = true;
     write_fn();
-    if (!write_queue_.empty()) {
-      this->set_timeout("subzero_write_queue", kWriteSpacingMs,
-                         [this]() { this->drain_write_queue_(); });
-    }
+    schedule_drain_();
   }
 };
 
@@ -386,15 +410,20 @@ public:
 
 protected:
   void control(const std::string &value) override {
-    if (parent_ != nullptr && !property_key_.empty()) {
-      for (auto &entry : values_) {
-        if (entry.first == value) {
-          parent_->enqueue_write_int(property_key_, entry.second);
-          break;
-        }
+    // Only publish when the label actually matched and was written —
+    // otherwise an unrecognized value (shouldn't happen from the HA UI,
+    // which only offers known options, but is reachable via
+    // select.select_option with an arbitrary string) would leave HA
+    // showing a state the appliance never received.
+    if (parent_ == nullptr || property_key_.empty())
+      return;
+    for (auto &entry : values_) {
+      if (entry.first == value) {
+        parent_->enqueue_write_int(property_key_, entry.second);
+        this->publish_state(value);
+        return;
       }
     }
-    this->publish_state(value);
   }
 
 private:

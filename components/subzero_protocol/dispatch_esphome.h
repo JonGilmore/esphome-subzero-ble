@@ -212,7 +212,13 @@ struct FridgeBus : CommonBus {
   std::optional<bool> sabbath_on_cached_;
 
   void recompute_ice_maker_mode_() {
-    if (ice_maker_mode == nullptr || !ice_maker_on_cached_.has_value())
+    // Require every contributing field, not just ice_maker_on_cached_ —
+    // a partial push that updates only one field (e.g. right after
+    // boot) would otherwise fall through to value_or(false) for the
+    // other two and could publish a wrong label (e.g. "Normal" while
+    // Max Ice is actually on but just not cached yet).
+    if (ice_maker_mode == nullptr || !ice_maker_on_cached_.has_value() ||
+        !max_ice_on_cached_.has_value() || !night_ice_on_cached_.has_value())
       return;
     std::string label;
     if (max_ice_on_cached_.value_or(false))
@@ -229,8 +235,12 @@ struct FridgeBus : CommonBus {
   void recompute_appliance_mode_() {
     if (appliance_mode == nullptr)
       return;
-    if (!sabbath_on_cached_.has_value() && !high_use_on_cached_.has_value() &&
-        !short_vacation_on_cached_.has_value() &&
+    // Require every contributing field before publishing — see the same
+    // note in recompute_ice_maker_mode_() above. A partial push (e.g.
+    // just sabbath_on) must not be treated as "the other three are off"
+    // via value_or(false) until they're actually known.
+    if (!sabbath_on_cached_.has_value() || !high_use_on_cached_.has_value() ||
+        !short_vacation_on_cached_.has_value() ||
         !long_vacation_on_cached_.has_value())
       return;
     std::string label;

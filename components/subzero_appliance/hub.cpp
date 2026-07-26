@@ -775,11 +775,14 @@ void SubzeroHub::write_set_property_(const std::string &key,
   // it: a silently-dropped write previously looked identical to "nothing
   // happened" with no way to tell the two apart from the logs.
   if (d5_handle_ == 0 || !pin_confirmed_) {
+    // Deliberately omit json_value here — this path also carries
+    // remote_svc_reg_token (the "Clear Cloud Token" button), so logging
+    // the attempted value verbatim risks putting a cloud token in the
+    // logs. The key plus readiness flags are enough to diagnose a drop.
     HUB_LOGW("szg",
-             "[%s] Dropping write %s=%s: control channel not ready "
+             "[%s] Dropping write to %s: control channel not ready "
              "(d5_handle=%d, pin_confirmed=%d)",
-             name_.c_str(), key.c_str(), json_value.c_str(), d5_handle_,
-             pin_confirmed_);
+             name_.c_str(), key.c_str(), d5_handle_, pin_confirmed_);
     return;
   }
   std::string cmd = esphome::subzero_protocol::build_set(key, json_value);

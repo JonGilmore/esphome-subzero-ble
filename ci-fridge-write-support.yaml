@@ -1,6 +1,14 @@
+# CI-only config: exercises the opt-in enable_temp_control /
+# enable_mode_selects codegen paths (writable Number/Select entities) so CI
+# actually compiles that code. This is NOT a user-facing quickstart config —
+# see wolf-minimal-fridge.yaml for that. Those two flags enable real physical
+# writes to a fridge's setpoints/modes and are confirmed on only one
+# appliance/firmware so far (see README's Fridge Write Support section);
+# don't copy this file as a starting point without reading that first.
+
 substitutions:
-  name: "subzero-fridge"
-  friendly_name: "Main Fridge"
+  name: "subzero-fridge-ci"
+  friendly_name: "CI Fridge"
 
 external_components:
   - source:
@@ -53,12 +61,14 @@ esp32_ble_tracker:
 ble_client:
   - mac_address: !secret main_fridge_mac
     id: main_fridge_ble
-    name: "SZG Main Fridge"
+    name: "SZG CI Fridge"
     auto_connect: true
 
 subzero_appliance:
   - type: fridge
     id: main_fridge
     ble_client_id: main_fridge_ble
-    name: "Main Fridge"
+    name: "CI Fridge"
     pin: !secret main_fridge_pin
+    enable_temp_control: true
+    enable_mode_selects: true
