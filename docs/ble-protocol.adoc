@@ -135,11 +135,15 @@ NOTE: Cove dishwashers expose D5/D6 in the GATT database *before* bonding, but s
 
 MTU:: Negotiated to 517 bytes, though the appliance still fragments at ~40 bytes per indication (fridges) or ~244 bytes (dishwashers/ranges).
 
-ACL Fragment Drops (ESP32-S3):: A bug in the ESP-IDF Bluedroid HCI layer causes ACL fragment reassembly failures during rapid bursts of indications.
-This manifests as `BT_HCI: ACL packet too short` and `reassemble_and_dispatch found unfinished packet` errors.
-When a fragment is dropped, the JSON reassembly buffer is left with incomplete data, and in some cases trailing non-UTF-8 bytes (stale memory) leak into the buffer.
-This seems to only affect appliances using 40-byte indication fragments (API 5.4 / fw 8.5, e.g. SO3050PESP wall oven, 313 fridge, DEU2450R under-counter fridge, possibly others).
-Appliances using 244-byte fragments (API 5.5 / fw 2.27, e.g. DF36450GSP range, DW2450 dishwasher, IW30R wine storage) are unaffected since their push notifications fit in a single indication.
+ACL Fragment Drops (ESP32-S3) - fixed in ESP-IDF 5.5.5 / ESPHome 2026.7.1:: A bug in the ESP-IDF Bluedroid HCI layer caused ACL fragment reassembly failures during rapid bursts of indications.
+This manifested as `BT_HCI: ACL packet too short` and `reassemble_and_dispatch found unfinished packet` errors.
+When a fragment was dropped, the JSON reassembly buffer was left with incomplete data, and in some cases trailing non-UTF-8 bytes (stale memory) leaked into the buffer.
+This only affected appliances using 40-byte indication fragments (API 5.4 / fw 8.5, e.g. SO3050PESP wall oven, 313 fridge, DEU2450R under-counter fridge, possibly others).
+Appliances using 244-byte fragments (API 5.5 / fw 2.27, e.g. DF36450GSP range, DW2450 dishwasher, IW30R wine storage) were unaffected since their push notifications fit in a single indication.
++
+The root cause was a bounds check in `reassemble_and_dispatch()` that required every ACL packet to be at least `HCI_ACL_PREAMBLE_SIZE + L2CAP_LENGTH_SIZE` bytes. That is only true of START fragments - short CONTINUATION fragments were rejected outright. Espressif hoisted the check into the START-only branch in https://github.com/espressif/esp-idf/commit/511e824085ed4edc845dda66abaa5f4bdf5572a4[commit `511e8240`] (https://github.com/espressif/esp-idf/issues/18414[esp-idf#18414]), released in ESP-IDF v5.5.5 and picked up by ESPHome 2026.7.1.
++
+NOTE: This project previously shipped a `patch_acl_reassembly` external component that overwrote `packet_fragmenter.c` at build time. It was removed once the fix landed upstream; the minimal example configs now declare `esphome: min_version: 2026.7.1` instead. The buffer-handling described below is unchanged - it is defensive and useful regardless.
 +
 The integration accepts that some payloads will be unreadable and relies on the appliance's own retry cadence:
 +
