@@ -61,6 +61,13 @@ public:
   // (caller should still call passkey_reply with 0 or skip).
   std::uint32_t handle_passkey_request();
 
+  // SMP bonding result (ESP_GAP_BLE_AUTH_CMPL_EVT). Until this existed the
+  // hub requested encryption and then blind-waited on a timer, so a bond
+  // that never completed was indistinguishable from one that completed but
+  // failed to expose D5/D6. `fail_reason` is the raw SMP status from the
+  // IDF; see auth_fail_reason_str() for the decode.
+  void handle_auth_complete(bool success, int fail_reason, int auth_mode);
+
   // BLE indication arrivals (called from D5/D6 notify sensor lambdas).
   // D5 is the control channel — heartbeat only, resets zombie counter.
   // D6 is the data channel — accumulates fragments into json_buf_ and
@@ -183,6 +190,11 @@ private:
   void post_bond_trigger_search_();
   void post_bond_poll_attempt_(int attempt);
   void post_bond_giveup_();
+
+  // Diagnostic: log every attribute the stack currently has for this
+  // appliance. Called when the D5 ladder gives up, so a failing discovery
+  // can be diffed against a working one on the same ESP32.
+  void dump_gatt_db_(const char *reason);
 
   // ---- subscribe stages ----
   void start_subscribe_();

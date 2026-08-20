@@ -90,10 +90,24 @@ public:
     std::vector<GattDbEntry> out;
     if (client_ == nullptr)
       return out;
-    esp_gattc_db_elem_t db[64];
-    std::uint16_t count = 64;
+
+    // Ask the stack how many attributes it actually has before allocating.
+    // The previous fixed 64-entry stack array silently truncated anything
+    // beyond it — and since D5/D6 sit near the end of the Sub-Zero service,
+    // a db larger than 64 would look exactly like "D5 never appeared."
+    // Ruling that out is one of the things this diagnostic build is for.
+    std::uint16_t total = 0;
+    esp_ble_gattc_get_attr_count(client_->get_gattc_if(),
+                                 client_->get_conn_id(), ESP_GATT_DB_ALL,
+                                 0x0001, 0xFFFF, ESP_GATT_ILLEGAL_HANDLE,
+                                 &total);
+    if (total == 0)
+      return out;
+
+    std::vector<esp_gattc_db_elem_t> db(total);
+    std::uint16_t count = total;
     esp_ble_gattc_get_db(client_->get_gattc_if(), client_->get_conn_id(),
-                         0x0001, 0xFFFF, db, &count);
+                         0x0001, 0xFFFF, db.data(), &count);
     out.reserve(count);
     for (std::uint16_t i = 0; i < count; i++) {
       GattDbEntry e;
@@ -115,6 +129,19 @@ public:
       e.uuid_is_128bit = (db[i].uuid.len == ESP_UUID_LEN_128);
       e.uuid_first_byte = e.uuid_is_128bit ? db[i].uuid.uuid.uuid128[0] : 0;
       e.handle = db[i].attribute_handle;
+
+      // Diagnostic extras — see GattDbEntry in ble_transport.h.
+      e.uuid_len = static_cast<std::uint8_t>(db[i].uuid.len);
+      if (db[i].uuid.len == ESP_UUID_LEN_128) {
+        std::memcpy(e.uuid_bytes, db[i].uuid.uuid.uuid128, 16);
+      } else if (db[i].uuid.len == ESP_UUID_LEN_32) {
+        std::memcpy(e.uuid_bytes, &db[i].uuid.uuid.uuid32, 4);
+      } else {
+        std::memcpy(e.uuid_bytes, &db[i].uuid.uuid.uuid16, 2);
+      }
+      e.properties = (db[i].type == ESP_GATT_DB_CHARACTERISTIC)
+                         ? static_cast<std::uint8_t>(db[i].properties)
+                         : 0;
       out.push_back(e);
     }
     return out;

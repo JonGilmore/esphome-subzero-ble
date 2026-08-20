@@ -32,6 +32,16 @@ struct GattDbEntry {
   bool uuid_is_128bit = false;
   std::uint8_t uuid_first_byte = 0;
   std::uint16_t handle = 0;
+
+  // Diagnostic-only fields, added for the fw 8.5 handshake investigation.
+  // The hub's handle-extraction logic never reads these — it only needs
+  // uuid_first_byte — but dump_gatt_db_() prints them so a failing
+  // discovery can be compared attribute-by-attribute against a working
+  // one (and handed to a vendor engineer). Defaulted so existing test
+  // fixtures that set only the four fields above keep compiling.
+  std::uint8_t uuid_len = 0; // 2, 4, or 16; 0 when unpopulated
+  std::uint8_t uuid_bytes[16] = {};
+  std::uint8_t properties = 0; // char property bitmask; 0 for non-chars
 };
 
 // Result codes — a thin abstraction over esp_err_t. Production maps

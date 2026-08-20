@@ -93,15 +93,31 @@ void ApplianceBase::gattc_event_handler(esp_gattc_cb_event_t event,
 
 void ApplianceBase::gap_event_handler(esp_gap_ble_cb_event_t event,
                                       esp_ble_gap_cb_param_t *param) {
+  if (this->parent() == nullptr)
+    return;
+
   if (event == ESP_GAP_BLE_PASSKEY_REQ_EVT) {
-    if (this->parent() == nullptr)
-      return;
     if (std::memcmp(param->ble_security.ble_req.bd_addr,
                     this->parent()->get_remote_bda(), 6) != 0) {
       return;
     }
     std::uint32_t passkey = hub()->handle_passkey_request();
     esp_ble_passkey_reply(param->ble_security.ble_req.bd_addr, true, passkey);
+    return;
+  }
+
+  // The bonding verdict. We request encryption and then run a timed ladder
+  // looking for D5; without this event a bond that never completed and a
+  // bond that completed but exposed nothing look identical in the logs.
+  if (event == ESP_GAP_BLE_AUTH_CMPL_EVT) {
+    if (std::memcmp(param->ble_security.auth_cmpl.bd_addr,
+                    this->parent()->get_remote_bda(), 6) != 0) {
+      return;
+    }
+    hub()->handle_auth_complete(
+        param->ble_security.auth_cmpl.success,
+        static_cast<int>(param->ble_security.auth_cmpl.fail_reason),
+        static_cast<int>(param->ble_security.auth_cmpl.auth_mode));
   }
 }
 
