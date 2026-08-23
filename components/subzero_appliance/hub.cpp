@@ -385,7 +385,12 @@ void SubzeroHub::post_bond_poll_attempt_(int attempt) {
     return;
   }
   if (attempt < kPostBondMaxPolls) {
-    char status[24];
+    // 32 bytes comfortably covers the worst-case %d width (a full signed
+    // int, up to 11 digits+sign) even though `attempt` is always 1-2 in
+    // practice (bounded by kPostBondMaxPolls); silences a false-positive
+    // -Wformat-truncation the compiler can't resolve across the
+    // recursive call.
+    char status[32];
     std::snprintf(status, sizeof(status), "Poll %d: waiting...", attempt);
     publish_status_(status);
     const char *next_name =
@@ -766,9 +771,20 @@ void SubzeroHub::write_set_property_(const std::string &key,
   // populated after subscribe completes; pin_confirmed_ flips true when
   // the unlock_channel response lands. Drop the write if either guard
   // fails — the alternative is queueing, which adds complexity for no
-  // visible UX win (HA will retry on the next user action).
-  if (d5_handle_ == 0 || !pin_confirmed_)
+  // visible UX win (HA will retry on the next user action). Still log
+  // it: a silently-dropped write previously looked identical to "nothing
+  // happened" with no way to tell the two apart from the logs.
+  if (d5_handle_ == 0 || !pin_confirmed_) {
+    // Deliberately omit json_value here — this path also carries
+    // remote_svc_reg_token (the "Clear Cloud Token" button), so logging
+    // the attempted value verbatim risks putting a cloud token in the
+    // logs. The key plus readiness flags are enough to diagnose a drop.
+    HUB_LOGW("szg",
+             "[%s] Dropping write to %s: control channel not ready "
+             "(d5_handle=%d, pin_confirmed=%d)",
+             name_.c_str(), key.c_str(), d5_handle_, pin_confirmed_);
     return;
+  }
   std::string cmd = esphome::subzero_protocol::build_set(key, json_value);
   transport_->write(d5_handle_,
                     reinterpret_cast<const std::uint8_t *>(cmd.data()),

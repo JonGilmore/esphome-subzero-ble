@@ -71,13 +71,13 @@ jobs:
           REF="${GITHUB_HEAD_REF:-$GITHUB_SHA}"
           REPO="${HEAD_REPO:-$GITHUB_REPOSITORY}"
           sed -i -E "s#url: https://github.com/[^[:space:]]+#url: https://github.com/${REPO}#" \
-            cove-minimal-dishwasher.yaml wolf-minimal-range.yaml wolf-minimal-fridge.yaml
+            cove-minimal-dishwasher.yaml wolf-minimal-range.yaml wolf-minimal-fridge.yaml ci-fridge-write-support.yaml
           sed -i -E "s#ref: (v[0-9]+\.[0-9]+\.[0-9]+|main)#ref: ${REF}#" \
-            cove-minimal-dishwasher.yaml wolf-minimal-range.yaml wolf-minimal-fridge.yaml
+            cove-minimal-dishwasher.yaml wolf-minimal-range.yaml wolf-minimal-fridge.yaml ci-fridge-write-support.yaml
 
       - name: Validate configs
         run: |
-          for yaml in cove-minimal-dishwasher.yaml wolf-minimal-range.yaml wolf-minimal-fridge.yaml; do
+          for yaml in cove-minimal-dishwasher.yaml wolf-minimal-range.yaml wolf-minimal-fridge.yaml ci-fridge-write-support.yaml; do
             echo "::group::Validating $yaml"
             esphome config "$yaml"
             echo "::endgroup::"
@@ -94,6 +94,7 @@ jobs:
           - cove-minimal-dishwasher.yaml
           - wolf-minimal-range.yaml
           - wolf-minimal-fridge.yaml
+          - ci-fridge-write-support.yaml
     steps:
       - uses: actions/checkout@v4
 

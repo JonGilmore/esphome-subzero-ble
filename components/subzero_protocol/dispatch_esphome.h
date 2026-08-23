@@ -36,9 +36,13 @@
 
 #include "esphome/components/binary_sensor/binary_sensor.h"
 #include "esphome/components/number/number.h"
+#include "esphome/components/select/select.h"
 #include "esphome/components/sensor/sensor.h"
 #include "esphome/components/switch/switch.h"
 #include "esphome/components/text_sensor/text_sensor.h"
+
+#include <optional>
+#include <string>
 
 namespace esphome {
 namespace subzero_protocol {
@@ -123,38 +127,182 @@ struct FridgeBus : CommonBus {
   esphome::binary_sensor::BinarySensor *ref2_door_ajar = nullptr;
   esphome::binary_sensor::BinarySensor *wine_door_ajar = nullptr;
   esphome::binary_sensor::BinarySensor *wine_temp_alert = nullptr;
+  // Confirmed 2026-07-25 via live BLE testing that this is genuinely
+  // writable (not just a diagnostic flag) — corresponds to the "Air
+  // Purifier" toggle on the appliance's display. Read-only by default;
+  // opt-in writable via enable_mode_selects, matching the dual-pointer
+  // pattern used for temp control.
   esphome::binary_sensor::BinarySensor *air_filter_on = nullptr;
+  esphome::switch_::Switch *air_filter_on_switch = nullptr;
 
-  // Set-temps are read-only Sensors for now. Writing them via `set`
-  // doesn't appear to work on the fridges we've tested — the appliance
-  // accepts the write (status:0) but the setpoint never actually
-  // changes. Suspect this needs an "edit mode" on the front panel
-  // first, similar to how oven cav_set_temp only accepts writes once
-  // the oven is in an active cook mode. Keep these read-only until
-  // that's understood.
+  // Set-temps are read-only Sensors by default. Writing them via `set`
+  // was assumed not to work, based on testing on fw 8.5 units (appliance
+  // accepts the write with status:0 but the setpoint never actually
+  // changes). Confirmed via community testing that writes DO take real
+  // effect on at least one fw 2.27 unit (front-panel display, official
+  // app, and BLE state all agreed after a write). Since behavior may
+  // still vary by firmware/model, this stays opt-in: the `set_temp`
+  // Sensor pointer is used by default (read-only, existing behavior
+  // unchanged); when a user sets `enable_temp_control: true`, the Python
+  // codegen instead populates `set_temp_number` (a writable Number) and
+  // leaves `set_temp` null. Exactly one of the two is ever non-null for
+  // a given config; publish_set_temp() forwards to whichever is set.
   esphome::sensor::Sensor *set_temp = nullptr;
+  esphome::number::Number *set_temp_number = nullptr;
   esphome::sensor::Sensor *frz_set_temp = nullptr;
+  esphome::number::Number *frz_set_temp_number = nullptr;
   esphome::sensor::Sensor *ref2_set_temp = nullptr;
   esphome::sensor::Sensor *wine_set_temp = nullptr;
   esphome::sensor::Sensor *wine2_set_temp = nullptr;
   esphome::sensor::Sensor *crisp_set_temp = nullptr;
+  esphome::number::Number *crisp_set_temp_number = nullptr;
+  // "Automatic crisper temperature" toggle from the app. Gates whether
+  // crisp_set_temp writes actually take effect (see protocol.h comment) —
+  // opt-in alongside crisp_set_temp_number via enable_temp_control.
+  esphome::switch_::Switch *crisp_temp_mode = nullptr;
   esphome::sensor::Sensor *air_filter_pct = nullptr;
   esphome::sensor::Sensor *water_filter_pct = nullptr;
   esphome::sensor::Sensor *water_filter_gal = nullptr;
   esphome::text_sensor::TextSensor *water_filter_end_date = nullptr;
 
+  // Vacation / ice modes. `long_vacation_on`/`short_vacation_on`/
+  // `high_use_on`/`sabbath_on` (the last inherited from CommonBus) and
+  // `ice_maker_on`/`max_ice_on`/`night_ice_on` are each still parsed as
+  // independent booleans (that's what the appliance actually sends), but
+  // the app presents each group as a single mutually-exclusive picker —
+  // see `appliance_mode`/`ice_maker_mode` below, which derive a select
+  // state from these cached values. Kept as plain BinarySensor pointers
+  // too (still populated, still useful for automations that want just
+  // one flag) — Python codegen decides whether to wire them.
+  esphome::binary_sensor::BinarySensor *long_vacation_on = nullptr;
+  esphome::binary_sensor::BinarySensor *short_vacation_on = nullptr;
+  esphome::binary_sensor::BinarySensor *high_use_on = nullptr;
+  esphome::text_sensor::TextSensor *high_use_start_time = nullptr;
+  esphome::text_sensor::TextSensor *high_use_end_time = nullptr;
+  esphome::binary_sensor::BinarySensor *night_ice_on = nullptr;
+  esphome::binary_sensor::BinarySensor *max_ice_on = nullptr;
+  esphome::text_sensor::TextSensor *max_ice_start_time = nullptr;
+  esphome::text_sensor::TextSensor *max_ice_end_time = nullptr;
+
+  // Derived selects (opt-in via `enable_mode_selects: true`). Mirror the
+  // app's own grouped pickers. Writing one of these sends a `set` for
+  // every field in that option's mapping (see ApplianceSetGroupedSelect
+  // in appliance_base.h). Confirmed via live BLE testing 2026-07-25: every
+  // option in both selects (including the "Off"/"Normal" baselines,
+  // Sabbath, and both vacation modes) round-trips correctly.
+  esphome::select::Select *ice_maker_mode = nullptr;
+  esphome::select::Select *appliance_mode = nullptr;
+  // 2-option selects backed by a single int field. Confirmed via live BLE
+  // testing 2026-07-25 that the two fields do NOT share an encoding:
+  // night_mode is 0=Disabled/1=Enabled (matches option index order), but
+  // humidity_control is 1=Normal/2=Enhanced (does not — see
+  // ApplianceSetIntSelect::add_value in appliance_base.h).
+  esphome::select::Select *night_mode_select = nullptr;
+  esphome::select::Select *humidity_control_select = nullptr;
+
+  // Cached last-known values, used only to recompute the derived selects
+  // above when any one contributing field changes (a push may update
+  // just one of several fields at a time).
+  std::optional<bool> ice_maker_on_cached_;
+  std::optional<bool> max_ice_on_cached_;
+  std::optional<bool> night_ice_on_cached_;
+  std::optional<bool> high_use_on_cached_;
+  std::optional<bool> short_vacation_on_cached_;
+  std::optional<bool> long_vacation_on_cached_;
+  std::optional<bool> sabbath_on_cached_;
+
+  void recompute_ice_maker_mode_() {
+    // Require every contributing field, not just ice_maker_on_cached_ —
+    // a partial push that updates only one field (e.g. right after
+    // boot) would otherwise fall through to value_or(false) for the
+    // other two and could publish a wrong label (e.g. "Normal" while
+    // Max Ice is actually on but just not cached yet).
+    if (ice_maker_mode == nullptr || !ice_maker_on_cached_.has_value() ||
+        !max_ice_on_cached_.has_value() || !night_ice_on_cached_.has_value())
+      return;
+    std::string label;
+    if (max_ice_on_cached_.value_or(false))
+      label = "Max Ice";
+    else if (night_ice_on_cached_.value_or(false))
+      label = "Night Ice";
+    else if (ice_maker_on_cached_.value_or(false))
+      label = "Normal";
+    else
+      label = "Off";
+    ice_maker_mode->publish_state(label);
+  }
+
+  void recompute_appliance_mode_() {
+    if (appliance_mode == nullptr)
+      return;
+    // Require every contributing field before publishing — see the same
+    // note in recompute_ice_maker_mode_() above. A partial push (e.g.
+    // just sabbath_on) must not be treated as "the other three are off"
+    // via value_or(false) until they're actually known.
+    if (!sabbath_on_cached_.has_value() || !high_use_on_cached_.has_value() ||
+        !short_vacation_on_cached_.has_value() ||
+        !long_vacation_on_cached_.has_value())
+      return;
+    std::string label;
+    if (sabbath_on_cached_.value_or(false))
+      label = "Sabbath";
+    else if (long_vacation_on_cached_.value_or(false))
+      label = "Long Vacation";
+    else if (short_vacation_on_cached_.value_or(false))
+      label = "Short Vacation";
+    else if (high_use_on_cached_.value_or(false))
+      label = "High Usage";
+    else
+      label = "Normal";
+    appliance_mode->publish_state(label);
+  }
+
+  // Power / smart grid. smart_grid_on was briefly a writable Switch, but
+  // live testing 2026-07-25 confirmed writes are ignored (state reverts
+  // to `true` within seconds — same "wrote it, appliance's real value
+  // won" pattern as dishwasher light_on). No corresponding control exists
+  // in the official app or the appliance's own display, suggesting this
+  // is an automatically-managed status field, not a user setting. Back
+  // to a read-only BinarySensor.
+  esphome::binary_sensor::BinarySensor *unit_on = nullptr;
+  esphome::binary_sensor::BinarySensor *smart_grid_on = nullptr;
+
+  // Misc diagnostics.
+  esphome::binary_sensor::BinarySensor *pin_window_open = nullptr;
+  esphome::text_sensor::TextSensor *active_faults = nullptr;
+  esphome::sensor::Sensor *door_ajar_timeout = nullptr;
+
+  // WiFi diagnostics.
+  esphome::text_sensor::TextSensor *ap_ssid = nullptr;
+  esphome::sensor::Sensor *ap_rssi = nullptr;
+  esphome::sensor::Sensor *ap_chan = nullptr;
+  esphome::sensor::Sensor *ap_enc = nullptr;
+
   void publish_door_ajar(bool v) { detail::publish_if(door_ajar, v); }
   void publish_frz_door_ajar(bool v) { detail::publish_if(frz_door_ajar, v); }
-  void publish_ice_maker(bool v) { detail::publish_if(ice_maker, v); }
+  void publish_ice_maker(bool v) {
+    detail::publish_if(ice_maker, v);
+    ice_maker_on_cached_ = v;
+    recompute_ice_maker_mode_();
+  }
   void publish_ref2_door_ajar(bool v) { detail::publish_if(ref2_door_ajar, v); }
   void publish_wine_door_ajar(bool v) { detail::publish_if(wine_door_ajar, v); }
   void publish_wine_temp_alert(bool v) {
     detail::publish_if(wine_temp_alert, v);
   }
-  void publish_air_filter_on(bool v) { detail::publish_if(air_filter_on, v); }
+  void publish_air_filter_on(bool v) {
+    detail::publish_if(air_filter_on, v);
+    detail::publish_if(air_filter_on_switch, v);
+  }
 
-  void publish_set_temp(float v) { detail::publish_if(set_temp, v); }
-  void publish_frz_set_temp(float v) { detail::publish_if(frz_set_temp, v); }
+  void publish_set_temp(float v) {
+    detail::publish_if(set_temp, v);
+    detail::publish_if(set_temp_number, v);
+  }
+  void publish_frz_set_temp(float v) {
+    detail::publish_if(frz_set_temp, v);
+    detail::publish_if(frz_set_temp_number, v);
+  }
   void publish_ref2_set_temp(float v) { detail::publish_if(ref2_set_temp, v); }
   void publish_wine_set_temp(float v) { detail::publish_if(wine_set_temp, v); }
   void publish_wine2_set_temp(float v) {
@@ -162,6 +310,11 @@ struct FridgeBus : CommonBus {
   }
   void publish_crisp_set_temp(float v) {
     detail::publish_if(crisp_set_temp, v);
+    detail::publish_if(crisp_set_temp_number, v);
+  }
+  // 1 = Automatic (matches the app's toggle "on" state), 0 = Manual.
+  void publish_crisp_temp_mode(int v) {
+    detail::publish_if(crisp_temp_mode, v == 1);
   }
   void publish_air_filter_pct(float v) {
     detail::publish_if(air_filter_pct, v);
@@ -174,6 +327,89 @@ struct FridgeBus : CommonBus {
   }
   void publish_water_filter_end_date(const std::string &v) {
     detail::publish_if(water_filter_end_date, v);
+  }
+
+  void publish_long_vacation_on(bool v) {
+    detail::publish_if(long_vacation_on, v);
+    long_vacation_on_cached_ = v;
+    recompute_appliance_mode_();
+  }
+  void publish_short_vacation_on(bool v) {
+    detail::publish_if(short_vacation_on, v);
+    short_vacation_on_cached_ = v;
+    recompute_appliance_mode_();
+  }
+  void publish_high_use_on(bool v) {
+    detail::publish_if(high_use_on, v);
+    high_use_on_cached_ = v;
+    recompute_appliance_mode_();
+  }
+  void publish_high_use_start_time(const std::string &v) {
+    detail::publish_if(high_use_start_time, v);
+  }
+  void publish_high_use_end_time(const std::string &v) {
+    detail::publish_if(high_use_end_time, v);
+  }
+  // Shadows CommonBus::publish_sabbath_on (resolved statically per Bus
+  // type by dispatch_common<Bus>, so this override is picked up when
+  // called through a FridgeBus instance). Preserves the existing
+  // read-only sabbath_on binary_sensor, and additionally feeds
+  // appliance_mode.
+  void publish_sabbath_on(bool v) {
+    CommonBus::publish_sabbath_on(v);
+    sabbath_on_cached_ = v;
+    recompute_appliance_mode_();
+  }
+  // Enum-to-label mapping (0="Disabled", 1="Enabled") confirmed via live
+  // BLE testing 2026-07-25, both directions.
+  void publish_night_mode(int v) {
+    if (night_mode_select != nullptr)
+      night_mode_select->publish_state(v == 1 ? "Enabled" : "Disabled");
+  }
+  void publish_night_ice_on(bool v) {
+    detail::publish_if(night_ice_on, v);
+    night_ice_on_cached_ = v;
+    recompute_ice_maker_mode_();
+  }
+  void publish_max_ice_on(bool v) {
+    detail::publish_if(max_ice_on, v);
+    max_ice_on_cached_ = v;
+    recompute_ice_maker_mode_();
+  }
+  void publish_max_ice_start_time(const std::string &v) {
+    detail::publish_if(max_ice_start_time, v);
+  }
+  void publish_max_ice_end_time(const std::string &v) {
+    detail::publish_if(max_ice_end_time, v);
+  }
+  void publish_unit_on(bool v) { detail::publish_if(unit_on, v); }
+  void publish_smart_grid_on(bool v) { detail::publish_if(smart_grid_on, v); }
+  void publish_pin_window_open(bool v) {
+    detail::publish_if(pin_window_open, v);
+  }
+  void publish_active_faults(const std::string &v) {
+    detail::publish_if(active_faults, v);
+  }
+  // Enum-to-label mapping confirmed 2026-07-25 by changing the setting in
+  // the official app while watching raw BLE state: 1="Normal",
+  // 2="Enhanced" (NOT 0/1 like night_mode — do not assume index order for
+  // this field).
+  void publish_humidity_control(int v) {
+    if (humidity_control_select != nullptr)
+      humidity_control_select->publish_state(v == 2 ? "Enhanced" : "Normal");
+  }
+  void publish_door_ajar_timeout(int v) {
+    detail::publish_if(door_ajar_timeout, static_cast<float>(v));
+  }
+  void publish_ap_ssid(const std::string &v) { detail::publish_if(ap_ssid, v); }
+  void publish_ap_rssi(int v) {
+    detail::publish_if(ap_rssi, static_cast<float>(v));
+  }
+  void publish_ap_chan(int v) {
+    detail::publish_if(ap_chan, static_cast<float>(v));
+  }
+  void publish_ap_enc(int v) {
+    detail::publish_if(ap_enc, static_cast<float>(v));
   }
 };
 

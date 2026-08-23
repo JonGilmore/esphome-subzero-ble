@@ -12,13 +12,18 @@
 #include "esphome/components/ble_client/ble_client.h"
 #include "esphome/components/button/button.h"
 #include "esphome/components/number/number.h"
+#include "esphome/components/select/select.h"
 #include "esphome/components/sensor/sensor.h"
 #include "esphome/components/switch/switch.h"
 #include "esphome/components/text/text.h"
 #include "esphome/components/text_sensor/text_sensor.h"
 #include "esphome/core/component.h"
 
+#include <deque>
+#include <functional>
 #include <string>
+#include <utility>
+#include <vector>
 
 namespace esphome {
 namespace subzero_appliance {
@@ -124,17 +129,48 @@ public:
     hub()->set_stored_pin(pin);
   }
 
-  // Used by ApplianceSetSwitch / ApplianceSetNumber when HA writes a
-  // value. Forwards directly to the hub which handles JSON-formatting
-  // and the D5 write.
-  void write_set_bool(const std::string &key, bool value) {
-    hub()->write_set_bool(key, value);
+  // Used by every writable entity (switches, numbers, selects) when HA
+  // writes a value. All three enqueue rather than writing immediately —
+  // see enqueue_write() below for why.
+  void enqueue_write_bool(const std::string &key, bool value) {
+    enqueue_write([this, key, value]() { hub()->write_set_bool(key, value); });
   }
-  void write_set_int(const std::string &key, int value) {
-    hub()->write_set_int(key, value);
+  void enqueue_write_int(const std::string &key, int value) {
+    enqueue_write([this, key, value]() { hub()->write_set_int(key, value); });
   }
-  void write_set_string(const std::string &key, const std::string &value) {
-    hub()->write_set_string(key, value);
+  void enqueue_write_string(const std::string &key, const std::string &value) {
+    enqueue_write(
+        [this, key, value]() { hub()->write_set_string(key, value); });
+  }
+
+  // Queues one BLE write, draining one write per timeout tick rather than
+  // firing immediately. Live testing showed that issuing several BLE
+  // writes in the same loop iteration — whether from one grouped-select
+  // mode change or from two unrelated entities toggled close together —
+  // could overwhelm the stack and drop or corrupt one of them. Every
+  // writable entity goes through this single queue so the pacing
+  // protection isn't limited to grouped selects. A deque (rather than
+  // overwriting a single pending batch) lets writes queued from different
+  // entities interleave in FIFO order without clobbering each other.
+  //
+  // Pacing is enforced against the last write's timestamp (not just "is
+  // the queue non-empty"), so two writes arriving a few ms apart but each
+  // finding an empty queue — e.g. two unrelated entities toggled close
+  // together, neither queued behind the other — still get spaced out
+  // instead of firing back-to-back.
+  void enqueue_write(std::function<void()> write_fn) {
+    write_queue_.push_back(std::move(write_fn));
+    schedule_drain_();
+  }
+
+  // Used by ApplianceSetGroupedSelect when a mode picker needs to write
+  // several fields for one selection (e.g. Ice Maker Mode writes up to
+  // three bools) — each field is queued individually via
+  // enqueue_write_bool so they're paced the same as any other write.
+  void write_set_bool_sequence(std::vector<std::pair<std::string, bool>> writes) {
+    for (auto &w : writes) {
+      enqueue_write_bool(w.first, w.second);
+    }
   }
 
   // ---- Button actions (called from ApplianceButton::press_action) ----
@@ -148,7 +184,7 @@ public:
   void press_log_debug_info();
   void press_reset_pairing();
   void press_clear_cloud_token() {
-    write_set_string("remote_svc_reg_token", "");
+    enqueue_write_string("remote_svc_reg_token", "");
   }
 
 protected:
@@ -170,6 +206,44 @@ protected:
   esphome::text_sensor::TextSensor *status_ts_ = nullptr;
   esphome::text::Text *pin_input_ = nullptr;
   esphome::switch_::Switch *debug_switch_ = nullptr;
+
+private:
+  // See enqueue_write() above.
+  static constexpr std::uint32_t kWriteSpacingMs = 750;
+  std::deque<std::function<void()>> write_queue_;
+  std::uint32_t last_write_ms_ = 0;
+  bool drain_scheduled_ = false;
+  bool have_written_ = false;
+
+  // Schedules drain_write_queue_() for whenever kWriteSpacingMs has
+  // elapsed since the last write (immediately, if it already has, or if
+  // this is the first write since boot). No-ops if a drain is already
+  // scheduled or the queue is empty, so this is safe to call after every
+  // enqueue and after every drain.
+  void schedule_drain_() {
+    if (drain_scheduled_ || write_queue_.empty())
+      return;
+    const std::uint32_t now = esphome::millis();
+    const std::uint32_t elapsed = now - last_write_ms_;
+    const std::uint32_t delay = (have_written_ && elapsed < kWriteSpacingMs)
+                                     ? (kWriteSpacingMs - elapsed)
+                                     : 0;
+    drain_scheduled_ = true;
+    this->set_timeout("subzero_write_queue", delay,
+                       [this]() { this->drain_write_queue_(); });
+  }
+
+  void drain_write_queue_() {
+    drain_scheduled_ = false;
+    if (write_queue_.empty())
+      return;
+    auto write_fn = std::move(write_queue_.front());
+    write_queue_.pop_front();
+    last_write_ms_ = esphome::millis();
+    have_written_ = true;
+    write_fn();
+    schedule_drain_();
+  }
 };
 
 // One Button subclass for all 7 button actions. Python codegen
@@ -263,7 +337,30 @@ public:
 protected:
   void write_state(bool state) override {
     if (parent_ != nullptr && !property_key_.empty()) {
-      parent_->write_set_bool(property_key_, state);
+      parent_->enqueue_write_bool(property_key_, state);
+    }
+    this->publish_state(state);
+  }
+
+private:
+  ApplianceBase *parent_ = nullptr;
+  std::string property_key_;
+};
+
+// Switch subclass for a boolean-like property whose wire format is an int
+// (0/1) rather than a JSON boolean literal — needed for crisp_temp_mode,
+// which was confirmed via live BLE testing to accept `{"crisp_temp_mode":
+// 0}` (never tested with a JSON `true`/`false`, so this stays int to match
+// the confirmed-working format exactly).
+class ApplianceSetIntSwitch : public esphome::switch_::Switch {
+public:
+  void set_parent(ApplianceBase *p) { parent_ = p; }
+  void set_property_key(const std::string &k) { property_key_ = k; }
+
+protected:
+  void write_state(bool state) override {
+    if (parent_ != nullptr && !property_key_.empty()) {
+      parent_->enqueue_write_int(property_key_, state ? 1 : 0);
     }
     this->publish_state(state);
   }
@@ -286,7 +383,7 @@ public:
 protected:
   void control(float value) override {
     if (parent_ != nullptr && !property_key_.empty()) {
-      parent_->write_set_int(property_key_, static_cast<int>(value));
+      parent_->enqueue_write_int(property_key_, static_cast<int>(value));
     }
     this->publish_state(value);
   }
@@ -294,6 +391,100 @@ protected:
 private:
   ApplianceBase *parent_ = nullptr;
   std::string property_key_;
+};
+
+// Select subclass for a picker that writes ONE underlying int property,
+// for enum-like fields such as night_mode / humidity_control. Each label
+// carries its own explicit int value via add_value() rather than assuming
+// the option's list index is the wire value — confirmed necessary on a
+// real appliance: night_mode is 0/1 (matches index order), but
+// humidity_control is 1=Normal/2=Enhanced (does NOT match index order;
+// writing index 0 for "Normal" was a silently-ignored invalid value).
+class ApplianceSetIntSelect : public esphome::select::Select {
+public:
+  void set_parent(ApplianceBase *p) { parent_ = p; }
+  void set_property_key(const std::string &k) { property_key_ = k; }
+  void add_value(const std::string &label, int value) {
+    values_.emplace_back(label, value);
+  }
+
+protected:
+  void control(const std::string &value) override {
+    // Only publish when the label actually matched and was written —
+    // otherwise an unrecognized value (shouldn't happen from the HA UI,
+    // which only offers known options, but is reachable via
+    // select.select_option with an arbitrary string) would leave HA
+    // showing a state the appliance never received.
+    if (parent_ == nullptr || property_key_.empty())
+      return;
+    for (auto &entry : values_) {
+      if (entry.first == value) {
+        parent_->enqueue_write_int(property_key_, entry.second);
+        this->publish_state(value);
+        return;
+      }
+    }
+  }
+
+private:
+  ApplianceBase *parent_ = nullptr;
+  std::string property_key_;
+  std::vector<std::pair<std::string, int>> values_;
+};
+
+// Select subclass for a picker that maps to a *group* of independent
+// boolean properties rather than one field — e.g. Ice Maker Mode
+// (Off/Normal/Max Ice/Night Ice covers ice_maker_on/max_ice_on/
+// night_ice_on) and Appliance Mode (Normal/High Usage/Short Vacation/
+// Long Vacation/Sabbath covers high_use_on/short_vacation_on/
+// long_vacation_on/sabbath_on). The app presents these as single
+// mutually-exclusive pickers, but the BLE protocol has no dedicated
+// "set mode" verb — `set` is the only write command, one field at a
+// time. Selecting an option here writes every field registered against
+// it via add_write() (called once per (option, property_key, value)
+// triple from Python codegen), setting the chosen field(s) true and all
+// others in the group false. Confirmed via live BLE testing 2026-07-25:
+// every option in both groups (all four Ice Maker Mode options, all five
+// Appliance Mode options including Sabbath) round-trips correctly with
+// proper write pacing.
+//
+// Writes are paced (via ApplianceBase::enqueue_write) rather than fired
+// back-to-back: live testing showed that issuing several BLE writes in
+// the same loop iteration could overwhelm the stack and drop or corrupt
+// one of them. All writable entities share one serialized queue, not
+// just grouped selects, since the same congestion risk applies to any
+// writes landing close together regardless of source.
+class ApplianceSetGroupedSelect : public esphome::select::Select {
+public:
+  void set_parent(ApplianceBase *p) { parent_ = p; }
+  // Registers one (property_key, value) write to perform when `option`
+  // is selected. Call once per write per option — e.g. for a 3-field
+  // group with 4 options, that's up to 12 calls total, each with three
+  // plain scalar arguments (kept deliberately simple for codegen).
+  void add_write(const std::string &option, const std::string &property_key,
+                 bool value) {
+    writes_.emplace_back(option, std::make_pair(property_key, value));
+  }
+
+protected:
+  void control(const std::string &value) override {
+    if (parent_ != nullptr) {
+      std::vector<std::pair<std::string, bool>> writes;
+      for (auto &entry : writes_) {
+        if (entry.first == value) {
+          writes.push_back(entry.second);
+        }
+      }
+      if (!writes.empty()) {
+        parent_->write_set_bool_sequence(std::move(writes));
+      }
+    }
+    this->publish_state(value);
+  }
+
+private:
+  ApplianceBase *parent_ = nullptr;
+  std::vector<std::pair<std::string, std::pair<std::string, bool>>> writes_;
 };
 
 // Text input subclass for the PIN field. esphome::text::Text is abstract

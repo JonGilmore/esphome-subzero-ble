@@ -177,7 +177,7 @@ subzero_appliance:
 | Option | Default | Hides
 
 | `hide_freezer` | `false` | Freezer Set Temperature, Freezer Door
-| `hide_ice_maker` | `false` | Ice Maker
+| `hide_ice_maker` | `false` | Ice Maker, plus the derived Ice Maker Mode select when `enable_mode_selects: true`
 | `hide_sabbath` | `false` | Sabbath Mode
 | `hide_fridge_zone` | `false` | Set Temperature, Door (set true for wine-only or freezer-only models that have no main fridge compartment)
 | `hide_wine` | `true` | Wine Door, Wine Zone Upper/Lower Set Temperature, Wine Temperature Alert
@@ -186,6 +186,8 @@ subzero_appliance:
 | `hide_air_filter` | `true` | Air Filter, Air Filter Remaining
 | `hide_water_filter` | `true` | Water Filter Remaining (%)
 | `hide_water_filter_extra` | `true` | Water Filter Gallons Remaining, Water Filter Expires (set false on models that expose these)
+| `hide_vacation_ice_modes` | `true` | Long/Short Vacation Mode, High Usage Mode (+ start/end time), Max Ice Mode (+ start/end time), Night Ice Mode, plus the derived Appliance Mode / Night Mode selects when `enable_mode_selects: true`
+| `hide_extra_diagnostics` | `true` | Smart Grid Mode, Pairing Window Open, Door Ajar Alarm Timeout, WiFi Network/Signal/Channel/Encryption Type, Active Faults, plus the derived Humidity Control select when `enable_mode_selects: true`
 | `hide_softener` | `true` | Water Softener Low (dishwasher only)
 | `hide_oven2` | `true` | All Oven 2 sensors (range only - for dual-oven)
 |===
@@ -327,15 +329,28 @@ NOTE: Sub-Zero fridge firmware only exposes _set points_ over BLE - actual/measu
 | *Refrigerator Drawer Set Temperature* | Drawer compartment setpoint (°F) _(optional)_
 | *Refrigerator Drawer Door* | Drawer open/closed binary sensor _(optional)_. On models that wire the main door and drawer to a single switch (e.g. PRO3650G), this mirrors the Refrigerator Door state.
 | *Crisper Drawer Set Temperature* | Crisper drawer setpoint (°F) _(optional)_
-| *Air Filter* | Air filter on/off binary sensor _(optional)_
+| *Air Filter* | Air filter on/off binary sensor _(optional)_. This is the appliance's "Air Purifier" toggle - confirmed writable, see <<fridge-write-support>>.
 | *Air Filter Remaining* | Air filter life remaining (%) _(optional)_
 | *Water Filter Remaining* | Water filter life remaining (%) _(optional)_
 | *Water Filter Gallons Remaining* | Water filter life remaining (gallons), supported on some fridges _(optional)_
 | *Water Filter Expires* | Water filter expiration date (timestamp), supported on some fridges _(optional)_
+| *Long Vacation Mode* | On/off binary sensor _(optional, `hide_vacation_ice_modes`)_
+| *Short Vacation Mode* | On/off binary sensor _(optional, `hide_vacation_ice_modes`)_
+| *High Usage Mode* | On/off binary sensor, plus start/end time text sensors _(optional, `hide_vacation_ice_modes`)_
+| *Max Ice Mode* | On/off binary sensor, plus start/end time text sensors _(optional, `hide_vacation_ice_modes`)_
+| *Night Ice Mode* | On/off binary sensor _(optional, `hide_vacation_ice_modes`)_
+| *Power On* | Whether the unit is powered
+| *Smart Grid Mode* | Utility demand-response status flag. No corresponding control was found in the app or on the appliance's display, and writes to it don't take effect - treat as informational only _(optional, `hide_extra_diagnostics`)_
+| *Pairing Window Open* | Whether the appliance's BLE pairing window is currently open _(optional, `hide_extra_diagnostics`)_
+| *Door Ajar Alarm Timeout* | Minutes before the door-ajar alarm triggers _(optional, `hide_extra_diagnostics`)_
+| *WiFi Network / Signal / Channel / Encryption Type* | The appliance's own WiFi connection details, reported over BLE _(optional, `hide_extra_diagnostics`)_
+| *Active Faults* | Raw fault string, if the appliance reports one (observed as unpopulated on every unit tested so far) _(optional, `hide_extra_diagnostics`)_
 | *Service Required* | Alerts when the appliance flags a service need
 | *Appliance Model* | Model number (e.g. `DEU2450R`, `313`)
 | *Appliance Uptime* | Time since last power cycle
 |===
+
+NOTE: In addition to the read-only sensors above, several fridge properties are opt-in writable: setpoints, and the Ice Maker Mode / Appliance Mode / Night Mode / Humidity Control selects plus the Automatic Crisper Temperature / Air Purifier switches. See <<fridge-write-support>> below.
 
 === Dishwasher
 
@@ -444,9 +459,61 @@ In addition to the read-only sensors above, several properties are exposed as **
 
 IMPORTANT: **Oven Set Temperature only adjusts an already-running cycle.** The appliance silently ignores writes to `cav_set_temp` / `cav2_set_temp` when the cavity is off. To use this entity, first start a cook mode (Bake, Roast, etc.) at the appliance's front panel - once the oven is actively heating, HA can adjust the target temperature from there. Writing it from the off state does **not** turn the oven on. Probe Set Temperature behaves the same way (probe must be inserted with the appliance running in a probe-aware mode). This is an appliance-side restriction, not a limitation of the integration.
 
-NOTE: **Fridge set temperatures and dishwasher light are intentionally read-only for now.** The appliance acks `set` writes on those properties (status:0) but the actual state never changes - likely the same appliance-side guard mode as the oven's "must be in a cook mode" requirement, applied more broadly. Until that's understood, those entities stay as read-only sensors so a misclick can't risk altering a running appliance.
+NOTE: **Dishwasher light is intentionally read-only for now.** The appliance acks `set light_on` (status:0) but the actual state never changes. Until that's understood, it stays a read-only binary sensor so a misclick can't risk altering a running appliance. **Fridge set temperatures are a different story** - see <<fridge-write-support>> below for the actual reason they looked inert.
 
-NOTE: Writes go to the **D5** control channel (the same one used for unlocking and pairing). The appliance must be connected and paired - if the connection is down or the pairing window is closed (status 302), writes are dropped silently and the entity reverts on the next poll. The standard pairing flow is unchanged.
+NOTE: Writes go to the **D5** control channel (the same one used for unlocking and pairing). The appliance must be connected and paired - if the connection is down or the pairing window is closed (status 302), writes are dropped (logged as a `WARN` - see below) and the entity reverts on the next poll. The standard pairing flow is unchanged.
+
+[[fridge-write-support]]
+=== Fridge Write Support
+
+WARNING: Confirmed via live BLE testing against one appliance (Sub-Zero CL4850UFDID, firmware 2.27) on 2026-07-25 - option encodings and write behavior may differ on other models/firmware, so everything here is opt-in and defaults to the safe read-only behavior.
+
+Two flags on a `type: fridge` `subzero_appliance:` entry unlock additional writable entities:
+
+[source,yaml]
+----
+subzero_appliance:
+  - type: fridge
+    id: main_fridge
+    ble_client_id: main_fridge_ble
+    name: "Main Fridge"
+    pin: "123456"
+    enable_temp_control: true    # <1>
+    enable_mode_selects: true    # <2>
+----
+<1> Turns Set Temperature, Freezer Set Temperature, and Crisper Drawer Set Temperature from read-only Sensors into writable Numbers, and adds an Automatic Crisper Temperature switch.
+<2> Adds the Ice Maker Mode, Appliance Mode, Night Mode, and Humidity Control selects, and turns Air Filter into a writable switch.
+
+**`enable_temp_control`**
+
+[cols="1,2"]
+|===
+| Entity | Behavior
+
+| *Set Temperature* | Writable Number. Confirmed to actually move the physical setpoint - verified against the front panel, not just the BLE-reported state.
+| *Freezer Set Temperature* | Writable Number. Confirmed via BLE readback (value changes and holds); not independently checked against the physical freezer display.
+| *Automatic Crisper Temperature* | New writable switch. The appliance ignores writes to the crisper setpoint whenever this is on (matches the "Automatic crisper temperature" toggle in the official app) - turn it off first.
+| *Crisper Drawer Set Temperature* | Writable Number, but the appliance silently ignores the write unless Automatic Crisper Temperature is off. This was previously assumed to be permanently inert (like dishwasher light); it turned out to just be gated by that mode flag.
+|===
+
+**`enable_mode_selects`**
+
+[cols="1,2"]
+|===
+| Entity | Behavior
+
+| *Ice Maker Mode* (`Off`/`Normal`/`Max Ice`/`Night Ice`) | Grouped select - the BLE protocol has no dedicated "set mode" command, so choosing an option writes all three underlying booleans (`ice_maker_on`/`max_ice_on`/`night_ice_on`) individually. All four options confirmed round-tripping correctly.
+| *Appliance Mode* (`Normal`/`High Usage`/`Short Vacation`/`Long Vacation`/`Sabbath`) | Same grouped-write pattern across `high_use_on`/`short_vacation_on`/`long_vacation_on`/`sabbath_on`. All five options confirmed, including Sabbath.
+| *Night Mode* (`Disabled`/`Enabled`) | Single-field select, confirmed both directions. Wire encoding is a plain `0`/`1`.
+| *Humidity Control* (`Normal`/`Enhanced`) | Single-field select, confirmed both directions. **Wire encoding is `1`=Normal / `2`=Enhanced** - notably not `0`/`1` like Night Mode. An earlier implementation assumed `0`/`1` here, which meant the write silently no-opped (the appliance ignores the invalid value `0`) and the displayed label was backwards.
+| *Air Filter* | Turns from a read-only binary sensor into a writable switch. This is the appliance's "Air Purifier" toggle - confirmed by turning it off on the display and observing this exact BLE field flip, then confirmed independently as a direct BLE write (`true`/`false` JSON boolean, not int). Both directions hold.
+|===
+
+NOTE: **Smart Grid Mode was briefly a writable switch here too, and has been reverted to a plain read-only sensor.** Live testing confirmed writes don't take effect - toggling it off in HA reverted back to `true` within seconds - and no corresponding control exists in the official app or the appliance's own display. It's documented as a regular sensor above (gated by `hide_extra_diagnostics`, available regardless of `enable_mode_selects`).
+
+Every writable entity (both flags) shares one serialized write queue that drains one BLE write roughly every 750ms, regardless of which entity triggered it. Firing several writes back-to-back in the same moment was found to occasionally drop or corrupt one of them under live testing; this pacing is what prevents that.
+
+**Confirmed NOT exposed over BLE at all** (2026-07-25, by diffing a full state poll before/after changing each on the physical display - no BLE field changed for any of these): Celsius/Fahrenheit unit, language, internal water dispenser on/off, interior light options, door alarm sound, and door alarm delay. These all appear to be purely local display preferences that never sync to the BLE state - there's no known way to read or write them through this integration. (Door alarm *on/off* specifically wasn't cleanly isolated during testing and remains untested rather than confirmed absent.)
 
 === "Clear Cloud Token" Diagnostic Button
 
@@ -491,6 +558,7 @@ These diagnostic text sensors are exposed under HA's Diagnostic section for ever
 | Sub-Zero | BI36UFDID | Built-in refrigerator/freezer with ice maker | Fully working
 | Sub-Zero | CL44750SID | Refrigerator/freezer with ice maker | Fully working
 | Sub-Zero | CL4850SID | Refrigerator/freezer with ice maker | Fully working
+| Sub-Zero | CL4850UFDID | Refrigerator/freezer with ice maker (fw 2.27) | Fully working, including <<fridge-write-support,write support>> - temp control, Ice Maker Mode, Appliance Mode, Night Mode, Humidity Control, Automatic Crisper Temperature
 | Sub-Zero | DEU2450BG | Under-counter beverage center refrigerator | Fully working
 | Sub-Zero | DEU2450R | Under-counter refrigerator | Fully working
 | Sub-Zero | DEU2450WDZ | Under-counter wine storage, dual-zone | Fully working

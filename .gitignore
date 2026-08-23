@@ -17,6 +17,7 @@
 !cove-minimal-dishwasher.yaml
 !wolf-minimal-range.yaml
 !wolf-minimal-fridge.yaml
+!ci-fridge-write-support.yaml
 !components/
 !components/patch_acl_reassembly/
 !components/patch_acl_reassembly/**

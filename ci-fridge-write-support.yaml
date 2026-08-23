@@ -1,0 +1,74 @@
+# CI-only config: exercises the opt-in enable_temp_control /
+# enable_mode_selects codegen paths (writable Number/Select entities) so CI
+# actually compiles that code. This is NOT a user-facing quickstart config —
+# see wolf-minimal-fridge.yaml for that. Those two flags enable real physical
+# writes to a fridge's setpoints/modes and are confirmed on only one
+# appliance/firmware so far (see README's Fridge Write Support section);
+# don't copy this file as a starting point without reading that first.
+
+substitutions:
+  name: "subzero-fridge-ci"
+  friendly_name: "CI Fridge"
+
+external_components:
+  - source:
+      type: git
+      url: https://github.com/JonGilmore/esphome-subzero-ble
+      ref: v3.7.0
+    components: [ patch_acl_reassembly, subzero_protocol, subzero_appliance ]
+
+esphome:
+  name: ${name}
+  friendly_name: ${friendly_name}
+  name_add_mac_suffix: true
+
+esp32:
+  board: esp32dev
+  framework:
+    type: esp-idf
+    sdkconfig_options:
+      CONFIG_BT_GATTC_CACHE_NVS_FLASH: "n"
+
+logger:
+  level: DEBUG
+  logs:
+    esp32_ble_client: INFO
+    ble_client: DEBUG
+    ble_sensor: WARN
+    esp32_ble_tracker: WARN
+    BT_GATTC: WARN
+
+api:
+  reboot_timeout: 5min
+
+ota:
+  - platform: esphome
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  fast_connect: true
+  power_save_mode: none
+
+esp32_ble:
+  io_capability: keyboard_only
+  max_connections: 5
+
+esp32_ble_tracker:
+  scan_parameters:
+    active: false
+
+ble_client:
+  - mac_address: !secret main_fridge_mac
+    id: main_fridge_ble
+    name: "SZG CI Fridge"
+    auto_connect: true
+
+subzero_appliance:
+  - type: fridge
+    id: main_fridge
+    ble_client_id: main_fridge_ble
+    name: "CI Fridge"
+    pin: !secret main_fridge_pin
+    enable_temp_control: true
+    enable_mode_selects: true

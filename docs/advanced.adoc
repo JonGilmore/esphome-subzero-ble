@@ -188,7 +188,7 @@ The lambdas check `s.valid`, `s.<field>.has_value()` and publish to entities - n
 
 === Running the Host Tests
 
-A CMake + GoogleTest harness at `tests/cpp/` compiles the parser on the host and runs ~35 tests (22 fixture-based + a dozen targeted behavior tests). Fixtures live at `tests/fixtures/` - one `.json` + one `.expected.json` per captured BLE payload.
+A CMake + GoogleTest harness at `tests/cpp/` compiles the parser on the host and runs 210 tests (32 fixture-based + targeted behavior tests covering dispatch, protocol parsing, and the hub state machine). Fixtures live at `tests/fixtures/` - one `.json` + one `.expected.json` per captured BLE payload.
 
 [source,bash]
 ----

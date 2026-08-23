@@ -69,12 +69,44 @@ struct FridgeRecorder : CommonRecorder {
   void publish_wine_set_temp(float v) { floats["wine_set_temp"] = v; }
   void publish_wine2_set_temp(float v) { floats["wine2_set_temp"] = v; }
   void publish_crisp_set_temp(float v) { floats["crisp_set_temp"] = v; }
+  void publish_crisp_temp_mode(int v) { ints["crisp_temp_mode"] = v; }
   void publish_air_filter_pct(float v) { floats["air_filter_pct"] = v; }
   void publish_water_filter_pct(float v) { floats["water_filter_pct"] = v; }
   void publish_water_filter_gal(float v) { floats["water_filter_gal"] = v; }
   void publish_water_filter_end_date(const std::string &v) {
     strings["water_filter_end_date"] = v;
   }
+
+  void publish_long_vacation_on(bool v) { bools["long_vacation_on"] = v; }
+  void publish_short_vacation_on(bool v) { bools["short_vacation_on"] = v; }
+  void publish_high_use_on(bool v) { bools["high_use_on"] = v; }
+  void publish_high_use_start_time(const std::string &v) {
+    strings["high_use_start_time"] = v;
+  }
+  void publish_high_use_end_time(const std::string &v) {
+    strings["high_use_end_time"] = v;
+  }
+  void publish_night_mode(int v) { ints["night_mode"] = v; }
+  void publish_night_ice_on(bool v) { bools["night_ice_on"] = v; }
+  void publish_max_ice_on(bool v) { bools["max_ice_on"] = v; }
+  void publish_max_ice_start_time(const std::string &v) {
+    strings["max_ice_start_time"] = v;
+  }
+  void publish_max_ice_end_time(const std::string &v) {
+    strings["max_ice_end_time"] = v;
+  }
+  void publish_unit_on(bool v) { bools["unit_on"] = v; }
+  void publish_smart_grid_on(bool v) { bools["smart_grid_on"] = v; }
+  void publish_pin_window_open(bool v) { bools["pin_window_open"] = v; }
+  void publish_active_faults(const std::string &v) {
+    strings["active_faults"] = v;
+  }
+  void publish_humidity_control(int v) { ints["humidity_control"] = v; }
+  void publish_door_ajar_timeout(int v) { ints["door_ajar_timeout"] = v; }
+  void publish_ap_ssid(const std::string &v) { strings["ap_ssid"] = v; }
+  void publish_ap_rssi(int v) { ints["ap_rssi"] = v; }
+  void publish_ap_chan(int v) { ints["ap_chan"] = v; }
+  void publish_ap_enc(int v) { ints["ap_enc"] = v; }
 };
 
 struct DishwasherRecorder : CommonRecorder {
@@ -262,6 +294,7 @@ TEST(Dispatch, FridgeFieldsRouted) {
   s.wine2_set_temp = 65.0f;
   s.wine_temp_alert_on = false;
   s.crisp_set_temp = 33.0f;
+  s.crisp_temp_mode = 1;
   s.air_filter_on = true;
   s.air_filter_pct_remaining = 80.0f;
   s.water_filter_pct_remaining = 50.0f;
@@ -283,6 +316,7 @@ TEST(Dispatch, FridgeFieldsRouted) {
   EXPECT_FLOAT_EQ(rec.floats["wine2_set_temp"], 65.0f);
   EXPECT_EQ(rec.bools["wine_temp_alert"], false);
   EXPECT_FLOAT_EQ(rec.floats["crisp_set_temp"], 33.0f);
+  EXPECT_EQ(rec.ints["crisp_temp_mode"], 1);
   EXPECT_EQ(rec.bools["air_filter_on"], true);
   EXPECT_FLOAT_EQ(rec.floats["air_filter_pct"], 80.0f);
   EXPECT_FLOAT_EQ(rec.floats["water_filter_pct"], 50.0f);
