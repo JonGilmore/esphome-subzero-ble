@@ -17,7 +17,7 @@ Sub-Zero Group (SZG) appliances include a BLE radio that the official _Sub-Zero 
 == Requirements
 
 * An *ESP32* board. I've had good results with the https://shop.everythingsmart.io/products/everything-presence-one-kit[Everything Presence One] and the https://www.amazon.com/dp/B0DKJ5VXC9[Waveshare POE ESP32]. In general, any ESP32-S3 module should work well and has been tested with up to 5 simultaneous BLE connections. Less capable variants, such as the ESP-C6, support fewer concurrent connections and are typically limited to about three appliances. 
-* *ESPHome 2025.7+* (tested on 2026.3.0)
+* *ESPHome 2026.7.1+*
 * *Python 3.10+* and a working ESPHome installation
 * The *6-digit PIN* from your appliance display (one-time)
 
@@ -58,12 +58,13 @@ external_components:                          # <1>
       type: git
       url: https://github.com/JonGilmore/esphome-subzero-ble
       ref: v3.7.0 # use latest tag, or main
-    components: [patch_acl_reassembly, subzero_protocol, subzero_appliance]
+    components: [subzero_protocol, subzero_appliance]
 
 esphome:
   name: my-subzero
   friendly_name: "My Sub-Zero"
   name_add_mac_suffix: true
+  min_version: 2026.7.1                       # <2>
 
 esp32:
   board: esp32dev
@@ -104,24 +105,25 @@ esp32_ble_tracker:
   scan_parameters:
     active: false
 
-ble_client:                                   # <2>
+ble_client:                                   # <3>
   - mac_address: "00:06:80:XX:XX:XX"
     id: kitchen_fridge_ble
     name: "SZG Kitchen Fridge"
     auto_connect: true
 
-subzero_appliance:                            # <3>
-  - type: fridge # or `dishwasher` or `range` # <4>
+subzero_appliance:                            # <4>
+  - type: fridge # or `dishwasher` or `range` # <5>
     id: kitchen_fridge
     ble_client_id: kitchen_fridge_ble
     name: "Kitchen Fridge"
-    pin: "123456"                             # <5>
+    pin: "123456"                             # <6>
 ----
-<1> Pulls the C++ parser, ACL-reassembly patch, and the `subzero_appliance` native component. All three must be loaded.
-<2> One `ble_client` per appliance, with the appliance's BLE MAC address (Sub-Zero MACs typically start with `00:06:80`). `auto_connect: true` keeps reconnecting on failure.
-<3> The native `subzero_appliance` component creates ~30 read-only sensors plus writable Numbers (set temps), Switches (lights), and 8 control/diagnostic buttons.
-<4> The type of appliance - valid types are fridge, dishwasher, range
-<5> The 6-digit PIN from your appliance (see <<pairing>> below). `mode: password` masks it in the HA UI.
+<1> Pulls the C++ parser and the `subzero_appliance` native component. Both must be loaded. (Configs written for v3.7.0 or earlier also listed `patch_acl_reassembly` here - that component no longer exists.)
+<2> Hard floor - ESPHome 2026.7.1 is the first release built on ESP-IDF 5.5.5, which contains the upstream Bluedroid ACL-reassembly fix this project used to patch in itself.
+<3> One `ble_client` per appliance, with the appliance's BLE MAC address (Sub-Zero MACs typically start with `00:06:80`). `auto_connect: true` keeps reconnecting on failure.
+<4> The native `subzero_appliance` component creates ~30 read-only sensors plus writable Numbers (set temps), Switches (lights), and 8 control/diagnostic buttons.
+<5> The type of appliance - valid types are fridge, dishwasher, range
+<6> The 6-digit PIN from your appliance (see <<pairing>> below). `mode: password` masks it in the HA UI.
 
 .Multiple Appliances
 [source,yaml]
@@ -303,7 +305,7 @@ TIP: Sub-Zero appliance BLE MAC addresses typically begin with `00:06:80`. You c
 | Wolf ranges have tight BLE windows. Add `fast_connect: true` and `power_save_mode: none` to your WiFi config.
 
 | *"ACL packet too short" / first push notification lost / occasional Unknown on a fw 8.5 sensor*
-| Known ESP-IDF Bluedroid HCI bug on ESP32-S3. During a long indication burst (e.g. the ~2 KB full-state poll response on a Wall Oven or 313 fridge) the stack sometimes delivers a truncated ACL packet, leaving the JSON reassembly buffer unbalanced and unparseable. The integration simply lets the 60s periodic poll take another shot - a clean response usually lands within one or two cycles. Push-driven sensors (door, light, setpoint changes) are fine since each push fits in a single indication. Appliances running fw 2.27 (244-byte fragments) are unaffected. See link:docs/ble-protocol.adoc#_key_protocol_details[ACL Fragment Drops] for details.
+| *Fixed upstream - make sure you are on ESPHome 2026.7.1+.* This was an ESP-IDF Bluedroid HCI bug that dropped short ACL continuation fragments, leaving the JSON reassembly buffer unbalanced and unparseable. It only ever affected fw 8.5 appliances (40-byte fragments); fw 2.27 (244-byte fragments) was unaffected. The fix landed in ESP-IDF 5.5.5, which ESPHome adopted in 2026.7.1. If you still see this on 2026.7.1+, check that you have not pinned an older `framework: version:` in your `esp32:` block. The integration remains tolerant of a bad payload either way: it lets the 60s periodic poll take another shot rather than publishing partial state. See link:docs/ble-protocol.adoc#_key_protocol_details[ACL Fragment Drops] for details.
 |===
 
 == Supported Sensors
