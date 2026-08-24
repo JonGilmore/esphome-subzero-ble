@@ -1,6 +1,6 @@
 # CI-only config: exercises the opt-in enable_temp_control /
 # enable_mode_selects codegen paths (writable Number/Select entities) so CI
-# actually compiles that code. This is NOT a user-facing quickstart config —
+# actually compiles that code. This is NOT a user-facing quickstart config -
 # see wolf-minimal-fridge.yaml for that. Those two flags enable real physical
 # writes to a fridge's setpoints/modes and are confirmed on only one
 # appliance/firmware so far (see README's Fridge Write Support section);
@@ -15,12 +15,13 @@ external_components:
       type: git
       url: https://github.com/JonGilmore/esphome-subzero-ble
       ref: v3.7.0
-    components: [ patch_acl_reassembly, subzero_protocol, subzero_appliance ]
+    components: [ subzero_protocol, subzero_appliance ]
 
 esphome:
   name: ${name}
   friendly_name: ${friendly_name}
   name_add_mac_suffix: true
+  min_version: 2026.7.1
 
 esp32:
   board: esp32dev
