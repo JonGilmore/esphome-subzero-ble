@@ -261,7 +261,7 @@ See link:docs/advanced.adoc#_esphome_commands[ESPHome Commands] for OTA flashing
 You need the 6-digit PIN from your appliance. There are two ways to get it:
 
 . **From the official app:** Open the _Sub-Zero Group Owner_ app, connect to your appliance, and note the PIN shown during pairing. *You will have to delete the BT pairing from your phone after this to allow the ESP32 to connect.*
-. **From the appliance display:** After the ESP32 connects and bonds, press the "Start Pairing" button in Home Assistant. The PIN will appear on the appliance's physical display for 30 seconds.
+. **From the appliance display:** After the ESP32 connects and bonds, press the "Start Pairing" button in Home Assistant. The PIN will appear on the appliance's physical display for 30 seconds. The screen must already be on — if the display is inside the compartment (typical for many fridges), open the door first so the panel wakes, then press Start Pairing.
 
 TIP: Sub-Zero appliance BLE MAC addresses typically begin with `00:06:80`. You can verify this using a Bluetooth scanner app on Android (iOS does not expose BLE MAC addresses), or by scanning BLE advertisements with a spare ESP32. On macOS, connect to the appliance with a Bluetooth scanner, then run `system_profiler SPBluetoothDataType` in Terminal to retrieve the BLE MAC address.
 
@@ -293,7 +293,7 @@ TIP: Sub-Zero appliance BLE MAC addresses typically begin with `00:06:80`. You c
 | The BLE bond went stale. The integration automatically detects this after 3 consecutive failures, clears the old bond, and re-pairs. No action needed.
 
 | *Most sensors stuck at "unknown" / Status sensor reads "Pairing required"*
-| The appliance returned `status: 302` to the unlock attempt. This usually means its PIN rotated - some appliances assign a new pairing key after a power cycle, factory reset, or when the official app re-pairs. Press the *Start Pairing* button for that appliance in HA, watch the appliance display for the new 6-digit PIN, then enter it into the appliance's *PIN* text input in HA. The next poll cycle will pick up full state. (You'll also see `[szg:###]: [Appliance] Pairing rejected (status 302)` in the ESPHome logs.)
+| The appliance returned `status: 302` to the unlock attempt. This usually means its PIN rotated - some appliances assign a new pairing key after a power cycle, factory reset, or when the official app re-pairs. Wake the appliance screen (open the door first if the display is inside the compartment), press the *Start Pairing* button for that appliance in HA, watch the display for the new 6-digit PIN, then enter it into the appliance's *PIN* text input in HA. The next poll cycle will pick up full state. (You'll also see `[szg:###]: [Appliance] Pairing rejected (status 302)` in the ESPHome logs.)
 
 | *Poll-only sensors (model, uptime, version, diagnostic_status) only refresh every few minutes on a fridge or wall oven*
 | Normal for fw 8.5 appliances. After the first poll on each connection, repeat polls go silent within the same BLE session, so the integration's zombie detector forces a reconnect every ~3 missed cycles (~3 min). Each reconnect lands a fresh full-state poll which refreshes those fields. Push notifications (door, light, setpoint changes, etc.) continue between cycles, so live state stays current. See link:docs/advanced.adoc#reconnect-logic[Reconnect Logic].
