@@ -549,6 +549,28 @@ These diagnostic text sensors are exposed under HA's Diagnostic section for ever
 | *Build Date* | Firmware build timestamp
 |===
 
+=== Status Entity and Logbook Noise
+
+The *Status* text sensor reports what the BLE connection is doing - pairing prompts, unlock progress, and errors. It deliberately reports only *state changes users care about*:
+
+* The scheduled ~18-minute session refresh (see link:docs/ble-protocol.adoc[BLE protocol notes]) is silent. It disconnects and reconnects internally, but Status keeps reading `Connected and polling.` throughout. If a refresh stalls for more than 90 seconds, Status switches to `Reconnecting...` so a genuinely stuck link is still visible.
+* `PIN confirmed! Channel unlocked.` is published when the channel actually unlocks, not on every poll response that happens to echo the PIN back.
+
+Full step-by-step connection detail is still written to the ESPHome log at `INFO`, so nothing is lost for debugging - it just no longer becomes a Home Assistant logbook entry.
+
+NOTE: Home Assistant's logbook cannot be filtered with `entity_category`; it only auto-excludes numeric sensors that carry a `unit_of_measurement` or `state_class`. A text sensor therefore produces a logbook row for every distinct value it publishes. The *Uptime* sensor reports the appliance's own uptime clock, so it changes on every successful poll and is inherently chatty.
+
+To hide any of these from the logbook while keeping full history and state, filter them in Home Assistant (this affects the logbook only - `recorder:` history is untouched):
+
+[source,yaml]
+----
+logbook:
+  exclude:
+    entities:
+      - sensor.main_fridge_uptime
+      - sensor.main_fridge_status
+----
+
 === Tested Appliances
 
 [cols="1,1,1,1"]
