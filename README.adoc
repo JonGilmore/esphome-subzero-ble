@@ -27,7 +27,9 @@ Sub-Zero Group (SZG) appliances include a BLE radio that the official _Sub-Zero 
 
 `Appliance Uptime` used to publish the appliance's raw `H:MM:SS` string. It is now a numeric sensor reporting *seconds* (`device_class: duration`, `state_class: total_increasing`), because Home Assistant writes a logbook entry for every distinct value a text sensor publishes and this one advances on every poll.
 
-After upgrading, Home Assistant will see the entity's unit and device class change. If it complains about incompatible units or long-term statistics, delete the old `sensor.<name>_appliance_uptime` entity and let it be recreated. Anything referencing the old string - a template, dashboard card, or automation - needs updating to handle a number of seconds.
+After upgrading, Home Assistant will see the entity's unit and device class change. If it complains about incompatible units or long-term statistics, delete the entity (`sensor.<device>_uptime`, e.g. `sensor.main_fridge_uptime`) and let it be recreated. Anything referencing the old string - a template, dashboard card, or automation - needs updating to handle a number of seconds.
+
+ESPHome text sensors and numeric sensors both surface in Home Assistant's `sensor` domain, so the entity ID itself does not change - only its state, unit, and device class do.
 ====
 
 [[getting-started]]

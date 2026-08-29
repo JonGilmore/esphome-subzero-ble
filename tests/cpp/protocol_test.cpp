@@ -643,18 +643,48 @@ TEST(UptimeTest, MatchesUnsetClockCrossCheck) {
   EXPECT_NEAR(static_cast<double>(*v), static_cast<double>(since_epoch), 5.0);
 }
 
+// At four digits of hours the 8-character truncation eats the whole
+// seconds field. The captured fixtures already reach 959 hours, so this
+// arrives ~41 hours later; rejecting it would strand the sensor at
+// unknown for the rest of the appliance's uptime.
+TEST(UptimeTest, ParsesTruncatedFourDigitHourForm) {
+  auto v = parse_uptime_seconds("1000:00:");
+  ASSERT_TRUE(v.has_value());
+  EXPECT_EQ(*v, 1000u * 3600);
+
+  auto w = parse_uptime_seconds("1234:56:");
+  ASSERT_TRUE(w.has_value());
+  EXPECT_EQ(*w, 1234u * 3600 + 56 * 60);
+}
+
+// Every duration representable in the uint32 return type is accepted -
+// there is no arbitrary digit-count ceiling below that bound.
+TEST(UptimeTest, AcceptsFullRepresentableRange) {
+  auto v = parse_uptime_seconds("1000000:00:00");
+  ASSERT_TRUE(v.has_value());
+  EXPECT_EQ(*v, 1000000ull * 3600);
+
+  // 1193046:28:15 == 0xFFFFFFFF seconds exactly, the largest value that
+  // fits; one second more must be rejected rather than wrapping.
+  auto max_v = parse_uptime_seconds("1193046:28:15");
+  ASSERT_TRUE(max_v.has_value());
+  EXPECT_EQ(*max_v, 0xFFFFFFFFu);
+  EXPECT_FALSE(parse_uptime_seconds("1193046:28:16").has_value());
+}
+
 TEST(UptimeTest, RejectsMalformedValues) {
   EXPECT_FALSE(parse_uptime_seconds("").has_value());
   EXPECT_FALSE(parse_uptime_seconds("1d2h").has_value());
   EXPECT_FALSE(parse_uptime_seconds("12:34").has_value());
   EXPECT_FALSE(parse_uptime_seconds("12:34:56:78").has_value());
-  EXPECT_FALSE(parse_uptime_seconds("12:34:").has_value());
   EXPECT_FALSE(parse_uptime_seconds(":34:56").has_value());
   EXPECT_FALSE(parse_uptime_seconds("12::56").has_value());
   EXPECT_FALSE(parse_uptime_seconds("12:34:5x").has_value());
   // Minutes/seconds outside a clock range mean it isn't H:MM:SS at all.
   EXPECT_FALSE(parse_uptime_seconds("12:60:00").has_value());
   EXPECT_FALSE(parse_uptime_seconds("12:00:60").has_value());
+  // A digit run long enough to overflow the accumulator is malformed.
+  EXPECT_FALSE(parse_uptime_seconds("99999999999999999999:00:00").has_value());
 }
 
 // Every uptime string present in the captured fixtures must parse — a

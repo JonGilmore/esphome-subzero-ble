@@ -193,11 +193,14 @@ RangeState parse_range(const std::string &json);
 // last seconds digit once the hour field reaches three digits
 // ("627:09:3" is "627:09:3X"). The resulting error is under 10 seconds on
 // a value measured in hundreds of hours, so the seconds field is parsed
-// as-is rather than being discarded.
+// as-is rather than being discarded. At four digits of hours the same
+// truncation swallows the seconds field entirely ("1000:00:"); that form
+// is accepted with seconds treated as zero.
 //
-// Returns nullopt for anything that isn't three colon-separated runs of
-// digits, so a malformed value leaves the sensor unknown instead of
-// publishing a wrong number.
+// Returns nullopt for anything that isn't three colon-separated fields of
+// digits within clock range, so a malformed value leaves the sensor
+// unknown instead of publishing a wrong number. Every duration that fits
+// in the return type is accepted.
 std::optional<std::uint32_t> parse_uptime_seconds(const std::string &v);
 
 } // namespace subzero_protocol

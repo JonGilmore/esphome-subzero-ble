@@ -232,20 +232,32 @@ std::optional<std::uint32_t> parse_uptime_seconds(const std::string &v) {
   std::size_t digits = 0;
   for (char ch : v) {
     if (ch >= '0' && ch <= '9') {
-      if (++digits > 6)
-        return std::nullopt; // absurdly long run; treat as malformed
+      // Keep the accumulator from wrapping on a pathologically long run.
+      // The representable-range check below is what actually bounds the
+      // accepted value, so every hour count that fits in the return type
+      // is accepted.
+      if (parts[idx] > 0xFFFFFFFFULL)
+        return std::nullopt;
       parts[idx] = parts[idx] * 10 + static_cast<std::uint64_t>(ch - '0');
+      ++digits;
       continue;
     }
     if (ch != ':')
       return std::nullopt;
     if (digits == 0 || idx == 2)
-      return std::nullopt; // empty field, or a fourth field
+      return std::nullopt; // empty hour/minute field, or a fourth field
     ++idx;
     digits = 0;
   }
-  if (idx != 2 || digits == 0)
-    return std::nullopt; // fewer than three fields, or a trailing colon
+  if (idx != 2)
+    return std::nullopt; // fewer than three fields
+  // A trailing colon with no seconds digits is the 8-character firmware
+  // truncation swallowing the entire seconds field once the hour count
+  // reaches four digits ("1000:00:12" arrives as "1000:00:"). Appliances
+  // in the captured fixtures are already at 959 hours, so this form is
+  // imminent, not hypothetical. Treat the missing seconds as zero - at
+  // worst 59 seconds low on a value in the thousands of hours - rather
+  // than dropping the reading and leaving the sensor unknown forever.
   if (parts[1] > 59 || parts[2] > 59)
     return std::nullopt; // not a H:MM:SS clock value
   const std::uint64_t total =
