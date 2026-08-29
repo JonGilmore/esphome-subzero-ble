@@ -41,6 +41,7 @@
 #include "esphome/components/switch/switch.h"
 #include "esphome/components/text_sensor/text_sensor.h"
 
+#include <cstdint>
 #include <optional>
 #include <string>
 
@@ -67,7 +68,8 @@ struct CommonBus {
   esphome::binary_sensor::BinarySensor *sabbath_on = nullptr;
   esphome::binary_sensor::BinarySensor *svc_required = nullptr;
   esphome::text_sensor::TextSensor *model = nullptr;
-  esphome::text_sensor::TextSensor *uptime = nullptr;
+  // Duration in seconds — see parse_uptime_seconds() / dispatch_common().
+  esphome::sensor::Sensor *uptime = nullptr;
   esphome::text_sensor::TextSensor *serial = nullptr;
   esphome::text_sensor::TextSensor *appliance_type = nullptr;
   esphome::text_sensor::TextSensor *diag_status = nullptr;
@@ -86,7 +88,9 @@ struct CommonBus {
   void publish_sabbath_on(bool v) { detail::publish_if(sabbath_on, v); }
   void publish_svc_required(bool v) { detail::publish_if(svc_required, v); }
   void publish_model(const std::string &v) { detail::publish_if(model, v); }
-  void publish_uptime(const std::string &v) { detail::publish_if(uptime, v); }
+  void publish_uptime(std::uint32_t v) {
+    detail::publish_if(uptime, static_cast<float>(v));
+  }
   void publish_serial(const std::string &v) { detail::publish_if(serial, v); }
   void publish_appliance_type(const std::string &v) {
     detail::publish_if(appliance_type, v);

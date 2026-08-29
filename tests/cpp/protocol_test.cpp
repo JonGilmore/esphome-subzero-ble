@@ -601,4 +601,74 @@ TEST(ProtocolTest, DishwasherNegativeRemainingClampsToZero) {
   EXPECT_EQ(*d.wash_time_remaining_min, 0);
 }
 
+// ---------------------------------------------------------------------
+// parse_uptime_seconds — H:MM:SS with an unbounded hour field.
+// ---------------------------------------------------------------------
+
+TEST(UptimeTest, ParsesPlainHmmss) {
+  auto v = parse_uptime_seconds("50:17:54");
+  ASSERT_TRUE(v.has_value());
+  EXPECT_EQ(*v, 50u * 3600 + 17 * 60 + 54);
+}
+
+TEST(UptimeTest, ParsesUnboundedHourField) {
+  auto v = parse_uptime_seconds("959:52:07");
+  ASSERT_TRUE(v.has_value());
+  EXPECT_EQ(*v, 959u * 3600 + 52 * 60 + 7);
+}
+
+// Most firmware truncates the string to 8 chars, clipping the last
+// seconds digit once hours reach three digits. The value must still
+// parse — the resulting sub-10-second error is irrelevant here.
+TEST(UptimeTest, ParsesFirmwareTruncatedSecondsField) {
+  auto v = parse_uptime_seconds("627:09:3");
+  ASSERT_TRUE(v.has_value());
+  EXPECT_EQ(*v, 627u * 3600 + 9 * 60 + 3);
+}
+
+TEST(UptimeTest, ParsesZeroSeconds) {
+  auto v = parse_uptime_seconds("725:35:0");
+  ASSERT_TRUE(v.has_value());
+  EXPECT_EQ(*v, 725u * 3600 + 35 * 60);
+}
+
+// Cross-check against the one captured appliance whose clock was never
+// set: it reported time 2000-01-05T03:50:10 (99:50:10 since the 2000
+// epoch) alongside uptime "99:50:08", sampled ~2s apart. This is the
+// evidence that the third field is seconds, not tenths or deciseconds.
+TEST(UptimeTest, MatchesUnsetClockCrossCheck) {
+  auto v = parse_uptime_seconds("99:50:08");
+  ASSERT_TRUE(v.has_value());
+  const std::uint32_t since_epoch = 99u * 3600 + 50 * 60 + 10;
+  EXPECT_NEAR(static_cast<double>(*v), static_cast<double>(since_epoch), 5.0);
+}
+
+TEST(UptimeTest, RejectsMalformedValues) {
+  EXPECT_FALSE(parse_uptime_seconds("").has_value());
+  EXPECT_FALSE(parse_uptime_seconds("1d2h").has_value());
+  EXPECT_FALSE(parse_uptime_seconds("12:34").has_value());
+  EXPECT_FALSE(parse_uptime_seconds("12:34:56:78").has_value());
+  EXPECT_FALSE(parse_uptime_seconds("12:34:").has_value());
+  EXPECT_FALSE(parse_uptime_seconds(":34:56").has_value());
+  EXPECT_FALSE(parse_uptime_seconds("12::56").has_value());
+  EXPECT_FALSE(parse_uptime_seconds("12:34:5x").has_value());
+  // Minutes/seconds outside a clock range mean it isn't H:MM:SS at all.
+  EXPECT_FALSE(parse_uptime_seconds("12:60:00").has_value());
+  EXPECT_FALSE(parse_uptime_seconds("12:00:60").has_value());
+}
+
+// Every uptime string present in the captured fixtures must parse — a
+// regression here means real appliances would report unknown.
+TEST(UptimeTest, ParsesEveryCapturedFixtureValue) {
+  const char *captured[] = {
+      "797:58:1",  "627:09:2", "627:09:3",  "139:31:5", "136:59:2",
+      "959:52:0",  "113:12:02", "50:17:54", "99:49:49", "99:50:08",
+      "725:35:0",
+  };
+  for (const char *s : captured) {
+    EXPECT_TRUE(parse_uptime_seconds(s).has_value())
+        << "captured fixture value failed to parse: " << s;
+  }
+}
+
 } // namespace

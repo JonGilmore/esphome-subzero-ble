@@ -225,6 +225,36 @@ std::optional<int> minutes_between(const char *now_iso,
 
 } // namespace
 
+std::optional<std::uint32_t> parse_uptime_seconds(const std::string &v) {
+  // Three colon-separated runs of digits: H:MM:SS, hours unbounded.
+  std::uint64_t parts[3] = {0, 0, 0};
+  std::size_t idx = 0;
+  std::size_t digits = 0;
+  for (char ch : v) {
+    if (ch >= '0' && ch <= '9') {
+      if (++digits > 6)
+        return std::nullopt; // absurdly long run; treat as malformed
+      parts[idx] = parts[idx] * 10 + static_cast<std::uint64_t>(ch - '0');
+      continue;
+    }
+    if (ch != ':')
+      return std::nullopt;
+    if (digits == 0 || idx == 2)
+      return std::nullopt; // empty field, or a fourth field
+    ++idx;
+    digits = 0;
+  }
+  if (idx != 2 || digits == 0)
+    return std::nullopt; // fewer than three fields, or a trailing colon
+  if (parts[1] > 59 || parts[2] > 59)
+    return std::nullopt; // not a H:MM:SS clock value
+  const std::uint64_t total =
+      parts[0] * 3600ULL + parts[1] * 60ULL + parts[2];
+  if (total > 0xFFFFFFFFULL)
+    return std::nullopt;
+  return static_cast<std::uint32_t>(total);
+}
+
 FridgeState parse_fridge(const std::string &json) {
   FridgeState state;
   JsonDocument doc;

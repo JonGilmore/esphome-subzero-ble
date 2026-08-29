@@ -21,6 +21,15 @@ Sub-Zero Group (SZG) appliances include a BLE radio that the official _Sub-Zero 
 * *Python 3.10+* and a working ESPHome installation
 * The *6-digit PIN* from your appliance display (one-time)
 
+[WARNING]
+====
+*Breaking change: Appliance Uptime is now numeric.*
+
+`Appliance Uptime` used to publish the appliance's raw `H:MM:SS` string. It is now a numeric sensor reporting *seconds* (`device_class: duration`, `state_class: total_increasing`), because Home Assistant writes a logbook entry for every distinct value a text sensor publishes and this one advances on every poll.
+
+After upgrading, Home Assistant will see the entity's unit and device class change. If it complains about incompatible units or long-term statistics, delete the old `sensor.<name>_appliance_uptime` entity and let it be recreated. Anything referencing the old string - a template, dashboard card, or automation - needs updating to handle a number of seconds.
+====
+
 [[getting-started]]
 == Getting Started
 
@@ -349,7 +358,7 @@ NOTE: Sub-Zero fridge firmware only exposes _set points_ over BLE - actual/measu
 | *Active Faults* | Raw fault string, if the appliance reports one (observed as unpopulated on every unit tested so far) _(optional, `hide_extra_diagnostics`)_
 | *Service Required* | Alerts when the appliance flags a service need
 | *Appliance Model* | Model number (e.g. `DEU2450R`, `313`)
-| *Appliance Uptime* | Time since last power cycle
+| *Appliance Uptime* | Time since last power cycle, in seconds (`device_class: duration`). Graphable; use a HA template or the `relative_time` helper if you want a human-readable form.
 |===
 
 NOTE: In addition to the read-only sensors above, several fridge properties are opt-in writable: setpoints, and the Ice Maker Mode / Appliance Mode / Night Mode / Humidity Control selects plus the Automatic Crisper Temperature / Air Purifier switches. See <<fridge-write-support>> below.
@@ -377,7 +386,7 @@ NOTE: In addition to the read-only sensors above, several fridge properties are 
 | *Delay Start* | Delay start timer is active
 | *Service Required* | Alerts when the appliance flags a service need
 | *Appliance Model* | Model number (e.g. `DW2450`, `DW2450WS`)
-| *Appliance Uptime* | Time since last power cycle
+| *Appliance Uptime* | Time since last power cycle, in seconds (`device_class: duration`). Graphable; use a HA template or the `relative_time` helper if you want a human-readable form.
 |===
 
 === Range / Oven
@@ -428,7 +437,7 @@ NOTE: In addition to the read-only sensors above, several fridge properties are 
 | *Oven 2 Cook Timer Complete* | Second cavity cook timer has finished _(optional)_
 | *Service Required* | Alerts when the appliance flags a service need
 | *Appliance Model* | Model number (e.g. `DF36450GSP`)
-| *Appliance Uptime* | Time since last power cycle
+| *Appliance Uptime* | Time since last power cycle, in seconds (`device_class: duration`). Graphable; use a HA template or the `relative_time` helper if you want a human-readable form.
 |===
 
 ==== Dual-Oven Options
@@ -558,16 +567,15 @@ The *Status* text sensor reports what the BLE connection is doing - pairing prom
 
 Full step-by-step connection detail is still written to the ESPHome log at `INFO`, so nothing is lost for debugging - it just no longer becomes a Home Assistant logbook entry.
 
-NOTE: Home Assistant's logbook cannot be filtered with `entity_category`; it only auto-excludes numeric sensors that carry a `unit_of_measurement` or `state_class`. A text sensor therefore produces a logbook row for every distinct value it publishes. The *Uptime* sensor reports the appliance's own uptime clock, so it changes on every successful poll and is inherently chatty.
+NOTE: Home Assistant's logbook cannot be filtered with `entity_category`. It only auto-excludes numeric sensors carrying a `unit_of_measurement` or `state_class`, so a *text* sensor produces a logbook row for every distinct value it publishes. This is why *Appliance Uptime* is a numeric duration in seconds rather than the raw `H:MM:SS` string the appliance sends - it advances on every poll, and as a text sensor it wrote a logbook row every poll.
 
-To hide any of these from the logbook while keeping full history and state, filter them in Home Assistant (this affects the logbook only - `recorder:` history is untouched):
+To hide any remaining entity from the logbook while keeping full history and state, filter it in Home Assistant (this affects the logbook only - `recorder:` history is untouched):
 
 [source,yaml]
 ----
 logbook:
   exclude:
     entities:
-      - sensor.main_fridge_uptime
       - sensor.main_fridge_status
 ----
 

@@ -32,7 +32,7 @@ struct CommonRecorder {
   void publish_sabbath_on(bool v) { bools["sabbath_on"] = v; }
   void publish_svc_required(bool v) { bools["svc_required"] = v; }
   void publish_model(const std::string &v) { strings["model"] = v; }
-  void publish_uptime(const std::string &v) { strings["uptime"] = v; }
+  void publish_uptime(std::uint32_t v) { ints["uptime"] = static_cast<int>(v); }
   void publish_serial(const std::string &v) { strings["serial"] = v; }
   void publish_appliance_type(const std::string &v) {
     strings["appliance_type"] = v;
@@ -245,7 +245,7 @@ TEST(Dispatch, CommonFieldsAllRouted) {
   s.common.sabbath_on = true;
   s.common.service_required = false;
   s.common.appliance_model = std::string("BI36UFDID");
-  s.common.uptime = std::string("1d2h");
+  s.common.uptime = std::string("50:17:54");
   s.common.appliance_serial = std::string("0123456789");
   s.common.appliance_type = std::string("fridge");
   s.common.diagnostic_status = std::string("ok");
@@ -263,7 +263,8 @@ TEST(Dispatch, CommonFieldsAllRouted) {
   EXPECT_EQ(rec.bools["sabbath_on"], true);
   EXPECT_EQ(rec.bools["svc_required"], false);
   EXPECT_EQ(rec.strings["model"], "BI36UFDID");
-  EXPECT_EQ(rec.strings["uptime"], "1d2h");
+  // 50h 17m 54s -> seconds; see parse_uptime_seconds().
+  EXPECT_EQ(rec.ints["uptime"], 50 * 3600 + 17 * 60 + 54);
   EXPECT_EQ(rec.strings["serial"], "0123456789");
   EXPECT_EQ(rec.strings["appliance_type"], "fridge");
   EXPECT_EQ(rec.strings["diag_status"], "ok");

@@ -58,6 +58,7 @@ from esphome.const import (
     CONF_MODE,
     CONF_NAME,
     CONF_PIN,
+    CONF_STATE_CLASS,
     CONF_TYPE,
     CONF_UNIT_OF_MEASUREMENT,
     DEVICE_CLASS_DOOR,
@@ -68,7 +69,9 @@ from esphome.const import (
     ENTITY_CATEGORY_CONFIG,
     ENTITY_CATEGORY_DIAGNOSTIC,
     STATE_CLASS_MEASUREMENT,
+    STATE_CLASS_TOTAL_INCREASING,
     UNIT_PERCENT,
+    UNIT_SECOND,
 )
 from esphome.core.config import Device
 
@@ -140,21 +143,36 @@ COMMON_BINARY_SENSORS = [
     ),
 ]
 
-COMMON_TEXT_SENSORS = [
-    (
-        "model",
-        "Model",
-        "set_model_sensor",
-        {CONF_ICON: "mdi:devices", CONF_ENTITY_CATEGORY: ENTITY_CATEGORY_DIAGNOSTIC},
-    ),
+# Numeric sensors every appliance type gets. Uptime is a duration in
+# seconds rather than the raw H:MM:SS string the appliance sends: it
+# advances on every poll, and Home Assistant's logbook records a row for
+# every distinct value a *text* sensor publishes but automatically
+# excludes numeric sensors that carry a unit. Being numeric also makes it
+# graphable. See parse_uptime_seconds() in the protocol component.
+COMMON_SENSORS = [
+    # (suffix, friendly-name suffix, setter, kwargs)
     (
         "uptime",
         "Uptime",
         "set_uptime_sensor",
         {
             CONF_ICON: "mdi:timer-outline",
+            CONF_DEVICE_CLASS: DEVICE_CLASS_DURATION,
+            CONF_UNIT_OF_MEASUREMENT: UNIT_SECOND,
+            "accuracy_decimals": 0,
+            # Resets to 0 when the appliance reboots; HA handles that.
+            CONF_STATE_CLASS: STATE_CLASS_TOTAL_INCREASING,
             CONF_ENTITY_CATEGORY: ENTITY_CATEGORY_DIAGNOSTIC,
         },
+    ),
+]
+
+COMMON_TEXT_SENSORS = [
+    (
+        "model",
+        "Model",
+        "set_model_sensor",
+        {CONF_ICON: "mdi:devices", CONF_ENTITY_CATEGORY: ENTITY_CATEGORY_DIAGNOSTIC},
     ),
     (
         "serial",
@@ -1613,6 +1631,12 @@ async def to_code(config):
         )
         bs = await binary_sensor.new_binary_sensor(cfg)
         cg.add(getattr(var, setter)(bs))
+
+    # ---- Common sensors ----
+    for suffix, name_suffix, setter, kwargs in COMMON_SENSORS:
+        cfg = _build_sensor_config(parent_id, suffix, name_suffix, kwargs, False)
+        s = await sensor.new_sensor(cfg)
+        cg.add(getattr(var, setter)(s))
 
     # ---- Common text sensors ----
     for suffix, name_suffix, setter, kwargs in COMMON_TEXT_SENSORS:

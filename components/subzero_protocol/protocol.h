@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <optional>
 #include <string>
 #include <vector>
@@ -179,6 +180,25 @@ struct RangeState {
 FridgeState parse_fridge(const std::string &json);
 DishwasherState parse_dishwasher(const std::string &json);
 RangeState parse_range(const std::string &json);
+
+// Converts the appliance's `uptime` string to a total number of seconds.
+//
+// The wire format is H:MM:SS with an unbounded hour field ("50:17:54",
+// "959:52:0"). This was confirmed against an appliance whose clock had
+// never been set: it reported time "2000-01-05T03:50:10" - i.e. 99:50:10
+// since the 2000 epoch - alongside uptime "99:50:08", the two fields
+// being sampled ~2s apart.
+//
+// Most firmware truncates the string to 8 characters, which clips the
+// last seconds digit once the hour field reaches three digits
+// ("627:09:3" is "627:09:3X"). The resulting error is under 10 seconds on
+// a value measured in hundreds of hours, so the seconds field is parsed
+// as-is rather than being discarded.
+//
+// Returns nullopt for anything that isn't three colon-separated runs of
+// digits, so a malformed value leaves the sensor unknown instead of
+// publishing a wrong number.
+std::optional<std::uint32_t> parse_uptime_seconds(const std::string &v);
 
 } // namespace subzero_protocol
 } // namespace esphome
