@@ -14,6 +14,8 @@ toc::[]
 
 Sub-Zero Group (SZG) appliances include a BLE radio that the official _Sub-Zero Group Owner_ mobile app (Android/iOS) uses for configuration and monitoring. This project reverse-engineers that BLE protocol and reimplements the connection, pairing, and polling logic in ESPHome. The connection state machine lives in YAML + inline C++ lambdas; JSON parsing is factored into a small external C++ component (`subzero_protocol`) that ships with the repo and has host-compiled unit tests (see link:docs/advanced.adoc#parser-component[Parser Component]). See <<Supported Sensors>> for a list of supported appliance sensors.
 
+NOTE: There is also a https://github.com/eyal0/subzero-ble-homeassistant[Home Assistant custom integration] (`eyal0/subzero-ble-homeassistant`) that talks to the same BLE protocol, but as an HA integration rather than an ESPHome component. It only works with a Bluetooth adapter connected to the Home Assistant device itself — ESPHome Bluetooth proxies and other remote adapters are not supported.
+
 == Requirements
 
 * An *ESP32* board. I've had good results with the https://shop.everythingsmart.io/products/everything-presence-one-kit[Everything Presence One] and the https://www.amazon.com/dp/B0DKJ5VXC9[Waveshare POE ESP32]. In general, any ESP32-S3 module should work well and has been tested with up to 5 simultaneous BLE connections. Less capable variants, such as the ESP-C6, support fewer concurrent connections and are typically limited to about three appliances. 
@@ -580,6 +582,7 @@ Other Sub-Zero, Wolf, and Cove appliances with BLE should work - they all use th
 
 * link:docs/ble-protocol.adoc[BLE Protocol Reference] - GATT service structure, connection flow, command reference, and example JSON responses
 * link:docs/advanced.adoc[Advanced Configuration & Usage] - ESPHome commands, BLE stack tuning for multiple appliances, memory considerations, and debug mode
+* https://github.com/eyal0/subzero-ble-homeassistant[eyal0/subzero-ble-homeassistant] - Home Assistant custom integration for the same BLE protocol (requires a Bluetooth adapter on the Home Assistant host)
 
 == License
 
