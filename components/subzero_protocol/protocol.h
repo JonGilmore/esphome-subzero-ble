@@ -203,5 +203,24 @@ RangeState parse_range(const std::string &json);
 // in the return type is accepted.
 std::optional<std::uint32_t> parse_uptime_seconds(const std::string &v);
 
+// Decides whether a freshly-reported wash cycle end time is worth pushing
+// to Home Assistant, given the last value actually published.
+//
+// The appliance re-estimates the end time on every poll and wobbles a
+// minute or two either way - observed live going 17:09 -> 17:10 -> 17:09
+// -> 17:11 - and each distinct string became a logbook row. An end time
+// is a target, not a countdown, so that wobble is noise; only a genuine
+// revision is worth reporting.
+//
+// Compare against the last *published* value rather than the last one
+// seen, so slow but real drift still lands once it accumulates past the
+// threshold instead of being suppressed forever.
+//
+// Fails open: an empty `last` (nothing published yet) or either side
+// being unparseable returns true, so a value is never silently swallowed.
+bool end_time_revision_is_material(const std::string &last,
+                                   const std::string &candidate,
+                                   int threshold_min);
+
 } // namespace subzero_protocol
 } // namespace esphome

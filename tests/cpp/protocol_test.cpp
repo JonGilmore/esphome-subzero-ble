@@ -672,6 +672,60 @@ TEST(UptimeTest, AcceptsFullRepresentableRange) {
   EXPECT_FALSE(parse_uptime_seconds("1193046:28:16").has_value());
 }
 
+// ---------------------------------------------------------------------
+// end_time_revision_is_material — wash cycle end time jitter filter.
+// ---------------------------------------------------------------------
+
+TEST(EndTimeTest, FirstValueAlwaysPublishes) {
+  EXPECT_TRUE(end_time_revision_is_material("", "2000-02-20T17:09", 5));
+}
+
+TEST(EndTimeTest, IdenticalValueIsNotMaterial) {
+  EXPECT_FALSE(
+      end_time_revision_is_material("2000-02-20T17:09", "2000-02-20T17:09", 5));
+}
+
+// The exact sequence observed live: a one-to-two minute wobble either
+// side of a target that hasn't actually moved.
+TEST(EndTimeTest, ObservedJitterIsSuppressed) {
+  const std::string base = "2000-02-20T17:09";
+  EXPECT_FALSE(end_time_revision_is_material(base, "2000-02-20T17:10", 5));
+  EXPECT_FALSE(end_time_revision_is_material(base, "2000-02-20T17:11", 5));
+  EXPECT_FALSE(end_time_revision_is_material(base, "2000-02-20T17:12", 5));
+  // Backwards too — the appliance revised down, not just up.
+  EXPECT_FALSE(end_time_revision_is_material(base, "2000-02-20T17:08", 5));
+}
+
+TEST(EndTimeTest, GenuineRevisionPublishes) {
+  const std::string base = "2000-02-20T17:09";
+  EXPECT_TRUE(end_time_revision_is_material(base, "2000-02-20T17:14", 5));
+  EXPECT_TRUE(end_time_revision_is_material(base, "2000-02-20T17:04", 5));
+  // A new cycle moves it by hours.
+  EXPECT_TRUE(end_time_revision_is_material(base, "2000-02-20T19:30", 5));
+}
+
+// Comparing against the last *published* value (not the last seen) means
+// drift that creeps up a minute at a time still lands eventually.
+TEST(EndTimeTest, AccumulatedDriftEventuallyPublishes) {
+  const std::string published = "2000-02-20T17:09";
+  EXPECT_FALSE(end_time_revision_is_material(published, "2000-02-20T17:12", 5));
+  EXPECT_FALSE(end_time_revision_is_material(published, "2000-02-20T17:13", 5));
+  // Still measured from the published value, so this one crosses.
+  EXPECT_TRUE(end_time_revision_is_material(published, "2000-02-20T17:14", 5));
+}
+
+TEST(EndTimeTest, DayRolloverIsMaterial) {
+  EXPECT_TRUE(
+      end_time_revision_is_material("2000-02-20T23:58", "2000-02-21T00:03", 5));
+}
+
+// Fails open: never silently swallow a value we can't reason about.
+TEST(EndTimeTest, UnparseableValuesPublish) {
+  EXPECT_TRUE(end_time_revision_is_material("2000-02-20T17:09", "garbage", 5));
+  EXPECT_TRUE(end_time_revision_is_material("garbage", "2000-02-20T17:09", 5));
+  EXPECT_TRUE(end_time_revision_is_material("2000-02-20T17:09", "", 5));
+}
+
 TEST(UptimeTest, RejectsMalformedValues) {
   EXPECT_FALSE(parse_uptime_seconds("").has_value());
   EXPECT_FALSE(parse_uptime_seconds("1d2h").has_value());

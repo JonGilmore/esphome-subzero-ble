@@ -223,6 +223,20 @@ std::optional<int> minutes_between(const char *now_iso,
   return remaining < 0 ? 0 : remaining;
 }
 
+// Day-of-month + time-of-day as a minute count, for comparing two end
+// times against each other. Deliberately separate from minutes_between's
+// parsing so that function's exact-field-count strictness is untouched.
+// Same-month assumption as above: a month rollover yields a large delta,
+// which reads as "material" and publishes - the safe direction.
+std::optional<int> end_time_to_day_minutes(const std::string &iso) {
+  if (iso.size() < 16)
+    return std::nullopt;
+  int y, mo, d, h, mi;
+  if (std::sscanf(iso.c_str(), "%d-%d-%dT%d:%d", &y, &mo, &d, &h, &mi) != 5)
+    return std::nullopt;
+  return (d * 24 * 60) + (h * 60) + mi;
+}
+
 } // namespace
 
 std::optional<std::uint32_t> parse_uptime_seconds(const std::string &v) {
@@ -265,6 +279,21 @@ std::optional<std::uint32_t> parse_uptime_seconds(const std::string &v) {
   if (total > 0xFFFFFFFFULL)
     return std::nullopt;
   return static_cast<std::uint32_t>(total);
+}
+
+bool end_time_revision_is_material(const std::string &last,
+                                   const std::string &candidate,
+                                   int threshold_min) {
+  if (last.empty())
+    return true; // nothing published yet
+  if (last == candidate)
+    return false;
+  auto a = end_time_to_day_minutes(last);
+  auto b = end_time_to_day_minutes(candidate);
+  if (!a || !b)
+    return true; // unparseable on either side - publish rather than hide
+  const int delta = *a > *b ? *a - *b : *b - *a;
+  return delta >= threshold_min;
 }
 
 FridgeState parse_fridge(const std::string &json) {

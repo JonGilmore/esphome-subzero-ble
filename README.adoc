@@ -376,7 +376,7 @@ NOTE: In addition to the read-only sensors above, several fridge properties are 
 | *Wash Status* | Numeric wash status code
 | *Wash Cycle* | Current wash cycle number
 | *Wash Time Remaining* | Minutes remaining in the current wash cycle
-| *Wash Cycle End Time* | Estimated completion time (e.g. `2026-04-04T07:03`)
+| *Wash Cycle End Time* | Estimated completion time (e.g. `2026-04-04T07:03`). The appliance re-estimates this every poll and wobbles a minute or two either way, so it is only republished once the estimate moves by 5 minutes or more - see <<status-entity-and-logbook-noise,Logbook Noise>>. Note this is in the *appliance's own clock*, which is often unset; `Wash Time Remaining` is the more reliable of the two.
 | *Heated Dry* | Heated dry option enabled
 | *Extended Dry* | Extended dry option enabled
 | *High Temp Wash* | High temperature wash option enabled
@@ -560,6 +560,7 @@ These diagnostic text sensors are exposed under HA's Diagnostic section for ever
 | *Build Date* | Firmware build timestamp
 |===
 
+[[status-entity-and-logbook-noise]]
 === Status Entity and Logbook Noise
 
 The *Status* text sensor reports what the BLE connection is doing - pairing prompts, unlock progress, and errors. It deliberately reports only *state changes users care about*:
@@ -567,9 +568,16 @@ The *Status* text sensor reports what the BLE connection is doing - pairing prom
 * The scheduled ~18-minute session refresh (see link:docs/ble-protocol.adoc[BLE protocol notes]) is silent. It disconnects and reconnects internally, but Status keeps reading `Connected and polling.` throughout. If a refresh stalls for more than 90 seconds, Status switches to `Reconnecting...` so a genuinely stuck link is still visible.
 * `PIN confirmed! Channel unlocked.` is published when the channel actually unlocks, not on every poll response that happens to echo the PIN back.
 
+The same principle applies to two other chatty values:
+
+* *Appliance Uptime* is a numeric duration rather than a string, so Home Assistant excludes it from the logbook outright.
+* *Wash Cycle End Time* (dishwashers) is only republished when the appliance's estimate moves by 5 minutes or more. An end time is a target, not a countdown, so the minute-either-way wobble between polls is noise. The comparison is against the last value actually published, so slow but genuine drift still lands once it accumulates.
+
 Full step-by-step connection detail is still written to the ESPHome log at `INFO`, so nothing is lost for debugging - it just no longer becomes a Home Assistant logbook entry.
 
-NOTE: Home Assistant's logbook cannot be filtered with `entity_category`. It only auto-excludes numeric sensors carrying a `unit_of_measurement` or `state_class`, so a *text* sensor produces a logbook row for every distinct value it publishes. This is why *Appliance Uptime* is a numeric duration in seconds rather than the raw `H:MM:SS` string the appliance sends - it advances on every poll, and as a text sensor it wrote a logbook row every poll.
+NOTE: Home Assistant's logbook cannot be filtered with `entity_category`. It only auto-excludes sensors it considers _continuous_ - those carrying a `unit_of_measurement`, a `state_class`, or a numeric `device_class` - so a *text* sensor produces a logbook row for every distinct value it publishes. This is why *Appliance Uptime* is a numeric duration in seconds rather than the raw `H:MM:SS` string the appliance sends.
++
+Worth knowing before reaching for a device class to fix this: Home Assistant treats `date`, `enum`, `timestamp`, and `uptime` as _non-numeric_, so none of them make an entity continuous. `device_class: timestamp` will not keep a value out of the logbook, and `device_class: uptime` (which expects a boot *timestamp*, not a duration) would not have worked for Appliance Uptime either - hence `duration` plus a unit.
 
 To hide any remaining entity from the logbook while keeping full history and state, filter it in Home Assistant (this affects the logbook only - `recorder:` history is untouched):
 
