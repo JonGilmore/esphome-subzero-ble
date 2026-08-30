@@ -69,7 +69,7 @@ public:
   void set_model_sensor(esphome::text_sensor::TextSensor *s) {
     common_bus()->model = s;
   }
-  void set_uptime_sensor(esphome::text_sensor::TextSensor *s) {
+  void set_uptime_sensor(esphome::sensor::Sensor *s) {
     common_bus()->uptime = s;
   }
   void set_serial_sensor(esphome::text_sensor::TextSensor *s) {

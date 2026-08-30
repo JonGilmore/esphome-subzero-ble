@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <optional>
 #include <string>
 #include <vector>
@@ -179,6 +180,47 @@ struct RangeState {
 FridgeState parse_fridge(const std::string &json);
 DishwasherState parse_dishwasher(const std::string &json);
 RangeState parse_range(const std::string &json);
+
+// Converts the appliance's `uptime` string to a total number of seconds.
+//
+// The wire format is H:MM:SS with an unbounded hour field ("50:17:54",
+// "959:52:0"). This was confirmed against an appliance whose clock had
+// never been set: it reported time "2000-01-05T03:50:10" - i.e. 99:50:10
+// since the 2000 epoch - alongside uptime "99:50:08", the two fields
+// being sampled ~2s apart.
+//
+// Most firmware truncates the string to 8 characters, which clips the
+// last seconds digit once the hour field reaches three digits
+// ("627:09:3" is "627:09:3X"). The resulting error is under 10 seconds on
+// a value measured in hundreds of hours, so the seconds field is parsed
+// as-is rather than being discarded. At four digits of hours the same
+// truncation swallows the seconds field entirely ("1000:00:"); that form
+// is accepted with seconds treated as zero.
+//
+// Returns nullopt for anything that isn't three colon-separated fields of
+// digits within clock range, so a malformed value leaves the sensor
+// unknown instead of publishing a wrong number. Every duration that fits
+// in the return type is accepted.
+std::optional<std::uint32_t> parse_uptime_seconds(const std::string &v);
+
+// Decides whether a freshly-reported wash cycle end time is worth pushing
+// to Home Assistant, given the last value actually published.
+//
+// The appliance re-estimates the end time on every poll and wobbles a
+// minute or two either way - observed live going 17:09 -> 17:10 -> 17:09
+// -> 17:11 - and each distinct string became a logbook row. An end time
+// is a target, not a countdown, so that wobble is noise; only a genuine
+// revision is worth reporting.
+//
+// Compare against the last *published* value rather than the last one
+// seen, so slow but real drift still lands once it accumulates past the
+// threshold instead of being suppressed forever.
+//
+// Fails open: an empty `last` (nothing published yet) or either side
+// being unparseable returns true, so a value is never silently swallowed.
+bool end_time_revision_is_material(const std::string &last,
+                                   const std::string &candidate,
+                                   int threshold_min);
 
 } // namespace subzero_protocol
 } // namespace esphome

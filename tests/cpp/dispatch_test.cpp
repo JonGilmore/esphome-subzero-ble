@@ -4,6 +4,7 @@
 #include <gtest/gtest.h>
 #include <nlohmann/json.hpp>
 
+#include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <map>
@@ -27,12 +28,15 @@ struct CommonRecorder {
   std::map<std::string, std::string> strings;
   std::map<std::string, float> floats;
   std::map<std::string, int> ints;
+  // Uptime is a uint32 duration in seconds; keep it in a field wide
+  // enough to hold the full range without narrowing.
+  std::map<std::string, std::uint32_t> uints;
 
   // The CommonFields publishers
   void publish_sabbath_on(bool v) { bools["sabbath_on"] = v; }
   void publish_svc_required(bool v) { bools["svc_required"] = v; }
   void publish_model(const std::string &v) { strings["model"] = v; }
-  void publish_uptime(const std::string &v) { strings["uptime"] = v; }
+  void publish_uptime(std::uint32_t v) { uints["uptime"] = v; }
   void publish_serial(const std::string &v) { strings["serial"] = v; }
   void publish_appliance_type(const std::string &v) {
     strings["appliance_type"] = v;
@@ -245,7 +249,7 @@ TEST(Dispatch, CommonFieldsAllRouted) {
   s.common.sabbath_on = true;
   s.common.service_required = false;
   s.common.appliance_model = std::string("BI36UFDID");
-  s.common.uptime = std::string("1d2h");
+  s.common.uptime = std::string("50:17:54");
   s.common.appliance_serial = std::string("0123456789");
   s.common.appliance_type = std::string("fridge");
   s.common.diagnostic_status = std::string("ok");
@@ -263,7 +267,8 @@ TEST(Dispatch, CommonFieldsAllRouted) {
   EXPECT_EQ(rec.bools["sabbath_on"], true);
   EXPECT_EQ(rec.bools["svc_required"], false);
   EXPECT_EQ(rec.strings["model"], "BI36UFDID");
-  EXPECT_EQ(rec.strings["uptime"], "1d2h");
+  // 50h 17m 54s -> seconds; see parse_uptime_seconds().
+  EXPECT_EQ(rec.uints["uptime"], 50u * 3600 + 17 * 60 + 54);
   EXPECT_EQ(rec.strings["serial"], "0123456789");
   EXPECT_EQ(rec.strings["appliance_type"], "fridge");
   EXPECT_EQ(rec.strings["diag_status"], "ok");
@@ -274,6 +279,32 @@ TEST(Dispatch, CommonFieldsAllRouted) {
   EXPECT_EQ(rec.strings["os_version"], "Linux");
   EXPECT_EQ(rec.strings["rtapp_version"], "3.1");
   EXPECT_EQ(rec.strings["board_version"], "BoardA");
+}
+
+// End-to-end through dispatch_common: the firmware-truncated four-digit
+// hour form must reach publish_uptime rather than being dropped.
+TEST(Dispatch, UptimeTruncatedFourDigitHourReachesBus) {
+  FridgeState s;
+  s.common.uptime = std::string("1000:00:");
+
+  FridgeRecorder rec;
+  dispatch_fridge(s, rec);
+
+  ASSERT_EQ(rec.uints.count("uptime"), 1u)
+      << "a 1000+ hour appliance must still publish an uptime";
+  EXPECT_EQ(rec.uints["uptime"], 1000u * 3600);
+}
+
+// A value the parser rejects must publish nothing at all, leaving the
+// sensor unknown rather than reporting a wrong number.
+TEST(Dispatch, UptimeMalformedPublishesNothing) {
+  FridgeState s;
+  s.common.uptime = std::string("not-a-clock");
+
+  FridgeRecorder rec;
+  dispatch_fridge(s, rec);
+
+  EXPECT_EQ(rec.uints.count("uptime"), 0u);
 }
 
 // =============================================================================

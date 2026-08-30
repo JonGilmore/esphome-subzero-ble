@@ -601,4 +601,158 @@ TEST(ProtocolTest, DishwasherNegativeRemainingClampsToZero) {
   EXPECT_EQ(*d.wash_time_remaining_min, 0);
 }
 
+// ---------------------------------------------------------------------
+// parse_uptime_seconds — H:MM:SS with an unbounded hour field.
+// ---------------------------------------------------------------------
+
+TEST(UptimeTest, ParsesPlainHmmss) {
+  auto v = parse_uptime_seconds("50:17:54");
+  ASSERT_TRUE(v.has_value());
+  EXPECT_EQ(*v, 50u * 3600 + 17 * 60 + 54);
+}
+
+TEST(UptimeTest, ParsesUnboundedHourField) {
+  auto v = parse_uptime_seconds("959:52:07");
+  ASSERT_TRUE(v.has_value());
+  EXPECT_EQ(*v, 959u * 3600 + 52 * 60 + 7);
+}
+
+// Most firmware truncates the string to 8 chars, clipping the last
+// seconds digit once hours reach three digits. The value must still
+// parse — the resulting sub-10-second error is irrelevant here.
+TEST(UptimeTest, ParsesFirmwareTruncatedSecondsField) {
+  auto v = parse_uptime_seconds("627:09:3");
+  ASSERT_TRUE(v.has_value());
+  EXPECT_EQ(*v, 627u * 3600 + 9 * 60 + 3);
+}
+
+TEST(UptimeTest, ParsesZeroSeconds) {
+  auto v = parse_uptime_seconds("725:35:0");
+  ASSERT_TRUE(v.has_value());
+  EXPECT_EQ(*v, 725u * 3600 + 35 * 60);
+}
+
+// Cross-check against the one captured appliance whose clock was never
+// set: it reported time 2000-01-05T03:50:10 (99:50:10 since the 2000
+// epoch) alongside uptime "99:50:08", sampled ~2s apart. This is the
+// evidence that the third field is seconds, not tenths or deciseconds.
+TEST(UptimeTest, MatchesUnsetClockCrossCheck) {
+  auto v = parse_uptime_seconds("99:50:08");
+  ASSERT_TRUE(v.has_value());
+  const std::uint32_t since_epoch = 99u * 3600 + 50 * 60 + 10;
+  EXPECT_NEAR(static_cast<double>(*v), static_cast<double>(since_epoch), 5.0);
+}
+
+// At four digits of hours the 8-character truncation eats the whole
+// seconds field. The captured fixtures already reach 959 hours, so this
+// arrives ~41 hours later; rejecting it would strand the sensor at
+// unknown for the rest of the appliance's uptime.
+TEST(UptimeTest, ParsesTruncatedFourDigitHourForm) {
+  auto v = parse_uptime_seconds("1000:00:");
+  ASSERT_TRUE(v.has_value());
+  EXPECT_EQ(*v, 1000u * 3600);
+
+  auto w = parse_uptime_seconds("1234:56:");
+  ASSERT_TRUE(w.has_value());
+  EXPECT_EQ(*w, 1234u * 3600 + 56 * 60);
+}
+
+// Every duration representable in the uint32 return type is accepted -
+// there is no arbitrary digit-count ceiling below that bound.
+TEST(UptimeTest, AcceptsFullRepresentableRange) {
+  auto v = parse_uptime_seconds("1000000:00:00");
+  ASSERT_TRUE(v.has_value());
+  EXPECT_EQ(*v, 1000000ull * 3600);
+
+  // 1193046:28:15 == 0xFFFFFFFF seconds exactly, the largest value that
+  // fits; one second more must be rejected rather than wrapping.
+  auto max_v = parse_uptime_seconds("1193046:28:15");
+  ASSERT_TRUE(max_v.has_value());
+  EXPECT_EQ(*max_v, 0xFFFFFFFFu);
+  EXPECT_FALSE(parse_uptime_seconds("1193046:28:16").has_value());
+}
+
+// ---------------------------------------------------------------------
+// end_time_revision_is_material — wash cycle end time jitter filter.
+// ---------------------------------------------------------------------
+
+TEST(EndTimeTest, FirstValueAlwaysPublishes) {
+  EXPECT_TRUE(end_time_revision_is_material("", "2000-02-20T17:09", 5));
+}
+
+TEST(EndTimeTest, IdenticalValueIsNotMaterial) {
+  EXPECT_FALSE(
+      end_time_revision_is_material("2000-02-20T17:09", "2000-02-20T17:09", 5));
+}
+
+// The exact sequence observed live: a one-to-two minute wobble either
+// side of a target that hasn't actually moved.
+TEST(EndTimeTest, ObservedJitterIsSuppressed) {
+  const std::string base = "2000-02-20T17:09";
+  EXPECT_FALSE(end_time_revision_is_material(base, "2000-02-20T17:10", 5));
+  EXPECT_FALSE(end_time_revision_is_material(base, "2000-02-20T17:11", 5));
+  EXPECT_FALSE(end_time_revision_is_material(base, "2000-02-20T17:12", 5));
+  // Backwards too — the appliance revised down, not just up.
+  EXPECT_FALSE(end_time_revision_is_material(base, "2000-02-20T17:08", 5));
+}
+
+TEST(EndTimeTest, GenuineRevisionPublishes) {
+  const std::string base = "2000-02-20T17:09";
+  EXPECT_TRUE(end_time_revision_is_material(base, "2000-02-20T17:14", 5));
+  EXPECT_TRUE(end_time_revision_is_material(base, "2000-02-20T17:04", 5));
+  // A new cycle moves it by hours.
+  EXPECT_TRUE(end_time_revision_is_material(base, "2000-02-20T19:30", 5));
+}
+
+// Comparing against the last *published* value (not the last seen) means
+// drift that creeps up a minute at a time still lands eventually.
+TEST(EndTimeTest, AccumulatedDriftEventuallyPublishes) {
+  const std::string published = "2000-02-20T17:09";
+  EXPECT_FALSE(end_time_revision_is_material(published, "2000-02-20T17:12", 5));
+  EXPECT_FALSE(end_time_revision_is_material(published, "2000-02-20T17:13", 5));
+  // Still measured from the published value, so this one crosses.
+  EXPECT_TRUE(end_time_revision_is_material(published, "2000-02-20T17:14", 5));
+}
+
+TEST(EndTimeTest, DayRolloverIsMaterial) {
+  EXPECT_TRUE(
+      end_time_revision_is_material("2000-02-20T23:58", "2000-02-21T00:03", 5));
+}
+
+// Fails open: never silently swallow a value we can't reason about.
+TEST(EndTimeTest, UnparseableValuesPublish) {
+  EXPECT_TRUE(end_time_revision_is_material("2000-02-20T17:09", "garbage", 5));
+  EXPECT_TRUE(end_time_revision_is_material("garbage", "2000-02-20T17:09", 5));
+  EXPECT_TRUE(end_time_revision_is_material("2000-02-20T17:09", "", 5));
+}
+
+TEST(UptimeTest, RejectsMalformedValues) {
+  EXPECT_FALSE(parse_uptime_seconds("").has_value());
+  EXPECT_FALSE(parse_uptime_seconds("1d2h").has_value());
+  EXPECT_FALSE(parse_uptime_seconds("12:34").has_value());
+  EXPECT_FALSE(parse_uptime_seconds("12:34:56:78").has_value());
+  EXPECT_FALSE(parse_uptime_seconds(":34:56").has_value());
+  EXPECT_FALSE(parse_uptime_seconds("12::56").has_value());
+  EXPECT_FALSE(parse_uptime_seconds("12:34:5x").has_value());
+  // Minutes/seconds outside a clock range mean it isn't H:MM:SS at all.
+  EXPECT_FALSE(parse_uptime_seconds("12:60:00").has_value());
+  EXPECT_FALSE(parse_uptime_seconds("12:00:60").has_value());
+  // A digit run long enough to overflow the accumulator is malformed.
+  EXPECT_FALSE(parse_uptime_seconds("99999999999999999999:00:00").has_value());
+}
+
+// Every uptime string present in the captured fixtures must parse — a
+// regression here means real appliances would report unknown.
+TEST(UptimeTest, ParsesEveryCapturedFixtureValue) {
+  const char *captured[] = {
+      "797:58:1",  "627:09:2", "627:09:3",  "139:31:5", "136:59:2",
+      "959:52:0",  "113:12:02", "50:17:54", "99:49:49", "99:50:08",
+      "725:35:0",
+  };
+  for (const char *s : captured) {
+    EXPECT_TRUE(parse_uptime_seconds(s).has_value())
+        << "captured fixture value failed to parse: " << s;
+  }
+}
+
 } // namespace

@@ -34,6 +34,9 @@
 // headers, which aren't available during host gtest builds. Host tests
 // instantiate dispatch.h's templates with their own recording bus.
 
+// For end_time_revision_is_material(), used by the dishwasher bus below.
+#include "protocol.h"
+
 #include "esphome/components/binary_sensor/binary_sensor.h"
 #include "esphome/components/number/number.h"
 #include "esphome/components/select/select.h"
@@ -41,6 +44,7 @@
 #include "esphome/components/switch/switch.h"
 #include "esphome/components/text_sensor/text_sensor.h"
 
+#include <cstdint>
 #include <optional>
 #include <string>
 
@@ -67,7 +71,8 @@ struct CommonBus {
   esphome::binary_sensor::BinarySensor *sabbath_on = nullptr;
   esphome::binary_sensor::BinarySensor *svc_required = nullptr;
   esphome::text_sensor::TextSensor *model = nullptr;
-  esphome::text_sensor::TextSensor *uptime = nullptr;
+  // Duration in seconds — see parse_uptime_seconds() / dispatch_common().
+  esphome::sensor::Sensor *uptime = nullptr;
   esphome::text_sensor::TextSensor *serial = nullptr;
   esphome::text_sensor::TextSensor *appliance_type = nullptr;
   esphome::text_sensor::TextSensor *diag_status = nullptr;
@@ -86,7 +91,9 @@ struct CommonBus {
   void publish_sabbath_on(bool v) { detail::publish_if(sabbath_on, v); }
   void publish_svc_required(bool v) { detail::publish_if(svc_required, v); }
   void publish_model(const std::string &v) { detail::publish_if(model, v); }
-  void publish_uptime(const std::string &v) { detail::publish_if(uptime, v); }
+  void publish_uptime(std::uint32_t v) {
+    detail::publish_if(uptime, static_cast<float>(v));
+  }
   void publish_serial(const std::string &v) { detail::publish_if(serial, v); }
   void publish_appliance_type(const std::string &v) {
     detail::publish_if(appliance_type, v);
@@ -455,8 +462,28 @@ struct DishwasherBus : CommonBus {
     detail::publish_if(wash_time_remaining, static_cast<float>(v));
   }
 
+  // How far the appliance's end-time estimate must move before it counts
+  // as a revision rather than jitter. Observed live wobbling a minute or
+  // two either way while the target stayed put; a wash cycle runs for
+  // hours, so a revision smaller than this is not worth a Home Assistant
+  // logbook row.
+  static constexpr int kEndTimeJitterMinutes = 5;
+
+  // Stateful, for the same reason as clear_wash_time_remaining_if_running
+  // below: holds the last value actually pushed to HA so that slow but
+  // genuine drift still lands once it accumulates past the threshold,
+  // instead of every poll's re-estimate becoming a logbook entry.
+  std::string last_published_end_time_;
+
   void publish_wash_cycle_end_time(const std::string &v) {
-    detail::publish_if(wash_cycle_end_time, v);
+    if (wash_cycle_end_time == nullptr)
+      return;
+    if (!end_time_revision_is_material(last_published_end_time_, v,
+                                       kEndTimeJitterMinutes)) {
+      return;
+    }
+    last_published_end_time_ = v;
+    wash_cycle_end_time->publish_state(v);
   }
 
   // Stateful: only force the remaining-time sensor to 0 if its current

@@ -515,6 +515,54 @@ TEST_F(HubFixture, PinConfirmedFromParse_UpdatesStoredPinAndCallback) {
   EXPECT_EQ(pin_input_log_.back(), "78901");
 }
 
+// Subclasses call on_pin_confirmed_ for every parsed message carrying a
+// `pin` field — on a healthy link that is every poll response. Only the
+// edge is news; re-announcing the steady state wrote a duplicate Home
+// Assistant logbook row roughly every 25 seconds.
+TEST_F(HubFixture, PinConfirmedOnEveryPoll_AnnouncesOnlyOnce) {
+  hub_.parse_should_confirm_pin_ = true;
+  hub_.pin_to_confirm_ = "78901";
+  const std::string msg = "{\"status\":0,\"resp\":{\"pin\":\"78901\"}}\n";
+
+  for (int i = 0; i < 5; ++i) {
+    hub_.handle_d6_notify(reinterpret_cast<const std::uint8_t *>(msg.data()),
+                          msg.size());
+  }
+
+  int confirm_count = 0;
+  for (const auto &s : status_log_) {
+    if (s.find("PIN confirmed") != std::string::npos)
+      ++confirm_count;
+  }
+  EXPECT_EQ(confirm_count, 1)
+      << "PIN confirmation must be announced once, not on every poll.";
+  EXPECT_EQ(pin_input_log_.size(), 1u)
+      << "The PIN text entity must not be rewritten on every poll.";
+}
+
+// A PIN that genuinely changes must still propagate, even though
+// pin_confirmed_ was already true. (The status *text* is identical either
+// way, so the observable contract is the PIN text entity being rewritten
+// — publish_status_ correctly de-duplicates the unchanged string.)
+TEST_F(HubFixture, PinConfirmed_ChangedPinStillPropagates) {
+  hub_.parse_should_confirm_pin_ = true;
+  hub_.pin_to_confirm_ = "11111";
+  const std::string first = "{\"status\":0,\"resp\":{\"pin\":\"11111\"}}\n";
+  hub_.handle_d6_notify(reinterpret_cast<const std::uint8_t *>(first.data()),
+                        first.size());
+  ASSERT_EQ(pin_input_log_.size(), 1u);
+
+  hub_.pin_to_confirm_ = "22222";
+  const std::string second = "{\"status\":0,\"resp\":{\"pin\":\"22222\"}}\n";
+  hub_.handle_d6_notify(reinterpret_cast<const std::uint8_t *>(second.data()),
+                        second.size());
+
+  EXPECT_EQ(hub_.stored_pin(), "22222");
+  ASSERT_EQ(pin_input_log_.size(), 2u)
+      << "A PIN that actually changed must still reach the text entity.";
+  EXPECT_EQ(pin_input_log_.back(), "22222");
+}
+
 // =============================================================================
 // Restart-style timeouts (mode: restart)
 // =============================================================================
@@ -875,7 +923,67 @@ TEST_F(HubFixture, SessionRefresh_FiresAfterIntervalAndDisconnects) {
   EXPECT_GT(transport_.disconnect_count(), disc_before)
       << "Session refresh must trigger a disconnect after "
          "kSessionRefreshIntervalMs.";
-  EXPECT_TRUE(any_status_contains("Refreshing session"));
+  // The refresh is an internal implementation detail and deliberately
+  // does not narrate itself — publishing it wrote a Home Assistant
+  // logbook row every 18 minutes. It stays in the ESPHome log only.
+  EXPECT_FALSE(any_status_contains("Refreshing session"))
+      << "Scheduled session refresh must not publish progress to HA.";
+}
+
+// The whole point of the quiet window: a refresh that works end-to-end
+// must leave the Status entity exactly where it was, so Home Assistant
+// records nothing at all.
+TEST_F(HubFixture, SessionRefresh_HealthyCyclePublishesNothing) {
+  hub_.set_stored_pin("12345");
+  run_to_ready_();
+  ASSERT_TRUE(last_status_contains("Connected and polling"));
+  status_log_.clear();
+
+  // Refresh fires and drops the link.
+  scheduler_.advance_by(SubzeroHub::kSessionRefreshIntervalMs);
+  hub_.handle_disconnected();
+
+  // BLE comes back; fast path re-encrypts, re-unlocks, re-polls.
+  transport_.set_connected(true);
+  hub_.handle_connected();
+  scheduler_.advance_by(3000);
+
+  EXPECT_TRUE(status_log_.empty())
+      << "A healthy session refresh must not publish any status; got: "
+      << (status_log_.empty() ? std::string{} : status_log_.front());
+}
+
+// ...but a refresh that never comes back must not leave Status frozen on
+// a stale "Connected and polling."
+TEST_F(HubFixture, SessionRefresh_WatchdogUnmutesWhenRefreshStalls) {
+  hub_.set_stored_pin("12345");
+  run_to_ready_();
+  status_log_.clear();
+
+  scheduler_.advance_by(SubzeroHub::kSessionRefreshIntervalMs);
+  hub_.handle_disconnected();
+  // Link never returns.
+  scheduler_.advance_by(SubzeroHub::kSessionRefreshQuietMaxMs + 1000);
+
+  EXPECT_TRUE(any_status_contains("Reconnecting"))
+      << "A stalled session refresh must eventually surface to the user.";
+}
+
+// An unexpected drop is real news even if it lands inside a quiet window.
+TEST_F(HubFixture, SessionRefresh_UnexpectedDropDuringQuietStillReports) {
+  hub_.set_stored_pin("12345");
+  run_to_ready_();
+  status_log_.clear();
+
+  scheduler_.advance_by(SubzeroHub::kSessionRefreshIntervalMs);
+  hub_.handle_disconnected(); // the refresh's own, intentional disconnect
+  ASSERT_TRUE(status_log_.empty());
+
+  // A second, unsolicited disconnect — not ours, so it must be reported.
+  hub_.handle_disconnected();
+  EXPECT_TRUE(any_status_contains("Disconnected"))
+      << "An unexpected disconnect must never be swallowed by the "
+         "session-refresh quiet window.";
 }
 
 TEST_F(HubFixture, SessionRefresh_CancelledOnDisconnect) {

@@ -35,8 +35,14 @@ inline void dispatch_common(const CommonFields &c, Bus &bus) {
     bus.publish_svc_required(*c.service_required);
   if (c.appliance_model)
     bus.publish_model(*c.appliance_model);
-  if (c.uptime)
-    bus.publish_uptime(*c.uptime);
+  // Published as a duration in seconds, not the raw H:MM:SS string: a
+  // numeric sensor carrying a unit is excluded from Home Assistant's
+  // logbook, where a text sensor that ticks on every poll wrote a row
+  // every poll. A malformed value publishes nothing.
+  if (c.uptime) {
+    if (auto secs = parse_uptime_seconds(*c.uptime))
+      bus.publish_uptime(*secs);
+  }
   if (c.appliance_serial)
     bus.publish_serial(*c.appliance_serial);
   if (c.appliance_type)
