@@ -552,6 +552,19 @@ TEST(ProtocolTest, DishwasherWashCycleCompleteEvent) {
   EXPECT_EQ(*d.notif_event, "wash_cycle_complete");
 }
 
+TEST(ProtocolTest, DishwasherServiceRequiredEvent) {
+  auto d = parse_dishwasher(R"({
+    "seq":47,"timestamp":"2026-09-20T16:33:13.907-05:00",
+    "props":{"service_required":true},
+    "notif_seq":1,"notif_type":305,"msg_types":6
+  })");
+  ASSERT_TRUE(d.valid);
+  ASSERT_TRUE(d.notif_event.has_value());
+  EXPECT_EQ(*d.notif_event, "service_required");
+  ASSERT_TRUE(d.common.service_required.has_value());
+  EXPECT_TRUE(*d.common.service_required);
+}
+
 TEST(ProtocolTest, RangeOvenPreheatCompleteEvent) {
   auto r = parse_range(R"({
     "seq":3606,"timestamp":"2026-04-30T21:37:15.519-05:00",

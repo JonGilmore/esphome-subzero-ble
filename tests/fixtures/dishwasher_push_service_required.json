@@ -1,0 +1,10 @@
+{
+  "seq": 47,
+  "timestamp": "2026-09-20T16:33:13.907-05:00",
+  "props": {
+    "service_required": true
+  },
+  "notif_seq": 1,
+  "notif_type": 305,
+  "msg_types": 6
+}

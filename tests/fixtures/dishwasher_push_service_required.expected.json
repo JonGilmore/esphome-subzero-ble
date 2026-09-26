@@ -1,0 +1,7 @@
+{
+  "valid": true,
+  "common": {
+    "service_required": true
+  },
+  "notif_event": "service_required"
+}
