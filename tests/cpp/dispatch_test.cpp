@@ -611,11 +611,11 @@ TEST(Dispatch, FixtureFridgePushDoor) {
   EXPECT_EQ(rec.bools["ref2_door_ajar"], true);
 }
 
-// Changing the accent light on the IW30R front panel fires a D6 push carrying
-// only accent_light_level.
-TEST(Dispatch, FixtureFridgePushAccentLightLevel) {
+// Toggling the accent light on the IW30R front panel fires a D6 push carrying
+// only accent_light_level: 30 when turned on, 0 when turned off.
+TEST(Dispatch, FixtureFridgePushAccentLightOn) {
   std::string raw = read_file(fs::path(FIXTURES_DIR) /
-                              "fridge_push_accent_light_level_msg2.json");
+                              "fridge_push_accent_light_on_msg2.json");
   ASSERT_FALSE(raw.empty());
   auto s = parse_fridge(raw);
   ASSERT_TRUE(s.valid);
@@ -626,6 +626,22 @@ TEST(Dispatch, FixtureFridgePushAccentLightLevel) {
 
   ASSERT_NE(rec.ints.find("accent_light_level"), rec.ints.end());
   EXPECT_EQ(rec.ints["accent_light_level"], 30);
+}
+
+// 0 must still be published (not treated as "absent") so the switch turns off.
+TEST(Dispatch, FixtureFridgePushAccentLightOff) {
+  std::string raw = read_file(fs::path(FIXTURES_DIR) /
+                              "fridge_push_accent_light_off_msg2.json");
+  ASSERT_FALSE(raw.empty());
+  auto s = parse_fridge(raw);
+  ASSERT_TRUE(s.valid);
+  EXPECT_FALSE(s.is_poll);
+
+  FridgeRecorder rec;
+  dispatch_fridge(s, rec);
+
+  ASSERT_NE(rec.ints.find("accent_light_level"), rec.ints.end());
+  EXPECT_EQ(rec.ints["accent_light_level"], 0);
 }
 
 // PRO3650G has a separate refrigerator drawer with its own setpoint

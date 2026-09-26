@@ -370,6 +370,35 @@ private:
   std::string property_key_;
 };
 
+// Switch over an int "level" property where 0 is off and any positive value
+// is on — accent_light_level (IW30R reports 30 when on, PRO3650G 50,
+// DEU2450WDZ 130). Turning on writes the last non-zero level the appliance
+// reported (tracked by the bus), so each model gets its own on-level back;
+// before one has been seen it falls back to default_on_level_.
+class ApplianceSetLevelSwitch : public esphome::switch_::Switch {
+public:
+  void set_parent(ApplianceBase *p) { parent_ = p; }
+  void set_property_key(const std::string &k) { property_key_ = k; }
+  void set_last_on_level(const int *p) { last_on_level_ = p; }
+
+protected:
+  void write_state(bool state) override {
+    if (parent_ != nullptr && !property_key_.empty()) {
+      int on_level = (last_on_level_ != nullptr && *last_on_level_ > 0)
+                         ? *last_on_level_
+                         : default_on_level_;
+      parent_->enqueue_write_int(property_key_, state ? on_level : 0);
+    }
+    this->publish_state(state);
+  }
+
+private:
+  ApplianceBase *parent_ = nullptr;
+  std::string property_key_;
+  const int *last_on_level_ = nullptr;
+  int default_on_level_ = 30;
+};
+
 // Number subclass for writable numeric properties (set_temp, frz_set_temp,
 // kitchen_timer_duration, etc.). Sub-Zero's protocol uses integers for all
 // the writable numerics we've observed (temps in whole degrees F, timer

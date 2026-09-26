@@ -87,11 +87,9 @@ struct FridgeState {
   std::optional<bool> unit_on;
   std::optional<bool> smart_grid_on;
 
-  // Accent (display) lighting brightness. Observed values 0/30/50/130
-  // across IW30R, PRO3650G and DEU2450WDZ; a D6 push fires when it's
-  // changed on the front panel. Scale is unconfirmed (130 rules out a
-  // plain 0-100 percent), so expose the raw int. Read-only: whether
-  // `set accent_light_level` takes effect is untested.
+  // Accent (display) lighting level, 0 = off. Toggling it on an IW30R front
+  // panel pushes 30 (on) / 0 (off) on D6; PRO3650G and DEU2450WDZ report 50
+  // and 130, so the on-value is model-specific.
   std::optional<int> accent_light_level;
 
   // Misc diagnostics.

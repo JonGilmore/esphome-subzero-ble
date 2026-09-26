@@ -157,9 +157,10 @@ public:
     bus_.smart_grid_on = s;
   }
 
-  // Read-only: `set accent_light_level` is untested.
-  void set_accent_light_level_sensor(esphome::sensor::Sensor *s) {
-    bus_.accent_light_level = s;
+  // Experimental: whether `set accent_light_level` takes effect is untested.
+  void set_accent_light_switch(ApplianceSetLevelSwitch *s) {
+    bus_.accent_light = s;
+    s->set_last_on_level(&bus_.accent_light_on_level);
   }
 
   // Misc diagnostics
