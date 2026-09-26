@@ -124,6 +124,10 @@ std::optional<std::string> dishwasher_notif_event(JsonObjectConst root) {
     return std::string("wash_cycle_complete");
   case 304:
     return std::string("rinse_aid_low");
+  case 305:
+    // Issue #120: DW2450 fault 600149 (diverter position) arrived as
+    // notif_type 305 alongside props.service_required=true.
+    return std::string("service_required");
   case 306:
     return std::string("wash_cycle_interrupted");
   case 307:
