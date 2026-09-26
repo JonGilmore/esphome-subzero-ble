@@ -202,6 +202,7 @@ subzero_appliance:
 | `hide_water_filter` | `true` | Water Filter Remaining (%)
 | `hide_water_filter_extra` | `true` | Water Filter Gallons Remaining, Water Filter Expires (set false on models that expose these)
 | `hide_vacation_ice_modes` | `true` | Long/Short Vacation Mode, High Usage Mode (+ start/end time), Max Ice Mode (+ start/end time), Night Ice Mode, plus the derived Appliance Mode / Night Mode selects when `enable_mode_selects: true`
+| `hide_accent_light` | `true` | Accent Light Level (set false on models that report it, e.g. IW30R, DEU2450WDZ, PRO3650G)
 | `hide_extra_diagnostics` | `true` | Smart Grid Mode, Pairing Window Open, Door Ajar Alarm Timeout, WiFi Network/Signal/Channel/Encryption Type, Active Faults, plus the derived Humidity Control select when `enable_mode_selects: true`
 | `hide_softener` | `true` | Water Softener Low (dishwasher only)
 | `hide_oven2` | `true` | All Oven 2 sensors (range only - for dual-oven)
@@ -355,6 +356,7 @@ NOTE: Sub-Zero fridge firmware only exposes _set points_ over BLE - actual/measu
 | *Max Ice Mode* | On/off binary sensor, plus start/end time text sensors _(optional, `hide_vacation_ice_modes`)_
 | *Night Ice Mode* | On/off binary sensor _(optional, `hide_vacation_ice_modes`)_
 | *Power On* | Whether the unit is powered
+| *Accent Light Level* | Accent (display) light brightness as a raw number. Updates live when changed on the front panel. The scale isn't confirmed (observed 0, 30, 50, 130), and it's read-only - writing it hasn't been tested _(optional, `hide_accent_light`)_
 | *Smart Grid Mode* | Utility demand-response status flag. No corresponding control was found in the app or on the appliance's display, and writes to it don't take effect - treat as informational only _(optional, `hide_extra_diagnostics`)_
 | *Pairing Window Open* | Whether the appliance's BLE pairing window is currently open _(optional, `hide_extra_diagnostics`)_
 | *Door Ajar Alarm Timeout* | Minutes before the door-ajar alarm triggers _(optional, `hide_extra_diagnostics`)_

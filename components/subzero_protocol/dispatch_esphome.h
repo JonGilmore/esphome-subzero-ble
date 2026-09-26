@@ -274,6 +274,9 @@ struct FridgeBus : CommonBus {
   esphome::binary_sensor::BinarySensor *unit_on = nullptr;
   esphome::binary_sensor::BinarySensor *smart_grid_on = nullptr;
 
+  // Read-only: `set accent_light_level` is untested.
+  esphome::sensor::Sensor *accent_light_level = nullptr;
+
   // Misc diagnostics.
   esphome::binary_sensor::BinarySensor *pin_window_open = nullptr;
   esphome::text_sensor::TextSensor *active_faults = nullptr;
@@ -407,6 +410,9 @@ struct FridgeBus : CommonBus {
   }
   void publish_door_ajar_timeout(int v) {
     detail::publish_if(door_ajar_timeout, static_cast<float>(v));
+  }
+  void publish_accent_light_level(int v) {
+    detail::publish_if(accent_light_level, static_cast<float>(v));
   }
   void publish_ap_ssid(const std::string &v) { detail::publish_if(ap_ssid, v); }
   void publish_ap_rssi(int v) {

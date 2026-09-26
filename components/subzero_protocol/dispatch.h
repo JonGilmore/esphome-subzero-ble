@@ -142,6 +142,9 @@ inline void dispatch_fridge(const FridgeState &s, Bus &bus) {
     bus.publish_unit_on(*s.unit_on);
   if (s.smart_grid_on)
     bus.publish_smart_grid_on(*s.smart_grid_on);
+  // Lighting
+  if (s.accent_light_level)
+    bus.publish_accent_light_level(*s.accent_light_level);
   // Misc diagnostics
   if (s.pin_window_open)
     bus.publish_pin_window_open(*s.pin_window_open);

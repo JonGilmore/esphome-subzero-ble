@@ -124,6 +124,7 @@ json fridge_to_json(const FridgeState &s) {
   OPT_PUT(o, s, max_ice_end_time);
   OPT_PUT(o, s, unit_on);
   OPT_PUT(o, s, smart_grid_on);
+  OPT_PUT(o, s, accent_light_level);
   OPT_PUT(o, s, pin_window_open);
   OPT_PUT(o, s, active_faults);
   OPT_PUT(o, s, humidity_control);

@@ -471,6 +471,19 @@ FRIDGE_SENSORS = [
         },
         "hide_water_filter_extra",
     ),
+    # Raw int, no unit: observed 0/30/50/130 so the scale isn't a plain
+    # percent. Read-only until `set accent_light_level` is verified.
+    (
+        "accent_light_level",
+        "Accent Light Level",
+        "set_accent_light_level_sensor",
+        {
+            "state_class": STATE_CLASS_MEASUREMENT,
+            "accuracy_decimals": 0,
+            CONF_ICON: "mdi:lightbulb-on-outline",
+        },
+        "hide_accent_light",
+    ),
     (
         "door_ajar_timeout",
         "Door Ajar Alarm Timeout",
@@ -1304,6 +1317,7 @@ TYPE_SCHEMAS = {
         cv.Optional("hide_water_filter", default=True): cv.boolean,
         cv.Optional("hide_water_filter_extra", default=True): cv.boolean,
         cv.Optional("hide_vacation_ice_modes", default=True): cv.boolean,
+        cv.Optional("hide_accent_light", default=True): cv.boolean,
         cv.Optional("hide_extra_diagnostics", default=True): cv.boolean,
         # Opt-in: writes to `ref_set_temp`/`frz_set_temp`/`crisp_set_temp`
         # were assumed inert (see FridgeBus comment in dispatch_esphome.h),
