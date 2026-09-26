@@ -718,8 +718,10 @@ FRIDGE_TEMP_INT_SWITCHES = [
 
 # accent_light_level is an int level on the wire (0 = off, model-specific
 # value when on), exposed as an on/off switch — see ApplianceSetLevelSwitch.
-# Experimental: reads are confirmed on an IW30R (30/0 pushes when toggled
-# on the front panel), writes are untested. Opt-in via hide_accent_light.
+# Confirmed 2026-09-26 via live BLE testing on an IW30R (fw 2.27): writing
+# 30/0 physically toggles the light, the appliance echoes a D6 push, and the
+# next full poll holds the new value. Other models are unverified, so this
+# stays opt-in via hide_accent_light.
 FRIDGE_LEVEL_SWITCHES = [
     (
         "accent_light",

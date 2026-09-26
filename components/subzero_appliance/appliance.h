@@ -157,7 +157,7 @@ public:
     bus_.smart_grid_on = s;
   }
 
-  // Experimental: whether `set accent_light_level` takes effect is untested.
+  // Writes confirmed on IW30R fw 2.27; other models unverified.
   void set_accent_light_switch(ApplianceSetLevelSwitch *s) {
     bus_.accent_light = s;
     s->set_last_on_level(&bus_.accent_light_on_level);
