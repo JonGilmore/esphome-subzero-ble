@@ -87,6 +87,11 @@ struct FridgeState {
   std::optional<bool> unit_on;
   std::optional<bool> smart_grid_on;
 
+  // Accent (display) lighting level, 0 = off. Toggling it on an IW30R front
+  // panel pushes 30 (on) / 0 (off) on D6; PRO3650G and DEU2450WDZ report 50
+  // and 130, so the on-value is model-specific.
+  std::optional<int> accent_light_level;
+
   // Misc diagnostics.
   std::optional<bool> pin_window_open;
   // Only populated when the appliance sends a plain string. Observed as

@@ -157,6 +157,12 @@ public:
     bus_.smart_grid_on = s;
   }
 
+  // Writes confirmed on IW30R fw 2.27; other models unverified.
+  void set_accent_light_switch(ApplianceSetLevelSwitch *s) {
+    bus_.accent_light = s;
+    s->set_last_on_level(&bus_.accent_light_on_level);
+  }
+
   // Misc diagnostics
   void set_pin_window_open_sensor(esphome::binary_sensor::BinarySensor *s) {
     bus_.pin_window_open = s;

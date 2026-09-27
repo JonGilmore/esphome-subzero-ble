@@ -107,6 +107,7 @@ struct FridgeRecorder : CommonRecorder {
   }
   void publish_humidity_control(int v) { ints["humidity_control"] = v; }
   void publish_door_ajar_timeout(int v) { ints["door_ajar_timeout"] = v; }
+  void publish_accent_light_level(int v) { ints["accent_light_level"] = v; }
   void publish_ap_ssid(const std::string &v) { strings["ap_ssid"] = v; }
   void publish_ap_rssi(int v) { ints["ap_rssi"] = v; }
   void publish_ap_chan(int v) { ints["ap_chan"] = v; }
@@ -355,6 +356,16 @@ TEST(Dispatch, FridgeFieldsRouted) {
   EXPECT_EQ(rec.strings["water_filter_end_date"], "2027-04-26T00:00:00+00:00");
 }
 
+TEST(Dispatch, FridgeAccentLightLevelRouted) {
+  FridgeState s;
+  s.accent_light_level = 30;
+
+  FridgeRecorder rec;
+  dispatch_fridge(s, rec);
+
+  EXPECT_EQ(rec.ints["accent_light_level"], 30);
+}
+
 // Some fridges (e.g. PRO3650G) wire the main door and the refrigerator drawer
 // to a single switch and only report ref_door_ajar. The dispatcher mirrors
 // the main-door state to the drawer sensor when ref2_door_ajar is absent,
@@ -598,6 +609,39 @@ TEST(Dispatch, FixtureFridgePushDoor) {
   // Drawer sensor mirrors the main door for shared-switch models.
   ASSERT_NE(rec.bools.find("ref2_door_ajar"), rec.bools.end());
   EXPECT_EQ(rec.bools["ref2_door_ajar"], true);
+}
+
+// Toggling the accent light on the IW30R front panel fires a D6 push carrying
+// only accent_light_level: 30 when turned on, 0 when turned off.
+TEST(Dispatch, FixtureFridgePushAccentLightOn) {
+  std::string raw = read_file(fs::path(FIXTURES_DIR) /
+                              "fridge_push_accent_light_on_msg2.json");
+  ASSERT_FALSE(raw.empty());
+  auto s = parse_fridge(raw);
+  ASSERT_TRUE(s.valid);
+  EXPECT_FALSE(s.is_poll);
+
+  FridgeRecorder rec;
+  dispatch_fridge(s, rec);
+
+  ASSERT_NE(rec.ints.find("accent_light_level"), rec.ints.end());
+  EXPECT_EQ(rec.ints["accent_light_level"], 30);
+}
+
+// 0 must still be published (not treated as "absent") so the switch turns off.
+TEST(Dispatch, FixtureFridgePushAccentLightOff) {
+  std::string raw = read_file(fs::path(FIXTURES_DIR) /
+                              "fridge_push_accent_light_off_msg2.json");
+  ASSERT_FALSE(raw.empty());
+  auto s = parse_fridge(raw);
+  ASSERT_TRUE(s.valid);
+  EXPECT_FALSE(s.is_poll);
+
+  FridgeRecorder rec;
+  dispatch_fridge(s, rec);
+
+  ASSERT_NE(rec.ints.find("accent_light_level"), rec.ints.end());
+  EXPECT_EQ(rec.ints["accent_light_level"], 0);
 }
 
 // PRO3650G has a separate refrigerator drawer with its own setpoint

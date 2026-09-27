@@ -382,6 +382,8 @@ FridgeState parse_fridge(const std::string &json) {
   state.unit_on = opt_bool(data["unit_on"]);
   state.smart_grid_on = opt_bool(data["smart_grid_on"]);
 
+  state.accent_light_level = opt_int(data["accent_light_level"]);
+
   // Misc diagnostics.
   state.pin_window_open = opt_bool(data["pin_window_open"]);
   state.active_faults = opt_str(data["active_faults"]);

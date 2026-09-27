@@ -108,6 +108,9 @@ ApplianceSetSwitch = subzero_appliance_ns.class_("ApplianceSetSwitch", switch.Sw
 ApplianceSetIntSwitch = subzero_appliance_ns.class_(
     "ApplianceSetIntSwitch", switch.Switch
 )
+ApplianceSetLevelSwitch = subzero_appliance_ns.class_(
+    "ApplianceSetLevelSwitch", switch.Switch
+)
 ApplianceSetNumber = subzero_appliance_ns.class_("ApplianceSetNumber", number.Number)
 ApplianceSetIntSelect = subzero_appliance_ns.class_(
     "ApplianceSetIntSelect", select.Select
@@ -713,6 +716,23 @@ FRIDGE_TEMP_INT_SWITCHES = [
     ),
 ]
 
+# accent_light_level is an int level on the wire (0 = off, model-specific
+# value when on), exposed as an on/off switch — see ApplianceSetLevelSwitch.
+# Confirmed 2026-09-26 via live BLE testing on an IW30R (fw 2.27): writing
+# 30/0 physically toggles the light, the appliance echoes a D6 push, and the
+# next full poll holds the new value. Other models are unverified, so this
+# stays opt-in via hide_accent_light.
+FRIDGE_LEVEL_SWITCHES = [
+    (
+        "accent_light",
+        "Accent Light",
+        "set_accent_light_switch",
+        "accent_light_level",
+        {CONF_ICON: "mdi:lightbulb-on-outline"},
+        "hide_accent_light",
+    ),
+]
+
 # Mode selects — opt-in via `enable_mode_selects: true`. Every option below
 # was confirmed via live BLE testing 2026-07-25 (see TYPE_SCHEMAS comment).
 
@@ -1304,6 +1324,7 @@ TYPE_SCHEMAS = {
         cv.Optional("hide_water_filter", default=True): cv.boolean,
         cv.Optional("hide_water_filter_extra", default=True): cv.boolean,
         cv.Optional("hide_vacation_ice_modes", default=True): cv.boolean,
+        cv.Optional("hide_accent_light", default=True): cv.boolean,
         cv.Optional("hide_extra_diagnostics", default=True): cv.boolean,
         # Opt-in: writes to `ref_set_temp`/`frz_set_temp`/`crisp_set_temp`
         # were assumed inert (see FridgeBus comment in dispatch_esphome.h),
@@ -1493,19 +1514,27 @@ async def _build_set_switch(
 
 
 async def _build_set_int_switch(
-    parent_id, parent_var, suffix, name_suffix, property_key, kwargs, hidden
+    parent_id,
+    parent_var,
+    suffix,
+    name_suffix,
+    property_key,
+    kwargs,
+    hidden,
+    cls=ApplianceSetIntSwitch,
 ):
     """Like _build_set_switch, but for properties whose wire format is an
-    int (0/1) rather than a JSON boolean literal — see ApplianceSetIntSwitch."""
+    int rather than a JSON boolean literal — see ApplianceSetIntSwitch
+    (0/1) and ApplianceSetLevelSwitch (0/level)."""
     cfg_raw = {
-        CONF_ID: _entity_id(parent_id, suffix, ApplianceSetIntSwitch),
+        CONF_ID: _entity_id(parent_id, suffix, cls),
         CONF_NAME: name_suffix,
         CONF_DEVICE_ID: _subdevice_id(parent_id),
     }
     cfg_raw.update(kwargs)
     if hidden:
         cfg_raw[CONF_INTERNAL] = True
-    cfg = switch.switch_schema(ApplianceSetIntSwitch)(cfg_raw)
+    cfg = switch.switch_schema(cls)(cfg_raw)
     sw = await switch.new_switch(cfg)
     cg.add(sw.set_parent(parent_var))
     cg.add(sw.set_property_key(property_key))
@@ -1757,6 +1786,28 @@ async def to_code(config):
                 _resolve_hidden(config, hide_key),
             )
             cg.add(getattr(var, setter)(isw))
+
+    # Level switches (fridge only) — accent light, gated by hide_accent_light.
+    if type_ == "fridge":
+        for (
+            suffix,
+            name_suffix,
+            setter,
+            prop_key,
+            kwargs,
+            hide_key,
+        ) in FRIDGE_LEVEL_SWITCHES:
+            lsw = await _build_set_int_switch(
+                parent_id,
+                var,
+                suffix,
+                name_suffix,
+                prop_key,
+                kwargs,
+                _resolve_hidden(config, hide_key),
+                cls=ApplianceSetLevelSwitch,
+            )
+            cg.add(getattr(var, setter)(lsw))
 
     # Mode selects (fridge only, opt-in via enable_mode_selects) — see
     # TYPE_SCHEMAS comment for confirmation status.
