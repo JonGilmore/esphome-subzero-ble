@@ -86,6 +86,20 @@ void ApplianceBase::gattc_event_handler(esp_gattc_cb_event_t event,
     }
     break;
   }
+  // Without encryption every D5/D6 write is refused; make that visible.
+  case ESP_GATTC_WRITE_CHAR_EVT:
+  case ESP_GATTC_WRITE_DESCR_EVT:
+    if (param->write.status != ESP_GATT_OK) {
+      ESP_LOGW(TAG, "[%s] Write to handle 0x%04X refused (status=0x%02X%s)",
+               name_str_.c_str(), param->write.handle,
+               static_cast<int>(param->write.status),
+               param->write.status == ESP_GATT_INSUF_ENCRYPTION
+                   ? ": insufficient encryption"
+               : param->write.status == ESP_GATT_INSUF_AUTHENTICATION
+                   ? ": insufficient authentication"
+                   : "");
+    }
+    break;
   default:
     break;
   }
@@ -102,6 +116,17 @@ void ApplianceBase::gap_event_handler(esp_gap_ble_cb_event_t event,
     }
     std::uint32_t passkey = hub()->handle_passkey_request();
     esp_ble_passkey_reply(param->ble_security.ble_req.bd_addr, true, passkey);
+    return;
+  }
+
+  if (event == ESP_GAP_BLE_AUTH_CMPL_EVT) {
+    if (this->parent() == nullptr)
+      return;
+    const auto &ac = param->ble_security.auth_cmpl;
+    if (std::memcmp(ac.bd_addr, this->parent()->get_remote_bda(), 6) != 0)
+      return;
+    hub()->handle_auth_complete(ac.success, static_cast<int>(ac.fail_reason),
+                                static_cast<int>(ac.auth_mode));
   }
 }
 

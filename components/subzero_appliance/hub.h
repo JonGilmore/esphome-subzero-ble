@@ -60,6 +60,9 @@ public:
   // Returns the passkey to reply with, or 0 if no PIN is stored
   // (caller should still call passkey_reply with 0 or skip).
   std::uint32_t handle_passkey_request();
+  // ESP_GAP_BLE_AUTH_CMPL_EVT. On failure Status keeps the reason until
+  // the link drops; the connection flow itself is unchanged.
+  void handle_auth_complete(bool success, int fail_reason, int auth_mode);
 
   // BLE indication arrivals (called from D5/D6 notify sensor lambdas).
   // D5 is the control channel — heartbeat only, resets zombie counter.
@@ -158,6 +161,7 @@ public:
   bool post_bond_running() const { return post_bond_running_; }
   bool subscribe_running() const { return subscribe_running_; }
   bool fast_reconnect_running() const { return fast_reconnect_running_; }
+  bool pairing_failed() const { return pairing_failed_; }
   const std::string &stored_pin() const { return stored_pin_; }
   esphome::subzero_protocol::PollVerb poll_verb() const { return poll_verb_; }
   void set_poll_verb(esphome::subzero_protocol::PollVerb v) { poll_verb_ = v; }
@@ -265,6 +269,9 @@ private:
   // this, two failed reconnects on top of a session refresh would
   // wrongly wipe the bond.
   bool intentional_disconnect_ = false;
+
+  // Set by a failed pairing; cleared on success or disconnect.
+  bool pairing_failed_ = false;
 
   // Last value handed to status_cb_, used to drop duplicate publishes.
   std::string last_status_;

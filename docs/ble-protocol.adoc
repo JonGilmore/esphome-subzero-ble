@@ -60,7 +60,10 @@ NOTE: We previously misdiagnosed "fw 8.5 unlock session expiry" as the cause of 
 
 | fw 8.5 | API 5.4 | Sub-Zero 313, Wolf SO3050PESP, DEU2450R | ~40 bytes (fragmented) | INDICATE only (0x2A)
 | fw 2.27 | API 5.5 | Wolf DF36450GSP, Cove DW2450, Sub-Zero IW30R | ~244 bytes (mostly single-fragment) | NOTIFY + INDICATE (0x3E)
+| szwcatfw_5.13 | API 5.3 | Wolf SO3050PESP, Sub-Zero 48SID (CONAPPWM module, factory firmware) | not measured | INDICATE only (0x2A)
 |===
+
+`szwcatfw_5.13` is the CONAPPWM factory firmware; Sub-Zero normally updates it to 8.5 during app setup, but replacement modules can stay on 5.13 (https://github.com/JonGilmore/esphome-subzero-ble/issues/106[#106]). Same GATT layout as fw 8.5. It only pairs when the Pairing Request asks for the LTK alone (see *Key distribution* below). CONAPPWM2 modules ship with firmware 2.25.2.
 
 The fragment size difference matters because fw 8.5 is more sensitive to the ESP-IDF Bluedroid HCI bug (see <<ACL Fragment Drops>> below). The CCCD property difference matters because the official app writes 0x0001 (notifications) on fw 2.27 vs 0x0002 (indications) on fw 8.5. Our integration writes 0x0002 universally - safe on both firmware versions, since fw 2.27 chars also support indications.
 
@@ -111,6 +114,10 @@ The ESP32 must be configured with `IO_CAP_IN` (keyboard-only) so the user can en
 NOTE: Sub-Zero's BLE module seems to only support Legacy Pairing, *not* BLE Secure Connections (LESC). Do not set `ESP_LE_AUTH_REQ_SC_MITM_BOND` - it causes pairing to silently fall back to "Just Works" with no passkey exchange.
 After the first successful bond, the keys are stored and reconnection is automatic.
 If the bond becomes stale (e.g. appliance-side timeout overnight), the integration detects repeated auth failures (3 attempts) and automatically clears the stale bond, then re-pairs from scratch.
+
+Key distribution:: The Pairing Request asks for the *LTK only* (init and response keys = `ESP_BLE_ENC_KEY_MASK`). With Bluedroid's default (LTK + IRK + CSRK), `szwcatfw_5.13` answers our Pairing Random with *Pairing Failed 0x08* (`auth fail reason=85`; ESP-IDF reports SMP reasons as 0x4D + the reason), and then refuses every D5/D6 write with ATT 0x0F (insufficient encryption). Sub-Zero modules use public addresses, so IRK and CSRK are not needed.
++
+NOTE: These parameters are global to the ESP32's BLE stack, so other devices that pair through the same ESP32 also exchange only the LTK.
 
 Command Framing:: Every command (D5 control or D6 data) *must* end with a newline character (`\n`).
 The appliance's serial parser silently discards any command without it.
