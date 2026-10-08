@@ -14,7 +14,7 @@ toc::[]
 
 Sub-Zero Group (SZG) appliances include a BLE radio that the official _Sub-Zero Group Owner_ mobile app (Android/iOS) uses for configuration and monitoring. This project reverse-engineers that BLE protocol and reimplements the connection, pairing, and polling logic in ESPHome. The connection state machine lives in YAML + inline C++ lambdas; JSON parsing is factored into a small external C++ component (`subzero_protocol`) that ships with the repo and has host-compiled unit tests (see link:docs/advanced.adoc#parser-component[Parser Component]). See <<Supported Sensors>> for a list of supported appliance sensors.
 
-NOTE: There is also a https://github.com/eyal0/subzero-ble-homeassistant[Home Assistant custom integration] (`eyal0/subzero-ble-homeassistant`) that talks to the same BLE protocol, but as an HA integration rather than an ESPHome component. It only works with a Bluetooth adapter connected to the Home Assistant device itself — ESPHome Bluetooth proxies and other remote adapters are not supported.
+NOTE: There is also a https://github.com/eyal0/subzero-ble-homeassistant[Home Assistant custom integration] (`eyal0/subzero-ble-homeassistant`) that talks to the same BLE protocol, but as an HA integration rather than an ESPHome component. It only works with a Bluetooth adapter connected to the Home Assistant device itself - ESPHome Bluetooth proxies and other remote adapters are not supported.
 
 == Requirements
 
@@ -275,7 +275,7 @@ See link:docs/advanced.adoc#_esphome_commands[ESPHome Commands] for OTA flashing
 You need the 6-digit PIN from your appliance. There are two ways to get it:
 
 . **From the official app:** Open the _Sub-Zero Group Owner_ app, connect to your appliance, and note the PIN shown during pairing. *You will have to delete the BT pairing from your phone after this to allow the ESP32 to connect.*
-. **From the appliance display:** After the ESP32 connects and bonds, press the "Start Pairing" button in Home Assistant. The PIN will appear on the appliance's physical display for 30 seconds. The screen must already be on — if the display is inside the compartment (typical for many fridges), open the door first so the panel wakes, then press Start Pairing.
+. **From the appliance display:** After the ESP32 connects and bonds, press the "Start Pairing" button in Home Assistant. The PIN will appear on the appliance's physical display for 30 seconds. The screen must already be on - if the display is inside the compartment (typical for many fridges), open the door first so the panel wakes, then press Start Pairing.
 
 TIP: Sub-Zero appliance BLE MAC addresses typically begin with `00:06:80`. You can verify this using a Bluetooth scanner app on Android (iOS does not expose BLE MAC addresses), or by scanning BLE advertisements with a spare ESP32. On macOS, connect to the appliance with a Bluetooth scanner, then run `system_profiler SPBluetoothDataType` in Terminal to retrieve the BLE MAC address.
 
@@ -305,6 +305,9 @@ TIP: Sub-Zero appliance BLE MAC addresses typically begin with `00:06:80`. You c
 
 | *Auth failures overnight (auth fail reason=102)*
 | The BLE bond went stale. The integration automatically detects this after 3 consecutive failures, clears the old bond, and re-pairs. No action needed.
+
+| *Status sensor reads "Pairing failed (...)", or the log shows `auth fail reason=85`, and every sensor is unknown*
+| The appliance refused BLE pairing, so it ignores every command. Older versions failed this way with CONAPPWM modules on factory firmware `szwcatfw_5.13` and still showed "Connected and polling." (https://github.com/JonGilmore/esphome-subzero-ble/issues/106[#106]). Update the integration; if it continues, open an issue with the log.
 
 | *Most sensors stuck at "unknown" / Status sensor reads "Pairing required"*
 | The appliance returned `status: 302` to the unlock attempt. This usually means its PIN rotated - some appliances assign a new pairing key after a power cycle, factory reset, or when the official app re-pairs. Wake the appliance screen (open the door first if the display is inside the compartment), press the *Start Pairing* button for that appliance in HA, watch the display for the new 6-digit PIN, then enter it into the appliance's *PIN* text input in HA. The next poll cycle will pick up full state. (You'll also see `[szg:###]: [Appliance] Pairing rejected (status 302)` in the ESPHome logs.)

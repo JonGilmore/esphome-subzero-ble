@@ -438,6 +438,101 @@ TEST_F(HubFixture, Passkey_NumericPin_ReturnsAtoiValue) {
 }
 
 // =============================================================================
+// Pairing result (ESP_GAP_BLE_AUTH_CMPL_EVT)
+// =============================================================================
+
+// #106: pairing fails but D5/D6 are still found; Status must not claim
+// "Connected and polling."
+TEST_F(HubFixture, AuthFailed_StatusKeepsReasonThroughSubscribe) {
+  hub_.set_stored_pin("12345");
+  transport_.set_gatt_db(full_gatt_db());
+  hub_.handle_connected();
+  scheduler_.advance_by(500); // post_bond_initial_ -> request_encryption
+  ASSERT_EQ(transport_.encryption_request_count(), 1u);
+
+  hub_.handle_auth_complete(false, 85, 0); // SMP 0x08
+  EXPECT_TRUE(hub_.pairing_failed());
+  EXPECT_TRUE(last_status_contains("Pairing failed"));
+  EXPECT_TRUE(last_status_contains("SMP 0x08"));
+
+  scheduler_.advance_by(3000); // subscribe, unlock, initial poll
+  EXPECT_TRUE(last_status_contains("Pairing failed"))
+      << "Got: " << status_log_.back();
+  EXPECT_FALSE(any_status_contains("Connected and polling"));
+  EXPECT_FALSE(any_status_contains("Auto-unlocking"));
+}
+
+// D5 absent from the initial db: the discovery ladder's progress must not
+// replace the failure either, whether D5 shows up late or never.
+TEST_F(HubFixture, AuthFailed_D5AbsentInitially_LadderKeepsReason) {
+  hub_.set_stored_pin("12345");
+  transport_.set_gatt_db({});
+  hub_.handle_connected();
+  scheduler_.advance_by(500); // post_bond_initial_ -> request_encryption
+  hub_.handle_auth_complete(false, 85, 0);
+
+  scheduler_.advance_by(1000 + 500 + 5000); // refresh, search, poll 1
+  EXPECT_EQ(hub_.d5_handle(), 0);
+  transport_.set_gatt_db(full_gatt_db());
+  scheduler_.advance_by(5000 + 3000); // poll 2 finds D5, then subscribe
+  ASSERT_NE(hub_.d5_handle(), 0);
+
+  EXPECT_TRUE(last_status_contains("Pairing failed"))
+      << "Got: " << status_log_.back();
+  EXPECT_FALSE(any_status_contains("Poll "));
+  EXPECT_FALSE(any_status_contains("Connected and polling"));
+}
+
+TEST_F(HubFixture, AuthFailed_D5NeverAppears_GiveupKeepsReason) {
+  hub_.set_stored_pin("12345");
+  transport_.set_gatt_db({});
+  hub_.handle_connected();
+  scheduler_.advance_by(500);
+  hub_.handle_auth_complete(false, 85, 0);
+
+  scheduler_.advance_by(1000 + 500 + 5000 * 3); // full ladder -> giveup
+  EXPECT_GE(transport_.disconnect_count(), 1u);
+  EXPECT_TRUE(last_status_contains("Pairing failed"))
+      << "Got: " << status_log_.back();
+  EXPECT_FALSE(any_status_contains("No D5 found"));
+}
+
+TEST_F(HubFixture, AuthSucceeded_ReportsConnectedAndPolling) {
+  hub_.set_stored_pin("12345");
+  transport_.set_gatt_db(full_gatt_db());
+  hub_.handle_connected();
+  scheduler_.advance_by(500);
+  hub_.handle_auth_complete(true, 0, 0x01);
+  scheduler_.advance_by(3000);
+  EXPECT_FALSE(hub_.pairing_failed());
+  EXPECT_TRUE(last_status_contains("Connected and polling"));
+}
+
+TEST_F(HubFixture, AuthFailed_ClearedByDisconnect) {
+  hub_.set_stored_pin("12345");
+  transport_.set_gatt_db(full_gatt_db());
+  hub_.handle_connected();
+  scheduler_.advance_by(500);
+  hub_.handle_auth_complete(false, 85, 0);
+  scheduler_.advance_by(3000);
+
+  hub_.handle_disconnected();
+  EXPECT_FALSE(hub_.pairing_failed());
+  EXPECT_TRUE(last_status_contains("Disconnected"));
+
+  transport_.set_connected(true);
+  hub_.handle_connected();
+  hub_.handle_auth_complete(true, 0, 0x01);
+  scheduler_.advance_by(5000);
+  EXPECT_TRUE(last_status_contains("Connected and polling"));
+}
+
+TEST_F(HubFixture, AuthFailed_UnknownReasonStillReported) {
+  hub_.handle_auth_complete(false, 7, 0);
+  EXPECT_TRUE(last_status_contains("Pairing failed (unknown reason)"));
+}
+
+// =============================================================================
 // Buttons
 // =============================================================================
 

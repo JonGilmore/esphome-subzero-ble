@@ -52,6 +52,14 @@ public:
       return;
     std::uint8_t addr[6];
     std::memcpy(addr, client_->get_remote_bda(), 6);
+    // LTK-only key distribution: CONAPPWM fw 5.13 fails pairing (reason
+    // 85) if IRK/CSRK are also requested (#106). Sub-Zero modules use
+    // public addresses, so nothing needs them. Global to the BLE stack.
+    std::uint8_t keys = ESP_BLE_ENC_KEY_MASK;
+    esp_ble_gap_set_security_param(ESP_BLE_SM_SET_INIT_KEY, &keys,
+                                   sizeof(keys));
+    esp_ble_gap_set_security_param(ESP_BLE_SM_SET_RSP_KEY, &keys,
+                                   sizeof(keys));
     esp_ble_set_encryption(addr, ESP_BLE_SEC_ENCRYPT_MITM);
   }
 

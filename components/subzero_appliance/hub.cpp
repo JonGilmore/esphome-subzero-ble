@@ -117,6 +117,7 @@ void SubzeroHub::handle_disconnected() {
   post_bond_running_ = false;
   subscribe_running_ = false;
   fast_reconnect_running_ = false;
+  pairing_failed_ = false;
 
   // Anything other than the refresh's own disconnect is real news: stop
   // muting so the drop (and whatever follows) reaches the user.
@@ -153,6 +154,83 @@ void SubzeroHub::handle_disconnected() {
     HUB_LOGI("ble", "[%s] Disconnected", name_.c_str());
   }
   publish_progress_("Disconnected");
+}
+
+// esp_ble_auth_fail_rsn_t: 0x4E..0x5B are 0x4D + the SMP reason,
+// 0x5C..0x66 are Bluedroid-internal. No IDF headers (host tests).
+static const char *auth_fail_reason_str(int reason) {
+  switch (reason) {
+  case 0x4E:
+    return "SMP 0x01 passkey entry failed";
+  case 0x4F:
+    return "SMP 0x02 OOB not available";
+  case 0x50:
+    return "SMP 0x03 authentication requirements";
+  case 0x51:
+    return "SMP 0x04 confirm value failed";
+  case 0x52:
+    return "SMP 0x05 pairing not supported";
+  case 0x53:
+    return "SMP 0x06 encryption key size";
+  case 0x54:
+    return "SMP 0x07 command not supported";
+  case 0x55:
+    return "SMP 0x08 unspecified reason";
+  case 0x56:
+    return "SMP 0x09 repeated attempts";
+  case 0x57:
+    return "SMP 0x0A invalid parameters";
+  case 0x58:
+    return "SMP 0x0B DHKey check failed";
+  case 0x59:
+    return "SMP 0x0C numeric comparison failed";
+  case 0x5A:
+    return "SMP 0x0D BR/EDR pairing in progress";
+  case 0x5B:
+    return "SMP 0x0E cross-transport key not allowed";
+  case 0x5C:
+    return "internal error";
+  case 0x5D:
+    return "unknown IO capability";
+  case 0x5E:
+    return "SMP init failed";
+  case 0x5F:
+    return "confirm failed";
+  case 0x60:
+    return "SMP busy";
+  case 0x61:
+    return "encryption failed";
+  case 0x62:
+    return "SMP started";
+  case 0x63:
+    return "SMP response timeout";
+  case 0x64:
+    return "DIV not available";
+  case 0x65:
+    return "unspecified failure";
+  case 0x66:
+    return "connection timeout";
+  default:
+    return "unknown reason";
+  }
+}
+
+void SubzeroHub::handle_auth_complete(bool success, int fail_reason,
+                                      int auth_mode) {
+  if (success) {
+    pairing_failed_ = false;
+    HUB_LOGI("ble", "[%s] Link encrypted (auth_mode=0x%02X: bond=%d mitm=%d)",
+             name_.c_str(), auth_mode, (auth_mode & 0x01) ? 1 : 0,
+             (auth_mode & 0x04) ? 1 : 0);
+    return;
+  }
+  pairing_failed_ = true;
+  const char *why = auth_fail_reason_str(fail_reason);
+  HUB_LOGE("ble",
+           "[%s] Pairing failed (reason=%d: %s). The link is not encrypted, "
+           "so the appliance will refuse every command.",
+           name_.c_str(), fail_reason, why);
+  publish_status_(std::string("Pairing failed (") + why + ")");
 }
 
 std::uint32_t SubzeroHub::handle_passkey_request() {
@@ -407,7 +485,7 @@ void SubzeroHub::post_bond_poll_attempt_(int attempt) {
     // recursive call.
     char status[32];
     std::snprintf(status, sizeof(status), "Poll %d: waiting...", attempt);
-    publish_status_(status);
+    publish_progress_(status);
     const char *next_name =
         (attempt == 1) ? kTimeoutPostBondPoll2 : kTimeoutPostBondPoll3;
     scheduler_->set_timeout(
@@ -416,7 +494,7 @@ void SubzeroHub::post_bond_poll_attempt_(int attempt) {
     return;
   }
   HUB_LOGW("ble", "[%s] No D5 after 20s. Reconnecting...", name_.c_str());
-  publish_status_("No D5 found. Reconnecting...");
+  publish_progress_("No D5 found. Reconnecting...");
   phase_ = 1;
   post_bond_giveup_();
 }
@@ -543,7 +621,12 @@ void SubzeroHub::subscribe_initial_get_() {
     return;
   poll_ok_ = false;
   write_poll_command_(d6_handle_);
-  publish_status_("Connected and polling.");
+  if (pairing_failed_) {
+    HUB_LOGW("ble", "[%s] Polling without encryption - expect no data",
+             name_.c_str());
+  } else {
+    publish_status_("Connected and polling.");
+  }
 
   // Arm scheduled session refresh: ~18 min from now, proactively
   // disconnect-and-reconnect to refresh the appliance's BLE unlock
@@ -768,7 +851,7 @@ void SubzeroHub::publish_status_(const std::string &text) {
 }
 
 void SubzeroHub::publish_progress_(const std::string &text) {
-  if (session_refresh_quiet_)
+  if (session_refresh_quiet_ || pairing_failed_)
     return;
   publish_status_(text);
 }
