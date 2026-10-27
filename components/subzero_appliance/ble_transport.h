@@ -33,6 +33,8 @@ struct GattDbEntry {
   std::uint8_t uuid_first_byte = 0;
   // 16-bit UUID (e.g. 0x2902 for a CCCD descriptor); 0 for 128-bit UUIDs.
   std::uint16_t uuid16 = 0;
+  // Characteristic properties (0x10 = notify, 0x20 = indicate).
+  std::uint8_t properties = 0;
   std::uint16_t handle = 0;
 };
 

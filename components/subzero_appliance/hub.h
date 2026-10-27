@@ -295,6 +295,9 @@ private:
   // firmware (+2 on fw 8.5, +1 on fw 2.27), so read them from the db.
   std::uint16_t d5_cccd_ = 0;
   std::uint16_t d6_cccd_ = 0;
+  // Characteristic properties from the db; picks notify vs indicate.
+  std::uint8_t d5_props_ = 0;
+  std::uint8_t d6_props_ = 0;
   std::string stored_pin_;
   bool pin_confirmed_ = true; // matches YAML's restore_value:true initial
   bool poll_ok_ = false;
@@ -344,6 +347,8 @@ private:
   bool session_active_ = false;
   bool session_snapshot_ = false;
   bool session_no_snapshot_counted_ = false;
+  bool session_d5_seen_ = false;
+  bool session_d6_seen_ = false;
   std::uint32_t session_start_ms_ = 0;
   int session_pushes_ = 0;
   bool have_drop_ = false;

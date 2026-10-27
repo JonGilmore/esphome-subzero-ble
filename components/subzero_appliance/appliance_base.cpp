@@ -92,6 +92,14 @@ void ApplianceBase::gattc_event_handler(esp_gattc_cb_event_t event,
     }
     break;
   }
+  case ESP_GATTC_REG_FOR_NOTIFY_EVT:
+    if (param->reg_for_notify.status != ESP_GATT_OK) {
+      ESP_LOGW(TAG, "[%s] Notify registration for handle 0x%04X failed "
+               "(status=0x%02X)",
+               name_str_.c_str(), param->reg_for_notify.handle,
+               static_cast<int>(param->reg_for_notify.status));
+    }
+    break;
   // Without encryption every D5/D6 write is refused; make that visible.
   case ESP_GATTC_WRITE_CHAR_EVT:
   case ESP_GATTC_WRITE_DESCR_EVT:

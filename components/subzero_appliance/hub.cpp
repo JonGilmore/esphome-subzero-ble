@@ -256,13 +256,23 @@ std::uint32_t SubzeroHub::handle_passkey_request() {
 // =============================================================================
 
 void SubzeroHub::handle_d5_notify(const std::uint8_t * /*data*/,
-                                  std::size_t /*len*/) {
+                                  std::size_t len) {
   // D5 indications are control-channel responses (display_pin /
   // unlock_channel / set / scan acks) and mirror copies of D6 pushes.
-  // Body intentionally empty - all useful state lands on D6.
+  // Nothing to parse - all useful state lands on D6.
+  if (!session_d5_seen_) {
+    session_d5_seen_ = true;
+    HUB_LOGI("conn", "[%s] First D5 data on this connection (%d bytes)",
+             name_.c_str(), static_cast<int>(len));
+  }
 }
 
 void SubzeroHub::handle_d6_notify(const std::uint8_t *data, std::size_t len) {
+  if (!session_d6_seen_) {
+    session_d6_seen_ = true;
+    HUB_LOGI("conn", "[%s] First D6 data on this connection (%d bytes)",
+             name_.c_str(), static_cast<int>(len));
+  }
   if (json_buf_.feed(data, len)) {
     process_message_complete_();
   }
@@ -565,12 +575,16 @@ void SubzeroHub::update_handles_from_db_() {
       continue;
     switch (e.uuid_first_byte) {
     case 0xD5:
-      if (d5_handle_ == 0)
+      if (d5_handle_ == 0) {
         d5_handle_ = e.handle;
+        d5_props_ = e.properties;
+      }
       break;
     case 0xD6:
-      if (d6_handle_ == 0)
+      if (d6_handle_ == 0) {
         d6_handle_ = e.handle;
+        d6_props_ = e.properties;
+      }
       break;
     case 0xD7:
       if (d7_handle_ == 0)
@@ -622,20 +636,24 @@ void SubzeroHub::subscribe_register_and_cccd_() {
   // ESPHome only writes the CCCD itself while it still holds the service
   // list, which it frees right after discovery, so this write is the one
   // that enables notifications. Without a CCCD in the db, fall back to the
-  // fw 8.5 layout (value handle + 2).
-  static constexpr std::uint8_t kCccdOn[2] = {0x02, 0x00};
-  const std::uint16_t d5_cccd =
-      d5_cccd_ > 0 ? d5_cccd_ : static_cast<std::uint16_t>(d5_handle_ + 2);
-  transport_->write(d5_cccd, kCccdOn, sizeof(kCccdOn));
-  HUB_LOGI("ble", "[%s] CCCD write D5 (h=%d%s)", name_.c_str(), d5_cccd,
-           d5_cccd_ > 0 ? "" : ", guessed");
-  if (d6_handle_ > 0) {
-    const std::uint16_t d6_cccd =
-        d6_cccd_ > 0 ? d6_cccd_ : static_cast<std::uint16_t>(d6_handle_ + 2);
-    transport_->write(d6_cccd, kCccdOn, sizeof(kCccdOn));
-    HUB_LOGI("ble", "[%s] CCCD write D6 (h=%d%s)", name_.c_str(), d6_cccd,
-             d6_cccd_ > 0 ? "" : ", guessed");
-  }
+  // fw 8.5 layout (value handle + 2). Like the official app, use
+  // notifications where the characteristic has them (fw 2.27) and
+  // indications otherwise (fw 8.5).
+  static constexpr std::uint8_t kCccdNotify[2] = {0x01, 0x00};
+  static constexpr std::uint8_t kCccdIndicate[2] = {0x02, 0x00};
+  auto write_cccd = [this](const char *ch, std::uint16_t value_handle,
+                           std::uint16_t cccd, std::uint8_t props) {
+    const bool guessed = cccd == 0;
+    if (guessed)
+      cccd = static_cast<std::uint16_t>(value_handle + 2);
+    const bool notify = (props & 0x10) != 0;
+    transport_->write(cccd, notify ? kCccdNotify : kCccdIndicate, 2);
+    HUB_LOGI("ble", "[%s] CCCD write %s (h=%d, %s%s)", name_.c_str(), ch, cccd,
+             notify ? "notify" : "indicate", guessed ? ", guessed" : "");
+  };
+  write_cccd("D5", d5_handle_, d5_cccd_, d5_props_);
+  if (d6_handle_ > 0)
+    write_cccd("D6", d6_handle_, d6_cccd_, d6_props_);
   json_buf_.clear();
 
   scheduler_->set_timeout(kTimeoutSubscribeUnlock, kSubscribeUnlockDelayMs,
@@ -773,6 +791,8 @@ void SubzeroHub::start_session_() {
   session_active_ = true;
   session_snapshot_ = false;
   session_no_snapshot_counted_ = false;
+  session_d5_seen_ = false;
+  session_d6_seen_ = false;
   session_pushes_ = 0;
   seq_seen_in_session_ = false;
   session_start_ms_ = scheduler_->now_ms();
@@ -1095,6 +1115,8 @@ void SubzeroHub::clear_handles_() {
   d7_handle_ = 0;
   d5_cccd_ = 0;
   d6_cccd_ = 0;
+  d5_props_ = 0;
+  d6_props_ = 0;
 }
 
 void SubzeroHub::clear_session_state_() {

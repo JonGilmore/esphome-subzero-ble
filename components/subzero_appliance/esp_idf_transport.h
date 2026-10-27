@@ -124,6 +124,8 @@ public:
       e.uuid_first_byte = e.uuid_is_128bit ? db[i].uuid.uuid.uuid128[0] : 0;
       if (db[i].uuid.len == ESP_UUID_LEN_16)
         e.uuid16 = db[i].uuid.uuid.uuid16;
+      if (e.type == GattDbEntry::kCharacteristic)
+        e.properties = db[i].properties;
       e.handle = db[i].attribute_handle;
       out.push_back(e);
     }

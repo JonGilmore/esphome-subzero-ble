@@ -189,11 +189,13 @@ private:
 
 // Convenience: build a single CHARACTERISTIC entry for the GATT db.
 inline GattDbEntry make_char_entry(std::uint8_t uuid_first_byte,
-                                   std::uint16_t handle) {
+                                   std::uint16_t handle,
+                                   std::uint8_t properties = 0) {
   GattDbEntry e;
   e.type = GattDbEntry::kCharacteristic;
   e.uuid_is_128bit = true;
   e.uuid_first_byte = uuid_first_byte;
+  e.properties = properties;
   e.handle = handle;
   return e;
 }

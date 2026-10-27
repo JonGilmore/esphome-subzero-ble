@@ -1303,21 +1303,21 @@ TEST_F(HubFixture, SessionRefresh_ZeroIntervalDisables) {
 namespace {
 // Handles from HCI captures of the official app (2026-04-25).
 std::vector<GattDbEntry> fw227_gatt_db() {
-  // DF36450GSP: decl, value, CCCD per characteristic.
+  // DF36450GSP: decl, value, CCCD per characteristic; props 0x3E.
   return {
-      make_char_entry(0xD4, 13), make_desc_entry(0x2902, 14),
-      make_char_entry(0xD7, 16), make_desc_entry(0x2902, 17),
-      make_char_entry(0xD8, 19), make_desc_entry(0x2902, 20),
-      make_char_entry(0xD5, 22), make_desc_entry(0x2902, 23),
-      make_char_entry(0xD6, 25), make_desc_entry(0x2902, 26),
+      make_char_entry(0xD4, 13, 0x3E), make_desc_entry(0x2902, 14),
+      make_char_entry(0xD7, 16, 0x3E), make_desc_entry(0x2902, 17),
+      make_char_entry(0xD8, 19, 0x3E), make_desc_entry(0x2902, 20),
+      make_char_entry(0xD5, 22, 0x3E), make_desc_entry(0x2902, 23),
+      make_char_entry(0xD6, 25, 0x3E), make_desc_entry(0x2902, 26),
   };
 }
 std::vector<GattDbEntry> fw85_gatt_db() {
-  // SO3050PESP: decl, value, one more descriptor, CCCD.
+  // SO3050PESP: decl, value, one more descriptor, CCCD; props 0x2A.
   return {
-      make_char_entry(0xD5, 3),   make_desc_entry(0x2901, 4),
-      make_desc_entry(0x2902, 5), make_char_entry(0xD6, 7),
-      make_desc_entry(0x2901, 8), make_desc_entry(0x2902, 9),
+      make_char_entry(0xD5, 3, 0x2A), make_desc_entry(0x2901, 4),
+      make_desc_entry(0x2902, 5),     make_char_entry(0xD6, 7, 0x2A),
+      make_desc_entry(0x2901, 8),     make_desc_entry(0x2902, 9),
   };
 }
 } // namespace
@@ -1332,8 +1332,9 @@ TEST_F(HubFixture, Cccd_Fw227LayoutWritesValuePlusOne) {
   ASSERT_GE(transport_.write_count(), 2u);
   EXPECT_EQ(transport_.write_at(0).handle, 23);
   EXPECT_EQ(transport_.write_at(1).handle, 26);
+  // Notify-capable characteristic: notifications, like the official app.
   EXPECT_EQ(transport_.write_at(1).bytes,
-            std::vector<std::uint8_t>({0x02, 0x00}));
+            std::vector<std::uint8_t>({0x01, 0x00}));
 }
 
 TEST_F(HubFixture, Cccd_Fw85LayoutWritesValuePlusTwo) {
@@ -1344,6 +1345,9 @@ TEST_F(HubFixture, Cccd_Fw85LayoutWritesValuePlusTwo) {
   ASSERT_GE(transport_.write_count(), 2u);
   EXPECT_EQ(transport_.write_at(0).handle, 5);
   EXPECT_EQ(transport_.write_at(1).handle, 9);
+  // Indicate-only characteristic.
+  EXPECT_EQ(transport_.write_at(1).bytes,
+            std::vector<std::uint8_t>({0x02, 0x00}));
 }
 
 TEST_F(HubFixture, Cccd_FastReconnectReusesDiscoveredHandles) {
@@ -1358,8 +1362,8 @@ TEST_F(HubFixture, Cccd_FastReconnectReusesDiscoveredHandles) {
   transport_.set_connected(true);
   hub_.handle_connected();
   scheduler_.advance_by(1500);
-  EXPECT_TRUE(transport_.wrote_command_to(26, std::string("\x02", 1)));
-  EXPECT_FALSE(transport_.wrote_command_to(27, std::string("\x02", 1)));
+  EXPECT_TRUE(transport_.wrote_command_to(26, std::string("\x01", 1)));
+  EXPECT_FALSE(transport_.wrote_command_to(27, std::string("\x01", 1)));
 }
 
 TEST_F(HubFixture, Cccd_ResetPairingClearsHandles) {
