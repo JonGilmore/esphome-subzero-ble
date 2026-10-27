@@ -165,7 +165,7 @@ subzero_appliance:
     pin: "654321"
     poll_offset: 5s                # <1>
 ----
-<1> When running multiple appliances on one ESP32, stagger their poll cycles with `poll_offset` (default `0s`) - e.g. `0s / 5s / 10s` - to avoid concurrent-bonding races on the shared BLE radio. See link:docs/advanced.adoc#reconnect-logic[Reconnect Logic].
+<1> When running multiple appliances on one ESP32, stagger their 60-second poll cycles with `poll_offset` (default `0s`) - e.g. `0s / 5s / 10s` - so they do not poll at the same moment. It does not delay the connect sequence. See link:docs/advanced.adoc#reconnect-logic[Reconnect Logic].
 
 TIP: Two more per-appliance options help when a link is unstable: `connection_diagnostics: true` enables entities that count drops and lost door events, and `session_refresh_interval` (default `18min`, `0s` to turn off) sets the scheduled reconnect. See link:docs/advanced.adoc#connection-diagnostics[Connection Diagnostics].
 

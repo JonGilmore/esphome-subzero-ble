@@ -22,7 +22,6 @@ void ApplianceBase::setup() {
   h->set_transport(&transport_);
   h->set_scheduler(&scheduler_);
   h->set_name(name_str_);
-  h->set_poll_offset_ms(poll_offset_ms_);
   h->set_session_refresh_interval_ms(session_refresh_interval_ms_);
   h->set_metrics_callback([this]() { publish_metrics_(); });
   if (!pending_pin_.empty()) {
@@ -42,9 +41,12 @@ void ApplianceBase::setup() {
         [pi](const std::string &pin) { pi->publish_state(pin); });
   }
 
-  this->set_interval("subzero_periodic_poll", 60000, [this]() {
-    hub()->do_periodic_poll();
-    publish_data_age_();
+  // poll_offset staggers the 60 s polls of appliances sharing this ESP32.
+  this->set_timeout("subzero_poll_offset", poll_offset_ms_, [this]() {
+    this->set_interval("subzero_periodic_poll", 60000, [this]() {
+      hub()->do_periodic_poll();
+      publish_data_age_();
+    });
   });
 
   ESP_LOGCONFIG(TAG, "[%s] Hub setup complete (poll_offset=%dms)",
@@ -94,7 +96,8 @@ void ApplianceBase::gattc_event_handler(esp_gattc_cb_event_t event,
   }
   case ESP_GATTC_REG_FOR_NOTIFY_EVT:
     if (param->reg_for_notify.status != ESP_GATT_OK) {
-      ESP_LOGW(TAG, "[%s] Notify registration for handle 0x%04X failed "
+      ESP_LOGW(TAG,
+               "[%s] Notify registration for handle 0x%04X failed "
                "(status=0x%02X)",
                name_str_.c_str(), param->reg_for_notify.handle,
                static_cast<int>(param->reg_for_notify.status));

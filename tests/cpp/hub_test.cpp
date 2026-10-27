@@ -275,7 +275,7 @@ TEST_F(HubFixture, FastReconnect_SkipsPostBondWhenHandlesCached) {
   EXPECT_TRUE(hub_.fast_reconnect_running());
   EXPECT_FALSE(hub_.post_bond_running());
 
-  // Advance through fast_reconnect: poll_offset (0) + 1500ms.
+  // Advance through fast_reconnect: encryption request + 1500ms.
   scheduler_.advance_by(1500);
   EXPECT_GT(transport_.encryption_request_count(), encryption_before);
   EXPECT_FALSE(hub_.fast_reconnect_running());
@@ -1184,6 +1184,19 @@ TEST_F(HubFixture, Diag_NoSnapshotAfterWatchCountsOnce) {
   hub_.handle_disconnected(0x08);
   EXPECT_EQ(hub_.sessions_without_snapshot(), 1)
       << "The drop must not count the same connection a second time.";
+}
+
+TEST_F(HubFixture, Diag_NoSnapshotRetriesUnlockAndPollOnce) {
+  hub_.set_stored_pin("12345");
+  run_to_ready_();
+  transport_.clear_writes();
+  scheduler_.advance_by(SubzeroHub::kSnapshotWarnMs);
+  EXPECT_TRUE(transport_.wrote_command_to(hub_.d5_handle(), "unlock_channel"));
+  EXPECT_TRUE(transport_.wrote_command_to(hub_.d6_handle(), "unlock_channel"));
+  EXPECT_TRUE(transport_.wrote_command_to(hub_.d6_handle(), "get_async"));
+  transport_.clear_writes();
+  scheduler_.advance_by(SubzeroHub::kSnapshotWarnMs);
+  EXPECT_EQ(transport_.write_count(), 0u) << "Only one early retry.";
 }
 
 TEST_F(HubFixture, Diag_DropBeforeSnapshotCounts) {

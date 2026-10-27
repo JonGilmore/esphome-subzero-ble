@@ -118,9 +118,6 @@ public:
   void set_stored_pin(const std::string &pin);
   void set_pin_confirmed(bool v) { pin_confirmed_ = v; }
   void set_debug_mode(bool enabled) { debug_mode_ = enabled; }
-  // Per-appliance stagger to avoid concurrent bonding races on shared
-  // ESP32. Translated from the `poll_offset` substitution.
-  void set_poll_offset_ms(std::uint32_t ms) { poll_offset_ms_ = ms; }
   // 0 disables the scheduled session refresh.
   void set_session_refresh_interval_ms(std::uint32_t ms) {
     session_refresh_interval_ms_ = ms;
@@ -304,7 +301,6 @@ private:
   int fast_retries_ = 0;
   int poll_miss_ = 0;
   bool debug_mode_ = false;
-  std::uint32_t poll_offset_ms_ = 0;
   esphome::subzero_protocol::PollVerb poll_verb_ =
       esphome::subzero_protocol::PollVerb::kGetAsync;
 

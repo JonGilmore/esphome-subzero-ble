@@ -449,10 +449,12 @@ void SubzeroHub::do_periodic_poll() {
 // post_bond — 5-stage discovery ladder
 // =============================================================================
 
+// The connect chains never wait for poll_offset: Wine/Back fridges whose
+// first command came 15-30 s after connect never answered (2026-10-26),
+// while the official app writes within about a second.
 void SubzeroHub::start_post_bond_() {
   post_bond_running_ = true;
-  scheduler_->set_timeout(kTimeoutPostBondInitial,
-                          poll_offset_ms_ + kPostBondInitialDelayMs,
+  scheduler_->set_timeout(kTimeoutPostBondInitial, kPostBondInitialDelayMs,
                           [this]() { post_bond_initial_(); });
 }
 
@@ -909,10 +911,20 @@ void SubzeroHub::snapshot_watch_expired_() {
   sessions_without_snapshot_ += 1;
   HUB_LOGW("conn",
            "[%s] No snapshot %u s after get_async on connection %d "
-           "(pushes=%d)",
+           "(pushes=%d), sending unlock + %s again",
            name_.c_str(), static_cast<unsigned>(kSnapshotWarnMs / 1000),
-           sessions_, session_pushes_);
+           sessions_, session_pushes_,
+           poll_verb_ == esphome::subzero_protocol::PollVerb::kGet
+               ? "get"
+               : "get_async");
   notify_metrics_();
+  // One early retry instead of waiting for the next 60 s poll, in case a
+  // write was dropped while other appliances on this ESP32 were busy.
+  if (transport_ != nullptr && transport_->connected() && d6_handle_ > 0) {
+    write_unlock_channel_(d5_handle_);
+    write_unlock_channel_(d6_handle_);
+    write_poll_command_(d6_handle_);
+  }
 }
 
 void SubzeroHub::note_door_(const char *key, bool open) {
@@ -932,7 +944,7 @@ void SubzeroHub::notify_metrics_() {
 
 void SubzeroHub::start_fast_reconnect_() {
   fast_reconnect_running_ = true;
-  scheduler_->set_timeout(kTimeoutFastReconnect, poll_offset_ms_, [this]() {
+  scheduler_->set_timeout(kTimeoutFastReconnect, 0, [this]() {
     transport_->request_encryption();
     HUB_LOGI("ble", "[%s] Fast reconnect: encryption requested", name_.c_str());
     scheduler_->set_timeout(kTimeoutFastReconnect, kFastReconnectEncryptDelayMs,

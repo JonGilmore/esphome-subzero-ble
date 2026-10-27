@@ -128,9 +128,11 @@ About 18 minutes after each connect, the integration disconnects on purpose and 
 
 Missed polls (`miss` in the log) are diagnostic only. They never force a reconnect, because fw 8.5 appliances keep pushing data while their polls are silent.
 
-=== Boot Stagger via `poll_offset`
+=== Poll Stagger via `poll_offset`
 
-`poll_offset` (config field per appliance, default `0s`) is applied at the top of `periodic_poll`, `post_bond`, and `fast_reconnect`. Setting per-appliance values like `0s / 5s / 10s` on a multi-appliance ESP32 spreads the bonding chains in time so the concurrent-bonding race doesn't trigger in the first place.
+`poll_offset` (config field per appliance, default `0s`) delays the start of the appliance's 60-second poll cycle, so appliances that share an ESP32 do not poll at the same moment. It does not delay the connect sequence: subscribe, unlock and the first `get_async` always start right after the link comes up. Some fridges never answered when the first command came 15-30 seconds after the connect.
+
+If no snapshot arrives within 15 seconds of `get_async`, the integration sends unlock and `get_async` once more, in case a write was lost while other appliances were busy.
 
 === Log Format
 
@@ -154,7 +156,7 @@ Separately, when the BLE connection drops and `auto_connect: true` reconnects, t
 
 * `interval: 60s` in the hub - poll cadence. Shortening to 30s halves detection time and doubles radio utilization (still single-digit percent for typical configs).
 * `session_refresh_interval` per appliance - scheduled reconnect, default `18min`, `0s` turns it off.
-* `poll_offset` per appliance - boot stagger. `0s` for first, `5s` or `10s` for subsequent appliances on the same ESP32.
+* `poll_offset` per appliance - poll stagger. `0s` for first, `5s` or `10s` for subsequent appliances on the same ESP32.
 
 [[connection-diagnostics]]
 === Connection Diagnostics
