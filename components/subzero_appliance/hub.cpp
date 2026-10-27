@@ -540,6 +540,24 @@ void SubzeroHub::post_bond_giveup_() {
 
 void SubzeroHub::update_handles_from_db_() {
   auto entries = transport_->read_gatt_db();
+  // A characteristic's CCCD is the 0x2902 descriptor between its value
+  // handle and the next characteristic's value handle.
+  auto find_cccd = [&entries](std::uint16_t value_handle) -> std::uint16_t {
+    std::uint32_t next = 0x10000;
+    for (const auto &e : entries) {
+      if (e.type == GattDbEntry::kCharacteristic && e.handle > value_handle &&
+          e.handle < next)
+        next = e.handle;
+    }
+    std::uint16_t best = 0;
+    for (const auto &e : entries) {
+      if (e.type == GattDbEntry::kDescriptor && e.uuid16 == 0x2902 &&
+          e.handle > value_handle && e.handle < next &&
+          (best == 0 || e.handle < best))
+        best = e.handle;
+    }
+    return best;
+  };
   for (const auto &e : entries) {
     if (e.type != GattDbEntry::kCharacteristic)
       continue;
@@ -560,6 +578,10 @@ void SubzeroHub::update_handles_from_db_() {
       break;
     }
   }
+  if (d5_handle_ > 0 && d5_cccd_ == 0)
+    d5_cccd_ = find_cccd(d5_handle_);
+  if (d6_handle_ > 0 && d6_cccd_ == 0)
+    d6_cccd_ = find_cccd(d6_handle_);
 }
 
 // =============================================================================
@@ -597,14 +619,22 @@ void SubzeroHub::subscribe_register_and_cccd_() {
              d6_handle_);
   }
 
+  // ESPHome only writes the CCCD itself while it still holds the service
+  // list, which it frees right after discovery, so this write is the one
+  // that enables notifications. Without a CCCD in the db, fall back to the
+  // fw 8.5 layout (value handle + 2).
   static constexpr std::uint8_t kCccdOn[2] = {0x02, 0x00};
-  transport_->write(static_cast<std::uint16_t>(d5_handle_ + 2), kCccdOn,
-                    sizeof(kCccdOn));
-  HUB_LOGI("ble", "[%s] CCCD write D5 (h=%d)", name_.c_str(), d5_handle_ + 2);
+  const std::uint16_t d5_cccd =
+      d5_cccd_ > 0 ? d5_cccd_ : static_cast<std::uint16_t>(d5_handle_ + 2);
+  transport_->write(d5_cccd, kCccdOn, sizeof(kCccdOn));
+  HUB_LOGI("ble", "[%s] CCCD write D5 (h=%d%s)", name_.c_str(), d5_cccd,
+           d5_cccd_ > 0 ? "" : ", guessed");
   if (d6_handle_ > 0) {
-    transport_->write(static_cast<std::uint16_t>(d6_handle_ + 2), kCccdOn,
-                      sizeof(kCccdOn));
-    HUB_LOGI("ble", "[%s] CCCD write D6 (h=%d)", name_.c_str(), d6_handle_ + 2);
+    const std::uint16_t d6_cccd =
+        d6_cccd_ > 0 ? d6_cccd_ : static_cast<std::uint16_t>(d6_handle_ + 2);
+    transport_->write(d6_cccd, kCccdOn, sizeof(kCccdOn));
+    HUB_LOGI("ble", "[%s] CCCD write D6 (h=%d%s)", name_.c_str(), d6_cccd,
+             d6_cccd_ > 0 ? "" : ", guessed");
   }
   json_buf_.clear();
 
@@ -1063,6 +1093,8 @@ void SubzeroHub::clear_handles_() {
   d5_handle_ = 0;
   d6_handle_ = 0;
   d7_handle_ = 0;
+  d5_cccd_ = 0;
+  d6_cccd_ = 0;
 }
 
 void SubzeroHub::clear_session_state_() {

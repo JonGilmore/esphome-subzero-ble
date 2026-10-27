@@ -18,6 +18,7 @@ using esphome::subzero_appliance::BleResult;
 using esphome::subzero_appliance::FakeScheduler;
 using esphome::subzero_appliance::GattDbEntry;
 using esphome::subzero_appliance::make_char_entry;
+using esphome::subzero_appliance::make_desc_entry;
 using esphome::subzero_appliance::MockBleTransport;
 using esphome::subzero_appliance::SubzeroHub;
 
@@ -1293,4 +1294,81 @@ TEST_F(HubFixture, SessionRefresh_ZeroIntervalDisables) {
   hub_.set_stored_pin("12345");
   run_to_ready_();
   EXPECT_FALSE(scheduler_.has_pending("session_refresh"));
+}
+
+// =============================================================================
+// CCCD handles come from the GATT db (handle layout varies by firmware)
+// =============================================================================
+
+namespace {
+// Handles from HCI captures of the official app (2026-04-25).
+std::vector<GattDbEntry> fw227_gatt_db() {
+  // DF36450GSP: decl, value, CCCD per characteristic.
+  return {
+      make_char_entry(0xD4, 13), make_desc_entry(0x2902, 14),
+      make_char_entry(0xD7, 16), make_desc_entry(0x2902, 17),
+      make_char_entry(0xD8, 19), make_desc_entry(0x2902, 20),
+      make_char_entry(0xD5, 22), make_desc_entry(0x2902, 23),
+      make_char_entry(0xD6, 25), make_desc_entry(0x2902, 26),
+  };
+}
+std::vector<GattDbEntry> fw85_gatt_db() {
+  // SO3050PESP: decl, value, one more descriptor, CCCD.
+  return {
+      make_char_entry(0xD5, 3),   make_desc_entry(0x2901, 4),
+      make_desc_entry(0x2902, 5), make_char_entry(0xD6, 7),
+      make_desc_entry(0x2901, 8), make_desc_entry(0x2902, 9),
+  };
+}
+} // namespace
+
+TEST_F(HubFixture, Cccd_Fw227LayoutWritesValuePlusOne) {
+  hub_.set_stored_pin("12345");
+  transport_.set_gatt_db(fw227_gatt_db());
+  hub_.handle_connected();
+  scheduler_.advance_by(1500);
+  EXPECT_EQ(hub_.d5_cccd(), 23);
+  EXPECT_EQ(hub_.d6_cccd(), 26);
+  ASSERT_GE(transport_.write_count(), 2u);
+  EXPECT_EQ(transport_.write_at(0).handle, 23);
+  EXPECT_EQ(transport_.write_at(1).handle, 26);
+  EXPECT_EQ(transport_.write_at(1).bytes,
+            std::vector<std::uint8_t>({0x02, 0x00}));
+}
+
+TEST_F(HubFixture, Cccd_Fw85LayoutWritesValuePlusTwo) {
+  hub_.set_stored_pin("12345");
+  transport_.set_gatt_db(fw85_gatt_db());
+  hub_.handle_connected();
+  scheduler_.advance_by(1500);
+  ASSERT_GE(transport_.write_count(), 2u);
+  EXPECT_EQ(transport_.write_at(0).handle, 5);
+  EXPECT_EQ(transport_.write_at(1).handle, 9);
+}
+
+TEST_F(HubFixture, Cccd_FastReconnectReusesDiscoveredHandles) {
+  hub_.set_stored_pin("12345");
+  transport_.set_gatt_db(fw227_gatt_db());
+  hub_.handle_connected();
+  scheduler_.advance_by(3000);
+  ASSERT_EQ(hub_.d6_cccd(), 26);
+  hub_.handle_disconnected(0x08);
+  transport_.set_gatt_db({}); // nothing to read on the fast path
+  transport_.clear_writes();
+  transport_.set_connected(true);
+  hub_.handle_connected();
+  scheduler_.advance_by(1500);
+  EXPECT_TRUE(transport_.wrote_command_to(26, std::string("\x02", 1)));
+  EXPECT_FALSE(transport_.wrote_command_to(27, std::string("\x02", 1)));
+}
+
+TEST_F(HubFixture, Cccd_ResetPairingClearsHandles) {
+  hub_.set_stored_pin("12345");
+  transport_.set_gatt_db(fw227_gatt_db());
+  hub_.handle_connected();
+  scheduler_.advance_by(3000);
+  ASSERT_EQ(hub_.d6_cccd(), 26);
+  hub_.press_reset_pairing();
+  EXPECT_EQ(hub_.d5_cccd(), 0);
+  EXPECT_EQ(hub_.d6_cccd(), 0);
 }

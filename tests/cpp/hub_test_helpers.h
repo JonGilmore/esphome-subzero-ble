@@ -198,5 +198,14 @@ inline GattDbEntry make_char_entry(std::uint8_t uuid_first_byte,
   return e;
 }
 
+// Convenience: build a DESCRIPTOR entry with a 16-bit UUID.
+inline GattDbEntry make_desc_entry(std::uint16_t uuid16, std::uint16_t handle) {
+  GattDbEntry e;
+  e.type = GattDbEntry::kDescriptor;
+  e.uuid16 = uuid16;
+  e.handle = handle;
+  return e;
+}
+
 } // namespace subzero_appliance
 } // namespace esphome

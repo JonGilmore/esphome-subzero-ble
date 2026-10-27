@@ -173,6 +173,9 @@ public:
   std::uint16_t d5_handle() const { return d5_handle_; }
   std::uint16_t d6_handle() const { return d6_handle_; }
   std::uint16_t d7_handle() const { return d7_handle_; }
+  // 0 until found in the GATT db.
+  std::uint16_t d5_cccd() const { return d5_cccd_; }
+  std::uint16_t d6_cccd() const { return d6_cccd_; }
   int phase() const { return phase_; }
   bool debug_mode() const { return debug_mode_; }
   bool post_bond_running() const { return post_bond_running_; }
@@ -288,6 +291,10 @@ private:
   std::uint16_t d5_handle_ = 0;
   std::uint16_t d6_handle_ = 0;
   std::uint16_t d7_handle_ = 0;
+  // CCCD descriptor handles. The offset from the value handle depends on
+  // firmware (+2 on fw 8.5, +1 on fw 2.27), so read them from the db.
+  std::uint16_t d5_cccd_ = 0;
+  std::uint16_t d6_cccd_ = 0;
   std::string stored_pin_;
   bool pin_confirmed_ = true; // matches YAML's restore_value:true initial
   bool poll_ok_ = false;
