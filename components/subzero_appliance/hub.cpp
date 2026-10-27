@@ -105,6 +105,8 @@ void SubzeroHub::handle_disconnected(int reason) {
   if (transport_ == nullptr || scheduler_ == nullptr)
     return;
   end_session_(reason);
+  link_encrypted_ = false;
+  cccd_before_encryption_ = false;
   scheduler_->cancel_timeout(kTimeoutSnapshotWatch);
   json_buf_.clear();
   scheduler_->cancel_timeout(kTimeoutPostBondInitial);
@@ -225,9 +227,16 @@ void SubzeroHub::handle_auth_complete(bool success, int fail_reason,
                                       int auth_mode) {
   if (success) {
     pairing_failed_ = false;
+    link_encrypted_ = true;
     HUB_LOGI("ble", "[%s] Link encrypted (auth_mode=0x%02X: bond=%d mitm=%d)",
              name_.c_str(), auth_mode, (auth_mode & 0x01) ? 1 : 0,
              (auth_mode & 0x04) ? 1 : 0);
+    if (cccd_before_encryption_ && transport_ != nullptr && d5_handle_ > 0) {
+      cccd_before_encryption_ = false;
+      HUB_LOGI("ble", "[%s] Resending CCCD writes after encryption",
+               name_.c_str());
+      write_cccds_();
+    }
     return;
   }
   pairing_failed_ = true;
@@ -641,6 +650,26 @@ void SubzeroHub::subscribe_register_and_cccd_() {
              d6_handle_);
   }
 
+  write_cccds_();
+  // The appliance refuses CCCD writes until the link is encrypted, and
+  // encryption can take longer than kPostEncryptionDelayMs. Send them again
+  // from handle_auth_complete() in that case.
+  cccd_before_encryption_ = !link_encrypted_;
+  if (cccd_before_encryption_) {
+    HUB_LOGI("ble", "[%s] CCCD writes sent before encryption; will resend",
+             name_.c_str());
+  }
+  // The app writes an empty value to D5 on every connect before any
+  // command; do the same in case it resets the appliance's command parser.
+  static constexpr std::uint8_t kEmpty[1] = {0};
+  transport_->write(d5_handle_, kEmpty, 0);
+  json_buf_.clear();
+
+  scheduler_->set_timeout(kTimeoutSubscribeUnlock, kSubscribeUnlockDelayMs,
+                          [this]() { subscribe_unlock_(); });
+}
+
+void SubzeroHub::write_cccds_() {
   // ESPHome only writes the CCCD itself while it still holds the service
   // list, which it frees right after discovery, so this write is the one
   // that enables notifications. Without a CCCD in the db, fall back to the
@@ -662,14 +691,6 @@ void SubzeroHub::subscribe_register_and_cccd_() {
   write_cccd("D5", d5_handle_, d5_cccd_, d5_props_);
   if (d6_handle_ > 0)
     write_cccd("D6", d6_handle_, d6_cccd_, d6_props_);
-  // The app writes an empty value to D5 on every connect before any
-  // command; do the same in case it resets the appliance's command parser.
-  static constexpr std::uint8_t kEmpty[1] = {0};
-  transport_->write(d5_handle_, kEmpty, 0);
-  json_buf_.clear();
-
-  scheduler_->set_timeout(kTimeoutSubscribeUnlock, kSubscribeUnlockDelayMs,
-                          [this]() { subscribe_unlock_(); });
 }
 
 void SubzeroHub::subscribe_unlock_() {

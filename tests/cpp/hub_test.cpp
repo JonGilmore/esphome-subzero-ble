@@ -1453,3 +1453,53 @@ TEST_F(HubFixture, Pairing_OtherFailuresKeepKeySet) {
   hub_.handle_auth_complete(false, 0x61, 0); // encryption failed
   EXPECT_FALSE(hub_.ltk_only());
 }
+
+// =============================================================================
+// CCCD writes that race encryption are sent again once the link is encrypted
+// =============================================================================
+
+TEST_F(HubFixture, Cccd_ResentWhenEncryptionCompletesAfterSubscribe) {
+  hub_.set_stored_pin("12345");
+  transport_.set_gatt_db(fw227_gatt_db());
+  hub_.handle_connected();
+  scheduler_.advance_by(1500); // CCCDs written, link not encrypted yet
+  ASSERT_TRUE(transport_.wrote_command_to(26, std::string("\x01", 1)));
+  transport_.clear_writes();
+  hub_.handle_auth_complete(true, 0, 0x01);
+  ASSERT_EQ(transport_.write_count(), 2u);
+  EXPECT_EQ(transport_.write_at(0).handle, 23);
+  EXPECT_EQ(transport_.write_at(1).handle, 26);
+  EXPECT_EQ(transport_.write_at(1).bytes,
+            std::vector<std::uint8_t>({0x01, 0x00}));
+  // Only once per connection.
+  transport_.clear_writes();
+  hub_.handle_auth_complete(true, 0, 0x01);
+  EXPECT_EQ(transport_.write_count(), 0u);
+}
+
+TEST_F(HubFixture, Cccd_NotResentWhenEncryptedBeforeSubscribe) {
+  hub_.set_stored_pin("12345");
+  transport_.set_gatt_db(fw227_gatt_db());
+  hub_.handle_auth_complete(true, 0, 0x01);
+  hub_.handle_connected();
+  scheduler_.advance_by(1500);
+  transport_.clear_writes();
+  hub_.handle_auth_complete(true, 0, 0x01); // e.g. a later re-encryption
+  EXPECT_EQ(transport_.write_count(), 0u);
+}
+
+TEST_F(HubFixture, Cccd_EncryptionStateResetsOnDisconnect) {
+  hub_.set_stored_pin("12345");
+  transport_.set_gatt_db(fw227_gatt_db());
+  hub_.handle_auth_complete(true, 0, 0x01);
+  hub_.handle_connected();
+  scheduler_.advance_by(3000);
+  hub_.handle_disconnected(0x08);
+  // Fast reconnect subscribes before this link's AUTH_CMPL arrives.
+  transport_.set_connected(true);
+  hub_.handle_connected();
+  scheduler_.advance_by(1500);
+  transport_.clear_writes();
+  hub_.handle_auth_complete(true, 0, 0x01);
+  EXPECT_TRUE(transport_.wrote_command_to(26, std::string("\x01", 1)));
+}

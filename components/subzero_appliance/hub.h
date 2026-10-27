@@ -234,6 +234,7 @@ private:
   // ---- subscribe stages ----
   void start_subscribe_();
   void subscribe_register_and_cccd_();
+  void write_cccds_();
   void subscribe_unlock_();
   void subscribe_initial_get_();
 
@@ -325,6 +326,11 @@ private:
 
   // Set by a failed pairing; cleared on success or disconnect.
   bool pairing_failed_ = false;
+  // Set by a successful AUTH_CMPL; cleared on disconnect.
+  bool link_encrypted_ = false;
+  // CCCD writes went out before the link was encrypted (and were likely
+  // refused); handle_auth_complete() sends them again.
+  bool cccd_before_encryption_ = false;
   // Pair with LTK-only key distribution. Starts false (full keys); flips on
   // every SMP 0x08 pairing failure, so each module settles on what it takes.
   bool ltk_only_ = false;
