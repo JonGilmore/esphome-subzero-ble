@@ -47,15 +47,18 @@ public:
     esp_ble_gattc_send_mtu_req(client_->get_gattc_if(), client_->get_conn_id());
   }
 
-  void request_encryption() override {
+  void request_encryption(bool ltk_only) override {
     if (client_ == nullptr)
       return;
     std::uint8_t addr[6];
     std::memcpy(addr, client_->get_remote_bda(), 6);
-    // LTK-only key distribution: CONAPPWM fw 5.13 fails pairing (reason
-    // 85) if IRK/CSRK are also requested (#106). Sub-Zero modules use
-    // public addresses, so nothing needs them. Global to the BLE stack.
-    std::uint8_t keys = ESP_BLE_ENC_KEY_MASK;
+    // CONAPPWM fw 5.13 fails pairing (reason 85) unless only the LTK is
+    // distributed (#106); fw 2.27 modules pair LTK-only but then ignore
+    // every command. Global to the BLE stack, so set it on every request.
+    std::uint8_t keys =
+        ltk_only ? ESP_BLE_ENC_KEY_MASK
+                 : (ESP_BLE_ENC_KEY_MASK | ESP_BLE_ID_KEY_MASK |
+                    ESP_BLE_CSR_KEY_MASK);
     esp_ble_gap_set_security_param(ESP_BLE_SM_SET_INIT_KEY, &keys,
                                    sizeof(keys));
     esp_ble_gap_set_security_param(ESP_BLE_SM_SET_RSP_KEY, &keys,

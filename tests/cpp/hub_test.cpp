@@ -1420,3 +1420,36 @@ TEST_F(HubFixture, Commands_EmptyD5WriteBeforeUnlock) {
   EXPECT_TRUE(last.bytes.empty());
   EXPECT_FALSE(transport_.wrote_command_to(hub_.d5_handle(), "unlock"));
 }
+
+// =============================================================================
+// Pairing key distribution: full keys by default, LTK-only after SMP 0x08
+// =============================================================================
+
+TEST_F(HubFixture, Pairing_DefaultsToFullKeys) {
+  hub_.set_stored_pin("12345");
+  run_to_ready_();
+  ASSERT_GE(transport_.encryption_request_count(), 1u);
+  EXPECT_FALSE(transport_.last_ltk_only());
+}
+
+TEST_F(HubFixture, Pairing_Smp08FlipsToLtkOnlyAndBack) {
+  hub_.set_stored_pin("12345");
+  run_to_ready_();
+  hub_.handle_auth_complete(false, 0x55, 0);
+  EXPECT_TRUE(hub_.ltk_only());
+  hub_.handle_disconnected(0x13);
+  transport_.set_connected(true);
+  hub_.handle_connected();
+  scheduler_.advance_by(100);
+  EXPECT_TRUE(transport_.last_ltk_only());
+  // The other key set failed the same way: go back.
+  hub_.handle_auth_complete(false, 0x55, 0);
+  EXPECT_FALSE(hub_.ltk_only());
+}
+
+TEST_F(HubFixture, Pairing_OtherFailuresKeepKeySet) {
+  hub_.set_stored_pin("12345");
+  run_to_ready_();
+  hub_.handle_auth_complete(false, 0x61, 0); // encryption failed
+  EXPECT_FALSE(hub_.ltk_only());
+}

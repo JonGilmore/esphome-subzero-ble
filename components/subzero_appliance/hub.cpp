@@ -237,6 +237,13 @@ void SubzeroHub::handle_auth_complete(bool success, int fail_reason,
            "so the appliance will refuse every command.",
            name_.c_str(), fail_reason, why);
   publish_status_(std::string("Pairing failed (") + why + ")");
+  // SMP 0x08 at the confirm check is how CONAPPWM fw 5.13 rejects full key
+  // distribution; try the other key set on the next connection.
+  if (fail_reason == 0x55) {
+    ltk_only_ = !ltk_only_;
+    HUB_LOGW("ble", "[%s] Next pairing will distribute %s", name_.c_str(),
+             ltk_only_ ? "the LTK only" : "LTK + IRK + CSRK");
+  }
 }
 
 std::uint32_t SubzeroHub::handle_passkey_request() {
@@ -462,7 +469,7 @@ void SubzeroHub::post_bond_initial_() {
 
   HUB_LOGI("ble", "[%s] D5 %s. Requesting encryption...", name_.c_str(),
            d5_handle_ > 0 ? "found immediately" : "not yet visible");
-  transport_->request_encryption();
+  transport_->request_encryption(ltk_only_);
   if (d5_handle_ > 0) {
     publish_status_("D5 found! Encrypting...");
   } else {
@@ -948,7 +955,7 @@ void SubzeroHub::notify_metrics_() {
 void SubzeroHub::start_fast_reconnect_() {
   fast_reconnect_running_ = true;
   scheduler_->set_timeout(kTimeoutFastReconnect, 0, [this]() {
-    transport_->request_encryption();
+    transport_->request_encryption(ltk_only_);
     HUB_LOGI("ble", "[%s] Fast reconnect: encryption requested", name_.c_str());
     scheduler_->set_timeout(kTimeoutFastReconnect, kFastReconnectEncryptDelayMs,
                             [this]() { fast_reconnect_subscribe_(); });

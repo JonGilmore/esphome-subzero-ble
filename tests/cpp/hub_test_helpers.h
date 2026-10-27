@@ -101,7 +101,10 @@ public:
     connected_ = false;
   }
   void request_mtu() override { ++mtu_request_count_; }
-  void request_encryption() override { ++encryption_request_count_; }
+  void request_encryption(bool ltk_only) override {
+    ++encryption_request_count_;
+    last_ltk_only_ = ltk_only;
+  }
   void remove_bond() override { ++remove_bond_count_; }
   void cache_refresh() override { ++cache_refresh_count_; }
   void cache_clean() override { ++cache_clean_count_; }
@@ -146,6 +149,7 @@ public:
   std::size_t encryption_request_count() const {
     return encryption_request_count_;
   }
+  bool last_ltk_only() const { return last_ltk_only_; }
   std::size_t remove_bond_count() const { return remove_bond_count_; }
   std::size_t cache_refresh_count() const { return cache_refresh_count_; }
   std::size_t cache_clean_count() const { return cache_clean_count_; }
@@ -188,6 +192,7 @@ public:
 
 private:
   bool connected_ = false;
+  bool last_ltk_only_ = false;
   std::vector<WriteCall> writes_;
   std::vector<GattDbEntry> gatt_db_;
   std::vector<std::uint16_t> notify_subscribed_handles_;

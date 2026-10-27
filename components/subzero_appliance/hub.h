@@ -180,6 +180,7 @@ public:
   bool subscribe_running() const { return subscribe_running_; }
   bool fast_reconnect_running() const { return fast_reconnect_running_; }
   bool pairing_failed() const { return pairing_failed_; }
+  bool ltk_only() const { return ltk_only_; }
   const std::string &stored_pin() const { return stored_pin_; }
   esphome::subzero_protocol::PollVerb poll_verb() const { return poll_verb_; }
   void set_poll_verb(esphome::subzero_protocol::PollVerb v) { poll_verb_ = v; }
@@ -324,6 +325,9 @@ private:
 
   // Set by a failed pairing; cleared on success or disconnect.
   bool pairing_failed_ = false;
+  // Pair with LTK-only key distribution. Starts false (full keys); flips on
+  // every SMP 0x08 pairing failure, so each module settles on what it takes.
+  bool ltk_only_ = false;
 
   // Last value handed to status_cb_, used to drop duplicate publishes.
   std::string last_status_;

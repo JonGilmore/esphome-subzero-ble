@@ -64,8 +64,9 @@ public:
   // 244 bytes; default 23 fragments responses heavily.
   virtual void request_mtu() = 0;
 
-  // Encryption / bonding.
-  virtual void request_encryption() = 0;
+  // Encryption / bonding. `ltk_only` limits the Pairing Request's key
+  // distribution to the LTK (needed by CONAPPWM fw 5.13, #106).
+  virtual void request_encryption(bool ltk_only) = 0;
   virtual void remove_bond() = 0;
 
   // GATT cache management. cache_refresh re-runs discovery without
