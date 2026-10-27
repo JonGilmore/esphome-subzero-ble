@@ -26,6 +26,7 @@
 #include "ble_transport.h"
 #include "scheduler.h"
 
+#include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <map>
@@ -270,6 +271,8 @@ private:
   void log_chunked_debug_(const std::string &msg);
   void write_unlock_channel_(std::uint16_t handle);
   void write_poll_command_(std::uint16_t handle);
+  // Writes a command in kCommandChunkBytes pieces; returns the first error.
+  BleResult write_command_(std::uint16_t handle, const std::string &cmd);
   bool handle_lacking_properties_(const std::string &msg);
   void write_set_property_(const std::string &key,
                            const std::string &json_value);
@@ -383,6 +386,7 @@ private:
   static constexpr std::uint32_t kResetPairingDisconnectDelayMs = 1000;
   static constexpr int kStaleBondsThreshold = 3;
   static constexpr std::uint32_t kVerbFallbackRetryDelayMs = 1000;
+  static constexpr std::size_t kCommandChunkBytes = 20;
 };
 
 } // namespace subzero_appliance

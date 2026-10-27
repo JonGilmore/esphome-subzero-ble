@@ -676,11 +676,11 @@ TEST_F(HubFixture, WriteSetBool_GoesToD5WithCorrectJson) {
   run_to_ready_();
   transport_.clear_writes();
   hub_.write_set_bool("cav_light_on", true);
-  ASSERT_EQ(transport_.write_count(), 1u);
+  ASSERT_GE(transport_.write_count(), 1u);
   EXPECT_EQ(transport_.write_at(0).handle, 0x10u); // D5 in our test fixture
-  std::string body(transport_.write_at(0).bytes.begin(),
-                   transport_.write_at(0).bytes.end());
-  EXPECT_EQ(body, "{\"cmd\":\"set\",\"params\":{\"cav_light_on\":true}}\n");
+  EXPECT_LE(transport_.max_write_len(), 20u);
+  EXPECT_EQ(transport_.joined_writes(0x10),
+            "{\"cmd\":\"set\",\"params\":{\"cav_light_on\":true}}\n");
 }
 
 TEST_F(HubFixture, WriteSetInt_FormatsAsBareNumber) {
@@ -688,10 +688,9 @@ TEST_F(HubFixture, WriteSetInt_FormatsAsBareNumber) {
   run_to_ready_();
   transport_.clear_writes();
   hub_.write_set_int("set_temp", 38);
-  ASSERT_EQ(transport_.write_count(), 1u);
-  std::string body(transport_.write_at(0).bytes.begin(),
-                   transport_.write_at(0).bytes.end());
-  EXPECT_EQ(body, "{\"cmd\":\"set\",\"params\":{\"set_temp\":38}}\n");
+  EXPECT_LE(transport_.max_write_len(), 20u);
+  EXPECT_EQ(transport_.joined_writes(0x10),
+            "{\"cmd\":\"set\",\"params\":{\"set_temp\":38}}\n");
 }
 
 TEST_F(HubFixture, WriteSetString_QuotesAndEscapes) {
@@ -699,10 +698,9 @@ TEST_F(HubFixture, WriteSetString_QuotesAndEscapes) {
   run_to_ready_();
   transport_.clear_writes();
   hub_.write_set_string("ap_ssid", "my\"net");
-  ASSERT_EQ(transport_.write_count(), 1u);
-  std::string body(transport_.write_at(0).bytes.begin(),
-                   transport_.write_at(0).bytes.end());
-  EXPECT_EQ(body, "{\"cmd\":\"set\",\"params\":{\"ap_ssid\":\"my\\\"net\"}}\n");
+  EXPECT_LE(transport_.max_write_len(), 20u);
+  EXPECT_EQ(transport_.joined_writes(0x10),
+            "{\"cmd\":\"set\",\"params\":{\"ap_ssid\":\"my\\\"net\"}}\n");
 }
 
 TEST_F(HubFixture, WriteSet_NoOpWhenD5HandleMissing) {
@@ -1388,4 +1386,37 @@ TEST_F(HubFixture, Cccd_ResetPairingClearsHandles) {
   hub_.press_reset_pairing();
   EXPECT_EQ(hub_.d5_cccd(), 0);
   EXPECT_EQ(hub_.d6_cccd(), 0);
+}
+
+// =============================================================================
+// Command writes match the official app: 20-byte chunks, empty D5 write first
+// =============================================================================
+
+TEST_F(HubFixture, Commands_UnlockGoesOutInAppChunks) {
+  hub_.set_stored_pin("123456");
+  run_to_ready_();
+  transport_.clear_writes();
+  hub_.do_periodic_poll();
+  // Same split as the app's capture: 20 + 20 + 11, then get_async (20).
+  ASSERT_EQ(transport_.write_count(), 4u);
+  auto body = [this](std::size_t i) {
+    return std::string(transport_.write_at(i).bytes.begin(),
+                       transport_.write_at(i).bytes.end());
+  };
+  EXPECT_EQ(body(0), "{\"cmd\":\"unlock_chann");
+  EXPECT_EQ(body(1), "el\",\"params\":{\"pin\":");
+  EXPECT_EQ(body(2), "\"123456\"}}\n");
+  EXPECT_EQ(body(3), "{\"cmd\":\"get_async\"}\n");
+}
+
+TEST_F(HubFixture, Commands_EmptyD5WriteBeforeUnlock) {
+  hub_.set_stored_pin("12345");
+  transport_.set_gatt_db(full_gatt_db());
+  hub_.handle_connected();
+  scheduler_.advance_by(1500); // through CCCD writes, before unlock
+  ASSERT_GE(transport_.write_count(), 3u);
+  const auto &last = transport_.write_at(transport_.write_count() - 1);
+  EXPECT_EQ(last.handle, hub_.d5_handle());
+  EXPECT_TRUE(last.bytes.empty());
+  EXPECT_FALSE(transport_.wrote_command_to(hub_.d5_handle(), "unlock"));
 }

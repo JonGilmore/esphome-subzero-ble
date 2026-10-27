@@ -155,16 +155,33 @@ public:
     return notify_subscribed_handles_;
   }
 
-  // Was a write to `handle` made whose payload contains substring `needle`?
+  // Do the writes to `handle`, joined in order, contain `needle`? Commands
+  // go out in 20-byte chunks, so one command spans several writes.
   bool wrote_command_to(std::uint16_t handle, const std::string &needle) const {
+    std::string s;
     for (const auto &c : writes_) {
-      if (c.handle != handle)
-        continue;
-      std::string s(c.bytes.begin(), c.bytes.end());
-      if (s.find(needle) != std::string::npos)
-        return true;
+      if (c.handle == handle)
+        s.append(c.bytes.begin(), c.bytes.end());
     }
-    return false;
+    return s.find(needle) != std::string::npos;
+  }
+
+  // All writes to `handle`, joined in order.
+  std::string joined_writes(std::uint16_t handle) const {
+    std::string s;
+    for (const auto &c : writes_) {
+      if (c.handle == handle)
+        s.append(c.bytes.begin(), c.bytes.end());
+    }
+    return s;
+  }
+
+  // Largest single write so far.
+  std::size_t max_write_len() const {
+    std::size_t m = 0;
+    for (const auto &c : writes_)
+      m = std::max(m, c.bytes.size());
+    return m;
   }
 
   void clear_writes() { writes_.clear(); }

@@ -121,6 +121,7 @@ NOTE: These parameters are global to the ESP32's BLE stack, so other devices tha
 
 Command Framing:: Every command (D5 control or D6 data) *must* end with a newline character (`\n`).
 The appliance's serial parser silently discards any command without it.
+The official app writes each command in chunks of at most 20 bytes (one Write Request each, even with a 247-byte MTU), and writes an empty value to D5 on every connect before any command. Some appliances (IW30R wine, a fw 2.27 fridge) acknowledge a longer single write but never act on it, while still sending pushes. The integration does the same as the app.
 
 Response Fragmentation:: The appliance sends responses as BLE indications, fragmented into chunks.
 fw 8.5 appliances fragment at ~40 bytes per indication (50+ fragments for a ~2 KB poll response). fw 2.27 appliances use ~244 byte fragments (most pushes fit in a single indication).

@@ -4,6 +4,7 @@
 #include "../subzero_protocol/log_sanitize.h"
 #include "../subzero_protocol/protocol.h"
 
+#include <algorithm>
 #include <cstring>
 #include <utility>
 
@@ -424,10 +425,8 @@ void SubzeroHub::do_periodic_poll() {
   if (!stored_pin_.empty()) {
     write_unlock_channel_(d6_handle_);
   }
-  std::string cmd = esphome::subzero_protocol::build_poll_command(poll_verb_);
-  BleResult err = transport_->write(
-      d6_handle_, reinterpret_cast<const std::uint8_t *>(cmd.data()),
-      cmd.size());
+  BleResult err = write_command_(
+      d6_handle_, esphome::subzero_protocol::build_poll_command(poll_verb_));
   if (err != BleResult::kOk) {
     HUB_LOGW("szg", "[%s] D6 write failed (err=%d), forcing reconnect",
              name_.c_str(), static_cast<int>(err));
@@ -656,6 +655,10 @@ void SubzeroHub::subscribe_register_and_cccd_() {
   write_cccd("D5", d5_handle_, d5_cccd_, d5_props_);
   if (d6_handle_ > 0)
     write_cccd("D6", d6_handle_, d6_cccd_, d6_props_);
+  // The app writes an empty value to D5 on every connect before any
+  // command; do the same in case it resets the appliance's command parser.
+  static constexpr std::uint8_t kEmpty[1] = {0};
+  transport_->write(d5_handle_, kEmpty, 0);
   json_buf_.clear();
 
   scheduler_->set_timeout(kTimeoutSubscribeUnlock, kSubscribeUnlockDelayMs,
@@ -993,10 +996,8 @@ void SubzeroHub::press_start_pairing() {
     publish_status_("ERROR: Not connected. Press Connect first.");
     return;
   }
-  std::string cmd = esphome::subzero_protocol::build_display_pin();
-  BleResult err = transport_->write(
-      d5_handle_, reinterpret_cast<const std::uint8_t *>(cmd.data()),
-      cmd.size());
+  BleResult err = write_command_(
+      d5_handle_, esphome::subzero_protocol::build_display_pin());
   HUB_LOGI("ble", "[%s] display_pin -> D5 err=%d", name_.c_str(),
            static_cast<int>(err));
   publish_status_("Check appliance display for PIN.");
@@ -1142,10 +1143,8 @@ void SubzeroHub::write_unlock_channel_(std::uint16_t handle) {
     return;
   if (stored_pin_.empty() || handle == 0)
     return;
-  std::string cmd =
-      esphome::subzero_protocol::build_unlock_channel(stored_pin_);
-  transport_->write(handle, reinterpret_cast<const std::uint8_t *>(cmd.data()),
-                    cmd.size());
+  write_command_(handle,
+                 esphome::subzero_protocol::build_unlock_channel(stored_pin_));
 }
 
 void SubzeroHub::write_poll_command_(std::uint16_t handle) {
@@ -1153,9 +1152,24 @@ void SubzeroHub::write_poll_command_(std::uint16_t handle) {
     return;
   if (handle == 0)
     return;
-  std::string cmd = esphome::subzero_protocol::build_poll_command(poll_verb_);
-  transport_->write(handle, reinterpret_cast<const std::uint8_t *>(cmd.data()),
-                    cmd.size());
+  write_command_(handle,
+                 esphome::subzero_protocol::build_poll_command(poll_verb_));
+}
+
+// The official app writes every command in chunks of at most 20 bytes,
+// even with a 247-byte MTU (HCI captures 2026-04-25). Some appliances
+// (IW30R wine, Back fridge) ack a longer single write but never act on it.
+BleResult SubzeroHub::write_command_(std::uint16_t handle,
+                                     const std::string &cmd) {
+  BleResult result = BleResult::kOk;
+  for (std::size_t off = 0; off < cmd.size(); off += kCommandChunkBytes) {
+    const std::size_t n = std::min(kCommandChunkBytes, cmd.size() - off);
+    BleResult r = transport_->write(
+        handle, reinterpret_cast<const std::uint8_t *>(cmd.data() + off), n);
+    if (r != BleResult::kOk && result == BleResult::kOk)
+      result = r;
+  }
+  return result;
 }
 
 void SubzeroHub::write_set_property_(const std::string &key,
@@ -1180,10 +1194,8 @@ void SubzeroHub::write_set_property_(const std::string &key,
              name_.c_str(), key.c_str(), d5_handle_, pin_confirmed_);
     return;
   }
-  std::string cmd = esphome::subzero_protocol::build_set(key, json_value);
-  transport_->write(d5_handle_,
-                    reinterpret_cast<const std::uint8_t *>(cmd.data()),
-                    cmd.size());
+  write_command_(d5_handle_,
+                 esphome::subzero_protocol::build_set(key, json_value));
 }
 
 void SubzeroHub::write_set_bool(const std::string &key, bool value) {
