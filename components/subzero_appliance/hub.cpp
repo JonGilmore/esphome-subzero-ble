@@ -53,6 +53,7 @@ constexpr const char *kTimeoutSubmitPinPoll = "submit_pin_poll";
 constexpr const char *kTimeoutVerbFallbackRetry = "verb_fallback_retry";
 constexpr const char *kTimeoutSessionRefresh = "session_refresh";
 constexpr const char *kTimeoutSessionRefreshQuiet = "session_refresh_quiet";
+constexpr const char *kTimeoutSnapshotWatch = "snapshot_watch";
 } // namespace
 
 // =============================================================================
@@ -63,6 +64,8 @@ constexpr const char *kTimeoutSessionRefreshQuiet = "session_refresh_quiet";
 void SubzeroHub::handle_connected() {
   if (transport_ == nullptr || scheduler_ == nullptr)
     return;
+  if (!session_active_)
+    start_session_();
   transport_->request_mtu();
 
   // Fast path: handles cached from a previous (bonded) connection.
@@ -97,9 +100,11 @@ void SubzeroHub::handle_connected() {
   start_post_bond_();
 }
 
-void SubzeroHub::handle_disconnected() {
+void SubzeroHub::handle_disconnected(int reason) {
   if (transport_ == nullptr || scheduler_ == nullptr)
     return;
+  end_session_(reason);
+  scheduler_->cancel_timeout(kTimeoutSnapshotWatch);
   json_buf_.clear();
   scheduler_->cancel_timeout(kTimeoutPostBondInitial);
   scheduler_->cancel_timeout(kTimeoutPostBondPostEnc);
@@ -268,13 +273,26 @@ void SubzeroHub::process_message_complete_() {
   if (!msg)
     return;
 
-  HUB_LOGI("szg", "[%s] Parsing JSON (%d bytes)", name_.c_str(),
-           static_cast<int>(msg->size()));
+  // ends_nl: whether the appliance's '\n' terminator arrived with the
+  // closing brace (the official app frames messages on it).
+  HUB_LOGI("szg", "[%s] Parsing JSON (%d bytes, ends_nl=%d)", name_.c_str(),
+           static_cast<int>(msg->size()), msg->back() == '\n' ? 1 : 0);
 
   if (debug_mode_)
     log_chunked_debug_(*msg);
 
+  parsing_snapshot_ = esphome::subzero_protocol::is_full_state_dump(*msg);
   bool ok = parse_and_dispatch_(*msg);
+  const bool was_snapshot = parsing_snapshot_;
+  parsing_snapshot_ = false;
+  if (ok) {
+    if (auto seq = esphome::subzero_protocol::extract_push_seq(*msg)) {
+      session_pushes_ += 1;
+      track_seq_(*seq);
+    }
+    if (was_snapshot)
+      on_full_snapshot_();
+  }
   if (!ok) {
     if (msg->find("\"status\":302") != std::string::npos) {
       HUB_LOGE("szg",
@@ -407,12 +425,14 @@ void SubzeroHub::do_periodic_poll() {
     transport_->disconnect();
     return;
   }
-  HUB_LOGI("szg", "[%s] Periodic poll D6 (verb=%s, miss=%d, retries=%d)",
+  HUB_LOGI("szg",
+           "[%s] Periodic poll D6 (verb=%s, miss=%d, retries=%d, "
+           "data_age=%ds)",
            name_.c_str(),
            poll_verb_ == esphome::subzero_protocol::PollVerb::kGet
                ? "get"
                : "get_async",
-           poll_miss_, fast_retries_);
+           poll_miss_, fast_retries_, snapshot_age_s());
 }
 
 // =============================================================================
@@ -628,13 +648,21 @@ void SubzeroHub::subscribe_initial_get_() {
     publish_status_("Connected and polling.");
   }
 
+  if (!session_snapshot_) {
+    scheduler_->set_timeout(kTimeoutSnapshotWatch, kSnapshotWarnMs,
+                            [this]() { snapshot_watch_expired_(); });
+  }
+
   // Arm scheduled session refresh: ~18 min from now, proactively
   // disconnect-and-reconnect to refresh the appliance's BLE unlock
   // session before the firmware's own ~20-25 min expiry kicks us off
   // unpredictably. handle_disconnected cancels the timer if the link
   // drops for any other reason, so we never carry it across sessions.
-  scheduler_->set_timeout(kTimeoutSessionRefresh, kSessionRefreshIntervalMs,
-                          [this]() { disconnect_for_session_refresh_(); });
+  if (session_refresh_interval_ms_ > 0) {
+    scheduler_->set_timeout(kTimeoutSessionRefresh,
+                            session_refresh_interval_ms_,
+                            [this]() { disconnect_for_session_refresh_(); });
+  }
 }
 
 // =============================================================================
@@ -649,7 +677,8 @@ void SubzeroHub::disconnect_for_session_refresh_() {
   HUB_LOGI(
       "ble",
       "[%s] Scheduled session refresh (%u min), reconnecting via fast path",
-      name_.c_str(), static_cast<unsigned>(kSessionRefreshIntervalMs / 60000));
+      name_.c_str(),
+      static_cast<unsigned>(session_refresh_interval_ms_ / 60000));
   json_buf_.clear();
   // Mute progress chatter for the duration of the bounce. The user asked
   // for none of this; they just want Status to keep reading "Connected
@@ -673,6 +702,178 @@ void SubzeroHub::session_refresh_quiet_expired_() {
            name_.c_str(),
            static_cast<unsigned>(kSessionRefreshQuietMaxMs / 1000));
   publish_status_("Reconnecting...");
+}
+
+// =============================================================================
+// Connection diagnostics - log-and-count only, no effect on the link.
+// =============================================================================
+
+const char *SubzeroHub::disconnect_reason_str(int reason) {
+  switch (reason) {
+  case kReasonOpenFailed:
+    return "GATT open failed";
+  case kReasonSearchFailed:
+    return "GATT search failed";
+  case 0x01:
+    return "L2CAP failure";
+  case 0x08:
+    return "supervision timeout";
+  case 0x13:
+    return "appliance closed the link";
+  case 0x16:
+    return "ESP32 closed the link";
+  case 0x22:
+    return "LMP response timeout";
+  case 0x3E:
+    return "failed to establish";
+  case 0x100:
+    return "connection cancelled";
+  default:
+    return "unknown";
+  }
+}
+
+int SubzeroHub::snapshot_age_s() const {
+  if (!have_snapshot_ || scheduler_ == nullptr)
+    return -1;
+  return static_cast<int>((scheduler_->now_ms() - last_snapshot_ms_) / 1000);
+}
+
+void SubzeroHub::start_session_() {
+  session_active_ = true;
+  session_snapshot_ = false;
+  session_no_snapshot_counted_ = false;
+  session_pushes_ = 0;
+  seq_seen_in_session_ = false;
+  session_start_ms_ = scheduler_->now_ms();
+  sessions_ += 1;
+  if (have_drop_) {
+    HUB_LOGI("conn", "[%s] Connection %d up, %u ms after the last drop",
+             name_.c_str(), sessions_,
+             static_cast<unsigned>(session_start_ms_ - last_drop_ms_));
+  } else {
+    HUB_LOGI("conn", "[%s] Connection %d up", name_.c_str(), sessions_);
+  }
+  notify_metrics_();
+}
+
+void SubzeroHub::end_session_(int reason) {
+  if (intentional_disconnect_) {
+    last_disconnect_reason_ = "session refresh";
+  } else if (reason < 0) {
+    last_disconnect_reason_ = disconnect_reason_str(reason);
+  } else {
+    char buf[48];
+    std::snprintf(buf, sizeof(buf), "%s (0x%X)", disconnect_reason_str(reason),
+                  static_cast<unsigned>(reason));
+    last_disconnect_reason_ = buf;
+  }
+  if (!session_active_) {
+    HUB_LOGI("conn", "[%s] Link failed before connect: %s", name_.c_str(),
+             last_disconnect_reason_.c_str());
+    notify_metrics_();
+    return;
+  }
+  session_active_ = false;
+  const std::uint32_t now = scheduler_->now_ms();
+  have_drop_ = true;
+  last_drop_ms_ = now;
+  if (!session_snapshot_ && !session_no_snapshot_counted_) {
+    sessions_without_snapshot_ += 1;
+    session_no_snapshot_counted_ = true;
+  }
+  std::string open_doors;
+  for (const auto &d : doors_) {
+    if (!d.second)
+      continue;
+    if (!open_doors.empty())
+      open_doors += ",";
+    open_doors += d.first;
+  }
+  // Pushes that arrive before the next snapshot overwrite this copy key
+  // by key; whatever is left gets checked against that snapshot.
+  doors_at_drop_ = doors_;
+  HUB_LOGI("conn",
+           "[%s] Connection %d down after %u ms: %s, snapshot=%s, pushes=%d, "
+           "doors open=%s",
+           name_.c_str(), sessions_,
+           static_cast<unsigned>(now - session_start_ms_),
+           last_disconnect_reason_.c_str(), session_snapshot_ ? "yes" : "NO",
+           session_pushes_, open_doors.empty() ? "none" : open_doors.c_str());
+  notify_metrics_();
+}
+
+void SubzeroHub::on_full_snapshot_() {
+  const std::uint32_t now = scheduler_->now_ms();
+  have_snapshot_ = true;
+  last_snapshot_ms_ = now;
+  if (session_active_ && !session_snapshot_) {
+    session_snapshot_ = true;
+    scheduler_->cancel_timeout(kTimeoutSnapshotWatch);
+    HUB_LOGI("conn", "[%s] First snapshot %u ms after connection %d",
+             name_.c_str(), static_cast<unsigned>(now - session_start_ms_),
+             sessions_);
+    for (const auto &d : doors_at_drop_) {
+      auto it = doors_.find(d.first);
+      if (it == doors_.end() || it->second == d.second)
+        continue;
+      gap_door_changes_ += 1;
+      HUB_LOGW("conn",
+               "[%s] %s changed while disconnected: %s at the drop, %s in "
+               "the snapshot (edge lost, snapshot corrected it)",
+               name_.c_str(), d.first.c_str(), d.second ? "open" : "closed",
+               it->second ? "open" : "closed");
+    }
+    doors_at_drop_.clear();
+  }
+  notify_metrics_();
+}
+
+void SubzeroHub::track_seq_(int seq) {
+  if (last_seq_ >= 0) {
+    if (seq > last_seq_ + 1) {
+      const int missed = seq - last_seq_ - 1;
+      missed_pushes_ += missed;
+      if (seq_seen_in_session_) {
+        HUB_LOGW("conn", "[%s] Push seq gap: %d -> %d (%d missed)",
+                 name_.c_str(), last_seq_, seq, missed);
+      } else {
+        HUB_LOGI("conn", "[%s] Push seq across reconnect: %d -> %d (%d missed)",
+                 name_.c_str(), last_seq_, seq, missed);
+      }
+      notify_metrics_();
+    } else if (seq <= last_seq_) {
+      HUB_LOGI("conn", "[%s] Push seq went back: %d -> %d%s", name_.c_str(),
+               last_seq_, seq,
+               seq_seen_in_session_ ? "" : " (first this connection)");
+    }
+  }
+  last_seq_ = seq;
+  seq_seen_in_session_ = true;
+}
+
+void SubzeroHub::snapshot_watch_expired_() {
+  if (!session_active_ || session_snapshot_ || session_no_snapshot_counted_)
+    return;
+  session_no_snapshot_counted_ = true;
+  sessions_without_snapshot_ += 1;
+  HUB_LOGW("conn",
+           "[%s] No snapshot %u s after get_async on connection %d "
+           "(pushes=%d)",
+           name_.c_str(), static_cast<unsigned>(kSnapshotWarnMs / 1000),
+           sessions_, session_pushes_);
+  notify_metrics_();
+}
+
+void SubzeroHub::note_door_(const char *key, bool open) {
+  doors_[key] = open;
+  if (!parsing_snapshot_)
+    doors_at_drop_.erase(key);
+}
+
+void SubzeroHub::notify_metrics_() {
+  if (metrics_cb_)
+    metrics_cb_();
 }
 
 // =============================================================================
@@ -716,6 +917,7 @@ void SubzeroHub::press_connect() {
     scheduler_->cancel_timeout(kTimeoutSubmitPinPoll);
     scheduler_->cancel_timeout(kTimeoutVerbFallbackRetry);
     scheduler_->cancel_timeout(kTimeoutSessionRefresh);
+    scheduler_->cancel_timeout(kTimeoutSnapshotWatch);
   }
   post_bond_running_ = false;
   subscribe_running_ = false;
@@ -810,6 +1012,7 @@ void SubzeroHub::press_reset_pairing() {
     scheduler_->cancel_timeout(kTimeoutSubmitPinPoll);
     scheduler_->cancel_timeout(kTimeoutVerbFallbackRetry);
     scheduler_->cancel_timeout(kTimeoutSessionRefresh);
+    scheduler_->cancel_timeout(kTimeoutSnapshotWatch);
   }
   pin_confirmed_ = false;
   clear_handles_();

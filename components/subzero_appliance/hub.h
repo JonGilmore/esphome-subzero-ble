@@ -28,6 +28,7 @@
 
 #include <cstdint>
 #include <functional>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -56,7 +57,12 @@ public:
   // Connection lifecycle (called from ble_client's on_connect /
   // on_disconnect / on_passkey_request triggers).
   void handle_connected();
-  void handle_disconnected();
+  // `reason` is the IDF esp_gatt_conn_reason_t, or one of the kReason*
+  // values below when the link never came up.
+  void handle_disconnected(int reason = kReasonUnknown);
+  static constexpr int kReasonUnknown = -1;
+  static constexpr int kReasonOpenFailed = -2;
+  static constexpr int kReasonSearchFailed = -3;
   // Returns the passkey to reply with, or 0 if no PIN is stored
   // (caller should still call passkey_reply with 0 or skip).
   std::uint32_t handle_passkey_request();
@@ -115,6 +121,14 @@ public:
   // Per-appliance stagger to avoid concurrent bonding races on shared
   // ESP32. Translated from the `poll_offset` substitution.
   void set_poll_offset_ms(std::uint32_t ms) { poll_offset_ms_ = ms; }
+  // 0 disables the scheduled session refresh.
+  void set_session_refresh_interval_ms(std::uint32_t ms) {
+    session_refresh_interval_ms_ = ms;
+  }
+  // Fires whenever a connection diagnostic below changes.
+  void set_metrics_callback(std::function<void()> cb) {
+    metrics_cb_ = std::move(cb);
+  }
 
   // Public so tests can advance the fake scheduler to exactly the refresh
   // deadline
@@ -125,6 +139,9 @@ public:
   // it rather than a Status frozen at "Connected and polling."
   // Public for the same reason as kSessionRefreshIntervalMs.
   static constexpr std::uint32_t kSessionRefreshQuietMaxMs = 90 * 1000;
+  // A connection with no full-state snapshot this long after get_async
+  // counts toward sessions_without_snapshot().
+  static constexpr std::uint32_t kSnapshotWarnMs = 15 * 1000;
   // Status text callback — connected to ${prefix}_debug.publish_state.
   void set_status_callback(std::function<void(const std::string &)> cb) {
     status_cb_ = std::move(cb);
@@ -166,6 +183,21 @@ public:
   esphome::subzero_protocol::PollVerb poll_verb() const { return poll_verb_; }
   void set_poll_verb(esphome::subzero_protocol::PollVerb v) { poll_verb_ = v; }
 
+  // ---- Connection diagnostics (counts are since boot) ----
+  int sessions() const { return sessions_; }
+  // Push seq numbers skipped, in a session or across a reconnect.
+  int missed_pushes() const { return missed_pushes_; }
+  // Doors whose first snapshot after a reconnect disagreed with the value
+  // held at the drop: an edge lost while the link was down.
+  int gap_door_changes() const { return gap_door_changes_; }
+  int sessions_without_snapshot() const { return sessions_without_snapshot_; }
+  const std::string &last_disconnect_reason() const {
+    return last_disconnect_reason_;
+  }
+  // Seconds since the last full-state snapshot; -1 before the first.
+  int snapshot_age_s() const;
+  static const char *disconnect_reason_str(int reason);
+
 protected:
   // Subclass hook — called when a complete JSON message has been
   // assembled in json_buf_. Returns true if the parse succeeded
@@ -184,6 +216,9 @@ protected:
   void on_pin_confirmed_(const std::string &pin);
   // Virtual so host tests can spy on the subclass call contract
   virtual void log_data_keys_(const std::vector<std::string> &keys);
+  // Subclasses report every door field they parse, so the hub can compare
+  // door state across a disconnect.
+  void note_door_(const char *key, bool open);
 
 private:
   // ---- post_bond stages (translated from the 5-stage YAML script) ----
@@ -209,6 +244,14 @@ private:
   // Watchdog: un-mutes progress reporting if a session refresh never
   // completes, so the Status entity can't get stuck on a stale value.
   void session_refresh_quiet_expired_();
+
+  // ---- connection diagnostics ----
+  void start_session_();
+  void end_session_(int reason);
+  void on_full_snapshot_();
+  void track_seq_(int seq);
+  void snapshot_watch_expired_();
+  void notify_metrics_();
 
   // ---- helpers ----
   // Publishes a real, user-meaningful state. De-duplicated against the
@@ -285,6 +328,34 @@ private:
 
   // D6 message buffer (D5 is heartbeat-only post-PR-#72).
   esphome::subzero_protocol::MessageBuffer json_buf_;
+
+  // ---- connection diagnostics ----
+  std::uint32_t session_refresh_interval_ms_ = kSessionRefreshIntervalMs;
+  std::function<void()> metrics_cb_;
+  // A session runs from the first handle_connected() after a drop to the
+  // next handle_disconnected().
+  bool session_active_ = false;
+  bool session_snapshot_ = false;
+  bool session_no_snapshot_counted_ = false;
+  std::uint32_t session_start_ms_ = 0;
+  int session_pushes_ = 0;
+  bool have_drop_ = false;
+  std::uint32_t last_drop_ms_ = 0;
+  bool have_snapshot_ = false;
+  std::uint32_t last_snapshot_ms_ = 0;
+  // True while the message being dispatched is a full-state dump.
+  bool parsing_snapshot_ = false;
+  int last_seq_ = -1;
+  bool seq_seen_in_session_ = false;
+  int sessions_ = 0;
+  int missed_pushes_ = 0;
+  int gap_door_changes_ = 0;
+  int sessions_without_snapshot_ = 0;
+  std::string last_disconnect_reason_;
+  // Latest value of every door field, and a copy taken at the last drop.
+  // Keys whose value a live push updates are dropped from the copy.
+  std::map<std::string, bool> doors_;
+  std::map<std::string, bool> doors_at_drop_;
 
   // ---- tunables ----
   // Brace-matched to the YAML's hard-coded values. If any of these

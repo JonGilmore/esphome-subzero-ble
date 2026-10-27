@@ -120,32 +120,29 @@ If you experience crashes (typically `__cxa_allocate_exception` -> `operator new
 [[reconnect-logic]]
 == Reconnect Logic
 
-The integration runs a periodic poll every 60 seconds against each bonded appliance and keeps things alive with two simple mechanisms: zombie detection (catches a dead link) and stale-bond cleanup (catches an overnight bond timeout).
+The integration polls each bonded appliance every 60 seconds and gets every other change as a push. Two mechanisms keep the link healthy: a scheduled session refresh and stale-bond cleanup.
 
-=== Zombie Detection
+=== Session Refresh
 
-`poll_ok` is set to `true` by any indication on D5 (heartbeat) or D6 (poll response or push notification). Each `periodic_poll` clears `poll_ok` and writes both `unlock_channel` and `get_async` to D6 - either response (~37-byte unlock ack or ~2 KB full state) sets `poll_ok` again. If `poll_ok` is still `false` at the next tick, `poll_miss` increments. When `poll_miss` reaches 3 (~3 minutes of total silence), the integration calls `client->disconnect()` to force a fresh connection - `auto_connect: true` brings it back through `post_bond` + `subscribe` with a fresh full-state poll.
+About 18 minutes after each connect, the integration disconnects on purpose and reconnects through the fast path. This stays ahead of the ~20-25 minute unlock-session expiry seen on fw 8.5, where polls go silent but pushes continue. Set `session_refresh_interval` per appliance to change the interval, or `0s` to turn it off. Every refresh is a short gap in which pushes are lost, and only the full-state poll after the reconnect recovers them.
 
-This catches both:
-
-* **Cold-boot race.** When multiple appliances reconnect simultaneously at boot, the ESP-IDF Bluedroid stack occasionally drops one peer's `unlock_channel` write under the concurrent traffic. That appliance ends up subscribed and `get_async`-written at the BLE layer (status 0), but never responds. After 3 missed polls the zombie detector reconnects and the cleaner second-time bonding usually succeeds.
-
-* **fw 8.5 silent-poll behavior.** On Sub-Zero fridges and wall ovens running fw 8.5 / API 5.4, the second-and-later `get_async` writes within a held-open connection go silent - only a full BLE disconnect/reconnect produces a working session again. The official Sub-Zero Android app handles this the same way (verified via HCI snoop). Net effect on fw 8.5: roughly one full state refresh every ~3 min plus continuous push notifications between cycles.
+Missed polls (`miss` in the log) are diagnostic only. They never force a reconnect, because fw 8.5 appliances keep pushing data while their polls are silent.
 
 === Boot Stagger via `poll_offset`
 
-`poll_offset` (config field per appliance, default `0s`) is applied at the top of `periodic_poll`, `post_bond`, and `fast_reconnect`. Setting per-appliance values like `0s / 5s / 10s` on a multi-appliance ESP32 spreads the bonding chains in time so the concurrent-bonding race doesn't trigger in the first place. Zombie detection remains as a safety net.
+`poll_offset` (config field per appliance, default `0s`) is applied at the top of `periodic_poll`, `post_bond`, and `fast_reconnect`. Setting per-appliance values like `0s / 5s / 10s` on a multi-appliance ESP32 spreads the bonding chains in time so the concurrent-bonding race doesn't trigger in the first place.
 
 === Log Format
 
 [source]
 ----
-[I][szg:XXX]: [Left Dishwasher] Periodic poll D6 (miss=0, retries=0)
-[I][szg:XXX]: [Wall Oven]      Periodic poll D6 (miss=2, retries=0)
+[I][szg:XXX]: [Left Dishwasher] Periodic poll D6 (verb=get_async, miss=0, retries=0, data_age=60s)
+[I][szg:XXX]: [Wall Oven]      Periodic poll D6 (verb=get_async, miss=2, retries=0, data_age=180s)
 [E][szg:XXX]: [Kitchen Range]  Pairing rejected (status 302). The PIN has likely changed - press 'Start Pairing' on the appliance and enter the new PIN in HA.
 ----
 
-* `miss` - zombie counter (0–3, reconnect at 3 = ~3 min of total silence)
+* `miss` - polls in a row with no response (diagnostic only)
+* `data_age` - seconds since the last full-state snapshot (`-1` before the first)
 * `retries` - fast-reconnect retry counter (0–3, bond clear at 3; see below)
 * `Pairing rejected (status 302)` - the appliance refused `unlock_channel`, usually because its PIN rotated after a power cycle. Press *Start Pairing* and re-enter the PIN displayed on the appliance.
 
@@ -156,8 +153,35 @@ Separately, when the BLE connection drops and `auto_connect: true` reconnects, t
 === Tuning
 
 * `interval: 60s` in the hub - poll cadence. Shortening to 30s halves detection time and doubles radio utilization (still single-digit percent for typical configs).
-* `poll_miss >= 3` - zombie threshold. Scales with the interval: at 60s that's 3 min.
+* `session_refresh_interval` per appliance - scheduled reconnect, default `18min`, `0s` turns it off.
 * `poll_offset` per appliance - boot stagger. `0s` for first, `5s` or `10s` for subsequent appliances on the same ESP32.
+
+[[connection-diagnostics]]
+=== Connection Diagnostics
+
+Each appliance has six diagnostic entities that show how the BLE link behaves. They are disabled in Home Assistant by default. Set `connection_diagnostics: true` on the appliance to create them enabled, or enable them by hand. The counters start at 0 when the ESP32 boots.
+
+[cols="1,3"]
+|===
+| Entity | Meaning
+
+| Connections | Connections made since boot. A fast rise means the link keeps dropping.
+| Data Age | Seconds since the last full-state snapshot. It resets to 0 on each successful poll; a value well above 60 means the values you see are old.
+| Last Disconnect Reason | Why the last link ended, from the ESP-IDF reason code (for example `supervision timeout (0x8)` or `appliance closed the link (0x13)`), or `session refresh`.
+| Connections Without Data | Connections that got no snapshot within 15 s of `get_async`, or ended before one arrived.
+| Missed Pushes | Push `seq` numbers that never arrived, in a connection or across a reconnect. The appliance can also skip a number on a healthy link.
+| Door Changes While Disconnected | Times the first snapshot after a reconnect showed a different door state than the one held at the drop: a door event lost in the gap.
+|===
+
+The same events are in the ESPHome log under the `conn` tag, one line per connect, drop and first snapshot:
+
+[source]
+----
+[I][conn:XXX]: [Back Fridge] Connection 12 up, 6512 ms after the last drop
+[I][conn:XXX]: [Back Fridge] First snapshot 3410 ms after connection 12
+[W][conn:XXX]: [Back Fridge] ref_door_ajar changed while disconnected: open at the drop, closed in the snapshot (edge lost, snapshot corrected it)
+[I][conn:XXX]: [Back Fridge] Connection 12 down after 1080412 ms: session refresh, snapshot=yes, pushes=41, doors open=none
+----
 
 [[parser-component]]
 == Parser Component

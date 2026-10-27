@@ -5,6 +5,8 @@
 #include "esphome/core/application.h"
 #include "esphome/core/log.h"
 
+#include <cmath>
+
 namespace esphome {
 namespace subzero_appliance {
 
@@ -21,6 +23,8 @@ void ApplianceBase::setup() {
   h->set_scheduler(&scheduler_);
   h->set_name(name_str_);
   h->set_poll_offset_ms(poll_offset_ms_);
+  h->set_session_refresh_interval_ms(session_refresh_interval_ms_);
+  h->set_metrics_callback([this]() { publish_metrics_(); });
   if (!pending_pin_.empty()) {
     h->set_stored_pin(pending_pin_);
     h->set_pin_confirmed(true);
@@ -38,8 +42,10 @@ void ApplianceBase::setup() {
         [pi](const std::string &pin) { pi->publish_state(pin); });
   }
 
-  this->set_interval("subzero_periodic_poll", 60000,
-                     [this]() { hub()->do_periodic_poll(); });
+  this->set_interval("subzero_periodic_poll", 60000, [this]() {
+    hub()->do_periodic_poll();
+    publish_data_age_();
+  });
 
   ESP_LOGCONFIG(TAG, "[%s] Hub setup complete (poll_offset=%dms)",
                 name_str_.c_str(), static_cast<int>(poll_offset_ms_));
@@ -58,20 +64,20 @@ void ApplianceBase::gattc_event_handler(esp_gattc_cb_event_t event,
     if (param->open.status != ESP_GATT_OK) {
       ESP_LOGW(TAG, "[%s] GATT open failed (status=%d)", name_str_.c_str(),
                static_cast<int>(param->open.status));
-      h->handle_disconnected();
+      h->handle_disconnected(SubzeroHub::kReasonOpenFailed);
     }
     break;
   case ESP_GATTC_SEARCH_CMPL_EVT:
     if (param->search_cmpl.status != ESP_GATT_OK) {
       ESP_LOGW(TAG, "[%s] GATT search failed (status=%d)", name_str_.c_str(),
                static_cast<int>(param->search_cmpl.status));
-      h->handle_disconnected();
+      h->handle_disconnected(SubzeroHub::kReasonSearchFailed);
       break;
     }
     h->handle_connected();
     break;
   case ESP_GATTC_DISCONNECT_EVT:
-    h->handle_disconnected();
+    h->handle_disconnected(static_cast<int>(param->disconnect.reason));
     break;
   case ESP_GATTC_NOTIFY_EVT: {
     std::uint16_t nh = param->notify.handle;
@@ -128,6 +134,28 @@ void ApplianceBase::gap_event_handler(esp_gap_ble_cb_event_t event,
     hub()->handle_auth_complete(ac.success, static_cast<int>(ac.fail_reason),
                                 static_cast<int>(ac.auth_mode));
   }
+}
+
+void ApplianceBase::publish_metrics_() {
+  auto *h = hub();
+  if (connections_s_ != nullptr)
+    connections_s_->publish_state(h->sessions());
+  if (missed_pushes_s_ != nullptr)
+    missed_pushes_s_->publish_state(h->missed_pushes());
+  if (gap_door_changes_s_ != nullptr)
+    gap_door_changes_s_->publish_state(h->gap_door_changes());
+  if (no_data_connections_s_ != nullptr)
+    no_data_connections_s_->publish_state(h->sessions_without_snapshot());
+  if (disconnect_reason_ts_ != nullptr && !h->last_disconnect_reason().empty())
+    disconnect_reason_ts_->publish_state(h->last_disconnect_reason());
+  publish_data_age_();
+}
+
+void ApplianceBase::publish_data_age_() {
+  if (data_age_s_ == nullptr)
+    return;
+  const int age = hub()->snapshot_age_s();
+  data_age_s_->publish_state(age < 0 ? NAN : static_cast<float>(age));
 }
 
 void ApplianceBase::press_connect() {

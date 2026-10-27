@@ -167,6 +167,8 @@ subzero_appliance:
 ----
 <1> When running multiple appliances on one ESP32, stagger their poll cycles with `poll_offset` (default `0s`) - e.g. `0s / 5s / 10s` - to avoid concurrent-bonding races on the shared BLE radio. See link:docs/advanced.adoc#reconnect-logic[Reconnect Logic].
 
+TIP: Two more per-appliance options help when a link is unstable: `connection_diagnostics: true` enables entities that count drops and lost door events, and `session_refresh_interval` (default `18min`, `0s` to turn off) sets the scheduled reconnect. See link:docs/advanced.adoc#connection-diagnostics[Connection Diagnostics].
+
 NOTE: `esp32_ble: max_connections: 5` supports up to 5 concurrent appliances on one ESP32. Bump it (and see link:docs/advanced.adoc#ble-stack-tuning[BLE Stack Tuning] for additional `sdkconfig_options`) if you need more.
 
 TIP: Pin to a release tag (e.g. `ref: v3.8.0`) for stability, or use `ref: main` to track the latest changes. The minimal copy-paste examples in `wolf-minimal-fridge.yaml`, `wolf-minimal-range.yaml`, and `cove-minimal-dishwasher.yaml` in the repo root track `main` and are a known-good starting point.

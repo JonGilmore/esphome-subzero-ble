@@ -13,7 +13,9 @@ using esphome::subzero_protocol::build_set_bool;
 using esphome::subzero_protocol::build_set_int;
 using esphome::subzero_protocol::build_set_string;
 using esphome::subzero_protocol::build_unlock_channel;
+using esphome::subzero_protocol::extract_push_seq;
 using esphome::subzero_protocol::has_status_value;
+using esphome::subzero_protocol::is_full_state_dump;
 using esphome::subzero_protocol::is_lacking_properties_response;
 using esphome::subzero_protocol::PollVerb;
 
@@ -254,4 +256,30 @@ TEST(Commands, HasStatusValue_DigitParameterDistinguishesValues) {
   const std::string m0 = "{\"status\":0,\"resp\":{\"foo\":1}}";
   EXPECT_TRUE(has_status_value(m0, '0'));
   EXPECT_FALSE(has_status_value(m0, '1'));
+}
+
+TEST(Commands, ExtractPushSeq_ReadsRootSeq) {
+  EXPECT_EQ(extract_push_seq(
+                R"({"msg_types":2,"seq":29,"props":{"ref_door_ajar":true}})"),
+            29);
+  EXPECT_EQ(extract_push_seq(R"({"seq": 1571,"props":{}})"), 1571);
+}
+
+TEST(Commands, ExtractPushSeq_IgnoresNotifSeq) {
+  // Poll responses carry notif_seq inside notifs[], never a root seq.
+  EXPECT_FALSE(extract_push_seq(
+      R"({"status":0,"resp":{"notifs":[{"notif_seq":7,"notif_type":106}]}})"));
+}
+
+TEST(Commands, ExtractPushSeq_RejectsNonNumber) {
+  EXPECT_FALSE(extract_push_seq(R"({"seq":null})"));
+  EXPECT_FALSE(extract_push_seq(R"({"seq":"5"})"));
+}
+
+TEST(Commands, IsFullStateDump) {
+  EXPECT_TRUE(is_full_state_dump(
+      R"({"status":0,"resp":{"appliance_serial":"1234567","ref_door_ajar":false}})"));
+  EXPECT_FALSE(is_full_state_dump(R"({"status":0,"resp":{"pin":"123456"}})"));
+  EXPECT_FALSE(is_full_state_dump(
+      R"({"msg_types":2,"seq":3,"props":{"door_ajar":true}})"));
 }

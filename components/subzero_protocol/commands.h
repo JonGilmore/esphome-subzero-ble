@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdio>
+#include <optional>
 #include <string>
 
 namespace esphome {
@@ -93,6 +94,34 @@ inline bool is_lacking_properties_response(const std::string &msg) {
   // Empty resp object — accept both spacing variants observed on the wire.
   return msg.find("\"resp\":{}") != std::string::npos ||
          msg.find("\"resp\": {}") != std::string::npos;
+}
+
+// Root `"seq":N` of a push. `notif_seq` can't match: the opening quote
+// must sit directly before `seq`.
+inline std::optional<int> extract_push_seq(const std::string &msg) {
+  static constexpr const char *kSeqKey = "\"seq\":";
+  std::size_t pos = msg.find(kSeqKey);
+  if (pos == std::string::npos)
+    return std::nullopt;
+  std::size_t v = pos + 6; // strlen(kSeqKey)
+  while (v < msg.size() && (msg[v] == ' ' || msg[v] == '\t'))
+    v++;
+  if (v >= msg.size() || msg[v] < '0' || msg[v] > '9')
+    return std::nullopt;
+  long n = 0;
+  while (v < msg.size() && msg[v] >= '0' && msg[v] <= '9') {
+    n = n * 10 + (msg[v] - '0');
+    if (n > 0x7FFFFFFF)
+      return std::nullopt;
+    v++;
+  }
+  return static_cast<int>(n);
+}
+
+// Full state dump (poll response or unsolicited push). Every one carries
+// appliance_serial; unlock replies and props pushes don't.
+inline bool is_full_state_dump(const std::string &msg) {
+  return msg.find("\"appliance_serial\"") != std::string::npos;
 }
 
 inline std::string build_display_pin(int duration_seconds = 30) {

@@ -47,6 +47,27 @@ public:
   void set_pin(const std::string &pin) { pending_pin_ = pin; }
   void set_appliance_name(const std::string &name) { name_str_ = name; }
   void set_poll_offset_ms(std::uint32_t ms) { poll_offset_ms_ = ms; }
+  void set_session_refresh_interval_ms(std::uint32_t ms) {
+    session_refresh_interval_ms_ = ms;
+  }
+
+  // Connection diagnostics (see SubzeroHub accessors)
+  void set_connections_sensor(esphome::sensor::Sensor *s) {
+    connections_s_ = s;
+  }
+  void set_data_age_sensor(esphome::sensor::Sensor *s) { data_age_s_ = s; }
+  void set_missed_pushes_sensor(esphome::sensor::Sensor *s) {
+    missed_pushes_s_ = s;
+  }
+  void set_gap_door_changes_sensor(esphome::sensor::Sensor *s) {
+    gap_door_changes_s_ = s;
+  }
+  void set_no_data_connections_sensor(esphome::sensor::Sensor *s) {
+    no_data_connections_s_ = s;
+  }
+  void set_disconnect_reason_sensor(esphome::text_sensor::TextSensor *s) {
+    disconnect_reason_ts_ = s;
+  }
 
   // Status / PIN entities
   void set_status_text_sensor(esphome::text_sensor::TextSensor *s) {
@@ -201,11 +222,22 @@ protected:
   std::string pending_pin_;
   std::string name_str_;
   std::uint32_t poll_offset_ms_ = 0;
+  std::uint32_t session_refresh_interval_ms_ =
+      SubzeroHub::kSessionRefreshIntervalMs;
 
   // Entity refs (set from Python codegen)
   esphome::text_sensor::TextSensor *status_ts_ = nullptr;
   esphome::text::Text *pin_input_ = nullptr;
   esphome::switch_::Switch *debug_switch_ = nullptr;
+  esphome::sensor::Sensor *connections_s_ = nullptr;
+  esphome::sensor::Sensor *data_age_s_ = nullptr;
+  esphome::sensor::Sensor *missed_pushes_s_ = nullptr;
+  esphome::sensor::Sensor *gap_door_changes_s_ = nullptr;
+  esphome::sensor::Sensor *no_data_connections_s_ = nullptr;
+  esphome::text_sensor::TextSensor *disconnect_reason_ts_ = nullptr;
+
+  void publish_metrics_();
+  void publish_data_age_();
 
 private:
   // See enqueue_write() above.

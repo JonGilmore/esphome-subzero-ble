@@ -50,6 +50,7 @@ from esphome.const import (
     CONF_DEVICE_ID,
     CONF_DEVICE_CLASS,
     CONF_DEVICES,
+    CONF_DISABLED_BY_DEFAULT,
     CONF_ENTITY_CATEGORY,
     CONF_ESPHOME,
     CONF_ICON,
@@ -125,6 +126,8 @@ CONF_PIN_INPUT = "pin_input_id"
 CONF_DEBUG_SWITCH = "debug_switch_id"
 CONF_STATUS = "status_id"
 CONF_POLL_OFFSET = "poll_offset"
+CONF_SESSION_REFRESH_INTERVAL = "session_refresh_interval"
+CONF_CONNECTION_DIAGNOSTICS = "connection_diagnostics"
 
 # ----------------------------------------------------------------------
 # Sensor descriptors — compact form so we can iterate and generate via
@@ -254,6 +257,73 @@ COMMON_TEXT_SENSORS = [
         "Notification Event",
         "set_notif_event_sensor",
         {CONF_ICON: "mdi:bell-ring"},
+    ),
+]
+
+# Connection diagnostics: counters since ESP32 boot plus the age of the
+# last full-state snapshot. Disabled in HA unless `connection_diagnostics`
+# is set. state_class keeps the counters out of the HA logbook.
+CONNECTION_SENSORS = [
+    (
+        "connections",
+        "Connections",
+        "set_connections_sensor",
+        {
+            CONF_ICON: "mdi:bluetooth-connect",
+            CONF_STATE_CLASS: STATE_CLASS_TOTAL_INCREASING,
+            "accuracy_decimals": 0,
+        },
+    ),
+    (
+        "data_age",
+        "Data Age",
+        "set_data_age_sensor",
+        {
+            CONF_ICON: "mdi:timer-sand",
+            CONF_DEVICE_CLASS: DEVICE_CLASS_DURATION,
+            CONF_UNIT_OF_MEASUREMENT: UNIT_SECOND,
+            CONF_STATE_CLASS: STATE_CLASS_MEASUREMENT,
+            "accuracy_decimals": 0,
+        },
+    ),
+    (
+        "missed_pushes",
+        "Missed Pushes",
+        "set_missed_pushes_sensor",
+        {
+            CONF_ICON: "mdi:message-alert-outline",
+            CONF_STATE_CLASS: STATE_CLASS_TOTAL_INCREASING,
+            "accuracy_decimals": 0,
+        },
+    ),
+    (
+        "gap_door_changes",
+        "Door Changes While Disconnected",
+        "set_gap_door_changes_sensor",
+        {
+            CONF_ICON: "mdi:door-sliding-open",
+            CONF_STATE_CLASS: STATE_CLASS_TOTAL_INCREASING,
+            "accuracy_decimals": 0,
+        },
+    ),
+    (
+        "no_data_connections",
+        "Connections Without Data",
+        "set_no_data_connections_sensor",
+        {
+            CONF_ICON: "mdi:database-off-outline",
+            CONF_STATE_CLASS: STATE_CLASS_TOTAL_INCREASING,
+            "accuracy_decimals": 0,
+        },
+    ),
+]
+
+CONNECTION_TEXT_SENSORS = [
+    (
+        "disconnect_reason",
+        "Last Disconnect Reason",
+        "set_disconnect_reason_sensor",
+        {CONF_ICON: "mdi:bluetooth-off"},
     ),
 ]
 
@@ -1381,6 +1451,11 @@ def _schema_for_type(type_: str) -> cv.Schema:
         cv.Optional(
             CONF_POLL_OFFSET, default="0s"
         ): cv.positive_time_period_milliseconds,
+        # 0s disables the scheduled disconnect-and-reconnect.
+        cv.Optional(
+            CONF_SESSION_REFRESH_INTERVAL, default="18min"
+        ): cv.positive_time_period_milliseconds,
+        cv.Optional(CONF_CONNECTION_DIAGNOSTICS, default=False): cv.boolean,
     }
     base.update(TYPE_SCHEMAS[type_])
     return (
@@ -1641,6 +1716,9 @@ async def to_code(config):
     cg.add(var.set_appliance_name(name))
     cg.add(var.set_pin(config[CONF_PIN]))
     cg.add(var.set_poll_offset_ms(config[CONF_POLL_OFFSET]))
+    cg.add(
+        var.set_session_refresh_interval_ms(config[CONF_SESSION_REFRESH_INTERVAL])
+    )
 
     # ---- Status text sensor ----
     status_cfg = _validate_text_sensor(
@@ -1671,6 +1749,24 @@ async def to_code(config):
     for suffix, name_suffix, setter, kwargs in COMMON_TEXT_SENSORS:
         cfg = _build_text_sensor_config(
             parent_id, suffix, name_suffix, kwargs, False
+        )
+        ts = await text_sensor.new_text_sensor(cfg)
+        cg.add(getattr(var, setter)(ts))
+
+    # ---- Connection diagnostics ----
+    diag = {
+        CONF_ENTITY_CATEGORY: ENTITY_CATEGORY_DIAGNOSTIC,
+        CONF_DISABLED_BY_DEFAULT: not config[CONF_CONNECTION_DIAGNOSTICS],
+    }
+    for suffix, name_suffix, setter, kwargs in CONNECTION_SENSORS:
+        cfg = _build_sensor_config(
+            parent_id, suffix, name_suffix, {**kwargs, **diag}, False
+        )
+        s = await sensor.new_sensor(cfg)
+        cg.add(getattr(var, setter)(s))
+    for suffix, name_suffix, setter, kwargs in CONNECTION_TEXT_SENSORS:
+        cfg = _build_text_sensor_config(
+            parent_id, suffix, name_suffix, {**kwargs, **diag}, False
         )
         ts = await text_sensor.new_text_sensor(cfg)
         cg.add(getattr(var, setter)(ts))

@@ -33,6 +33,10 @@ public:
   bool parse_and_dispatch_(const std::string &msg) override {
     last_message_ = msg;
     parse_called_ = true;
+    if (msg.find("\"ref_door_ajar\":true") != std::string::npos)
+      note_door_("ref_door_ajar", true);
+    if (msg.find("\"ref_door_ajar\":false") != std::string::npos)
+      note_door_("ref_door_ajar", false);
     if (parse_should_confirm_pin_) {
       on_pin_confirmed_(pin_to_confirm_);
     }
@@ -1116,4 +1120,177 @@ TEST_F(HubFixture, SessionRefresh_DoesNotIncrementFastRetries) {
   hub_.handle_disconnected();
   EXPECT_EQ(hub_.fast_retries(), 1)
       << "Unexpected disconnects after a refresh must still count.";
+}
+
+// =============================================================================
+// Connection diagnostics
+// =============================================================================
+
+namespace {
+const char *kSnapshotClosed =
+    R"({"status":0,"resp":{"appliance_serial":"1","ref_door_ajar":false}})";
+const char *kSnapshotOpen =
+    R"({"status":0,"resp":{"appliance_serial":"1","ref_door_ajar":true}})";
+} // namespace
+
+TEST_F(HubFixture, Diag_CountsConnectionsAndRecordsReason) {
+  hub_.set_stored_pin("12345");
+  run_to_ready_();
+  EXPECT_EQ(hub_.sessions(), 1);
+  hub_.handle_disconnected(0x08);
+  EXPECT_NE(hub_.last_disconnect_reason().find("supervision timeout"),
+            std::string::npos);
+
+  transport_.set_connected(true);
+  hub_.handle_connected();
+  hub_.handle_connected(); // a second SEARCH_CMPL on the same link
+  EXPECT_EQ(hub_.sessions(), 2);
+}
+
+TEST_F(HubFixture, Diag_SessionRefreshLabelsReason) {
+  hub_.set_stored_pin("12345");
+  run_to_ready_();
+  scheduler_.advance_by(SubzeroHub::kSessionRefreshIntervalMs);
+  hub_.handle_disconnected(0x16);
+  EXPECT_EQ(hub_.last_disconnect_reason(), "session refresh");
+}
+
+TEST_F(HubFixture, Diag_LinkFailureBeforeConnectIsNotASession) {
+  hub_.handle_disconnected(SubzeroHub::kReasonOpenFailed);
+  EXPECT_EQ(hub_.sessions(), 0);
+  EXPECT_EQ(hub_.sessions_without_snapshot(), 0);
+  EXPECT_EQ(hub_.last_disconnect_reason(), "GATT open failed");
+}
+
+TEST_F(HubFixture, Diag_SnapshotSetsDataAge) {
+  hub_.set_stored_pin("12345");
+  run_to_ready_();
+  EXPECT_EQ(hub_.snapshot_age_s(), -1);
+  // An unlock reply is status:0 but not a snapshot.
+  feed_complete_d6_(hub_, R"({"status":0,"resp":{"pin":"12345"}})");
+  EXPECT_EQ(hub_.snapshot_age_s(), -1);
+  feed_complete_d6_(hub_, kSnapshotClosed);
+  EXPECT_EQ(hub_.snapshot_age_s(), 0);
+  scheduler_.advance_by(30000);
+  EXPECT_EQ(hub_.snapshot_age_s(), 30);
+}
+
+TEST_F(HubFixture, Diag_NoSnapshotAfterWatchCountsOnce) {
+  hub_.set_stored_pin("12345");
+  run_to_ready_();
+  scheduler_.advance_by(SubzeroHub::kSnapshotWarnMs);
+  EXPECT_EQ(hub_.sessions_without_snapshot(), 1);
+  hub_.handle_disconnected(0x08);
+  EXPECT_EQ(hub_.sessions_without_snapshot(), 1)
+      << "The drop must not count the same connection a second time.";
+}
+
+TEST_F(HubFixture, Diag_DropBeforeSnapshotCounts) {
+  hub_.set_stored_pin("12345");
+  run_to_ready_();
+  hub_.handle_disconnected(0x08);
+  EXPECT_EQ(hub_.sessions_without_snapshot(), 1);
+}
+
+TEST_F(HubFixture, Diag_SnapshotInTimeCancelsWatch) {
+  hub_.set_stored_pin("12345");
+  run_to_ready_();
+  feed_complete_d6_(hub_, kSnapshotClosed);
+  scheduler_.advance_by(SubzeroHub::kSnapshotWarnMs);
+  hub_.handle_disconnected(0x08);
+  EXPECT_EQ(hub_.sessions_without_snapshot(), 0);
+}
+
+TEST_F(HubFixture, Diag_SeqGapInSessionCountsMissed) {
+  hub_.set_stored_pin("12345");
+  run_to_ready_();
+  feed_complete_d6_(hub_, R"({"msg_types":2,"seq":10,"props":{}})");
+  feed_complete_d6_(hub_,
+                    R"({"msg_types":1,"seq":11,"diagnostic_status":"0x1"})");
+  EXPECT_EQ(hub_.missed_pushes(), 0);
+  feed_complete_d6_(hub_, R"({"msg_types":2,"seq":14,"props":{}})");
+  EXPECT_EQ(hub_.missed_pushes(), 2);
+}
+
+TEST_F(HubFixture, Diag_SeqGapAcrossReconnectCountsMissed) {
+  hub_.set_stored_pin("12345");
+  run_to_ready_();
+  feed_complete_d6_(hub_, R"({"msg_types":2,"seq":10,"props":{}})");
+  hub_.handle_disconnected(0x08);
+  transport_.set_connected(true);
+  hub_.handle_connected();
+  scheduler_.advance_by(3000);
+  feed_complete_d6_(hub_, R"({"msg_types":2,"seq":15,"props":{}})");
+  EXPECT_EQ(hub_.missed_pushes(), 4);
+}
+
+TEST_F(HubFixture, Diag_SeqResetIsNotAGap) {
+  hub_.set_stored_pin("12345");
+  run_to_ready_();
+  feed_complete_d6_(hub_, R"({"msg_types":2,"seq":500,"props":{}})");
+  feed_complete_d6_(hub_, R"({"msg_types":2,"seq":1,"props":{}})");
+  EXPECT_EQ(hub_.missed_pushes(), 0);
+}
+
+// The stale-door bug: the close push is sent while the link is down, so
+// only the next snapshot can correct the open door.
+TEST_F(HubFixture, Diag_DoorClosedWhileDisconnectedIsCounted) {
+  hub_.set_stored_pin("12345");
+  run_to_ready_();
+  feed_complete_d6_(
+      hub_, R"({"msg_types":2,"seq":1,"props":{"ref_door_ajar":true}})");
+  hub_.handle_disconnected(0x08);
+  transport_.set_connected(true);
+  hub_.handle_connected();
+  scheduler_.advance_by(3000);
+  feed_complete_d6_(hub_, kSnapshotClosed);
+  EXPECT_EQ(hub_.gap_door_changes(), 1);
+}
+
+TEST_F(HubFixture, Diag_DoorPushAfterReconnectIsNotCounted) {
+  hub_.set_stored_pin("12345");
+  run_to_ready_();
+  feed_complete_d6_(
+      hub_, R"({"msg_types":2,"seq":1,"props":{"ref_door_ajar":true}})");
+  hub_.handle_disconnected(0x08);
+  transport_.set_connected(true);
+  hub_.handle_connected();
+  scheduler_.advance_by(3000);
+  // A live edge on the new link, then the snapshot agrees with it.
+  feed_complete_d6_(
+      hub_, R"({"msg_types":2,"seq":2,"props":{"ref_door_ajar":false}})");
+  feed_complete_d6_(hub_, kSnapshotClosed);
+  EXPECT_EQ(hub_.gap_door_changes(), 0);
+}
+
+TEST_F(HubFixture, Diag_UnchangedDoorIsNotCounted) {
+  hub_.set_stored_pin("12345");
+  run_to_ready_();
+  feed_complete_d6_(hub_, kSnapshotOpen);
+  hub_.handle_disconnected(0x08);
+  transport_.set_connected(true);
+  hub_.handle_connected();
+  scheduler_.advance_by(3000);
+  feed_complete_d6_(hub_, kSnapshotOpen);
+  // A later snapshot in the same connection doesn't re-check.
+  feed_complete_d6_(hub_, kSnapshotClosed);
+  EXPECT_EQ(hub_.gap_door_changes(), 0);
+}
+
+TEST_F(HubFixture, Diag_MetricsCallbackFires) {
+  int calls = 0;
+  hub_.set_metrics_callback([&calls]() { ++calls; });
+  hub_.set_stored_pin("12345");
+  run_to_ready_();
+  EXPECT_GE(calls, 1);
+  const int before = calls;
+  feed_complete_d6_(hub_, kSnapshotClosed);
+  EXPECT_GT(calls, before);
+}
+
+TEST_F(HubFixture, SessionRefresh_ZeroIntervalDisables) {
+  hub_.set_session_refresh_interval_ms(0);
+  hub_.set_stored_pin("12345");
+  run_to_ready_();
+  EXPECT_FALSE(scheduler_.has_pending("session_refresh"));
 }
