@@ -55,6 +55,7 @@ constexpr const char *kTimeoutVerbFallbackRetry = "verb_fallback_retry";
 constexpr const char *kTimeoutSessionRefresh = "session_refresh";
 constexpr const char *kTimeoutSessionRefreshQuiet = "session_refresh_quiet";
 constexpr const char *kTimeoutSnapshotWatch = "snapshot_watch";
+constexpr const char *kTimeoutPairingRetry = "pairing_retry";
 } // namespace
 
 // =============================================================================
@@ -105,6 +106,7 @@ void SubzeroHub::handle_disconnected(int reason) {
   if (transport_ == nullptr || scheduler_ == nullptr)
     return;
   end_session_(reason);
+  scheduler_->cancel_timeout(kTimeoutPairingRetry);
   link_encrypted_ = false;
   cccd_before_encryption_ = false;
   scheduler_->cancel_timeout(kTimeoutSnapshotWatch);
@@ -247,11 +249,20 @@ void SubzeroHub::handle_auth_complete(bool success, int fail_reason,
            name_.c_str(), fail_reason, why);
   publish_status_(std::string("Pairing failed (") + why + ")");
   // SMP 0x08 at the confirm check is how CONAPPWM fw 5.13 rejects full key
-  // distribution; try the other key set on the next connection.
-  if (fail_reason == 0x55) {
-    ltk_only_ = !ltk_only_;
-    HUB_LOGW("ble", "[%s] Next pairing will distribute %s", name_.c_str(),
-             ltk_only_ ? "the LTK only" : "LTK + IRK + CSRK");
+  // distribution. Switch to LTK-only for good and reconnect now: nothing
+  // pairs again on this link, so it would sit unencrypted until the next
+  // session refresh.
+  if (fail_reason == 0x55 && !ltk_only_) {
+    ltk_only_ = true;
+    HUB_LOGW("ble", "[%s] Reconnecting to pair with the LTK only",
+             name_.c_str());
+    if (scheduler_ != nullptr) {
+      scheduler_->set_timeout(
+          kTimeoutPairingRetry, kPairingRetryDelayMs, [this]() {
+            if (transport_ != nullptr && transport_->connected())
+              transport_->disconnect();
+          });
+    }
   }
 }
 

@@ -1432,19 +1432,37 @@ TEST_F(HubFixture, Pairing_DefaultsToFullKeys) {
   EXPECT_FALSE(transport_.last_ltk_only());
 }
 
-TEST_F(HubFixture, Pairing_Smp08FlipsToLtkOnlyAndBack) {
+TEST_F(HubFixture, Pairing_Smp08SwitchesToLtkOnlyAndReconnects) {
   hub_.set_stored_pin("12345");
   run_to_ready_();
+  const std::size_t disc_before = transport_.disconnect_count();
   hub_.handle_auth_complete(false, 0x55, 0);
   EXPECT_TRUE(hub_.ltk_only());
-  hub_.handle_disconnected(0x13);
+  scheduler_.advance_by(SubzeroHub::kPairingRetryDelayMs);
+  EXPECT_EQ(transport_.disconnect_count(), disc_before + 1)
+      << "The failed link must not sit unencrypted until session refresh.";
+  hub_.handle_disconnected(0x16);
   transport_.set_connected(true);
   hub_.handle_connected();
   scheduler_.advance_by(100);
   EXPECT_TRUE(transport_.last_ltk_only());
-  // The other key set failed the same way: go back.
+}
+
+TEST_F(HubFixture, Pairing_LtkOnlyIsStickyAndDoesNotLoop) {
+  hub_.set_stored_pin("12345");
+  run_to_ready_();
   hub_.handle_auth_complete(false, 0x55, 0);
-  EXPECT_FALSE(hub_.ltk_only());
+  scheduler_.advance_by(SubzeroHub::kPairingRetryDelayMs);
+  hub_.handle_disconnected(0x16);
+  transport_.set_connected(true);
+  hub_.handle_connected();
+  scheduler_.advance_by(100);
+  const std::size_t disc_before = transport_.disconnect_count();
+  // LTK-only fails too: keep it, and don't force another reconnect.
+  hub_.handle_auth_complete(false, 0x55, 0);
+  scheduler_.advance_by(SubzeroHub::kPairingRetryDelayMs);
+  EXPECT_TRUE(hub_.ltk_only());
+  EXPECT_EQ(transport_.disconnect_count(), disc_before);
 }
 
 TEST_F(HubFixture, Pairing_OtherFailuresKeepKeySet) {

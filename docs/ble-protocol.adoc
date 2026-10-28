@@ -115,7 +115,7 @@ NOTE: Sub-Zero's BLE module seems to only support Legacy Pairing, *not* BLE Secu
 After the first successful bond, the keys are stored and reconnection is automatic.
 If the bond becomes stale (e.g. appliance-side timeout overnight), the integration detects repeated auth failures (3 attempts) and automatically clears the stale bond, then re-pairs from scratch.
 
-Key distribution:: The Pairing Request asks for LTK + IRK + CSRK first. With that, `szwcatfw_5.13` answers our Pairing Random with *Pairing Failed 0x08* (`auth fail reason=85`; ESP-IDF reports SMP reasons as 0x4D + the reason) and then refuses every D5/D6 write with ATT 0x0F (insufficient encryption); after that failure the integration pairs that appliance with the *LTK only* (`ESP_BLE_ENC_KEY_MASK`). LTK-only cannot be the default: fw 2.27 modules (IW30R wine, a 2028 fridge) complete an LTK-only pairing and still send pushes, but ignore every command.
+Key distribution:: The Pairing Request asks for LTK + IRK + CSRK first. With that, `szwcatfw_5.13` answers our Pairing Random with *Pairing Failed 0x08* (`auth fail reason=85`; ESP-IDF reports SMP reasons as 0x4D + the reason) and then refuses every D5/D6 write with ATT 0x0F (insufficient encryption); after that failure the integration reconnects at once and pairs that appliance with the *LTK only* (`ESP_BLE_ENC_KEY_MASK`) from then on. LTK-only cannot be the default: fw 2.27 modules (IW30R wine, a 2028 fridge) complete an LTK-only pairing and still send pushes, but ignore every command.
 +
 NOTE: These parameters are global to the ESP32's BLE stack. The integration sets them again before each pairing it requests.
 

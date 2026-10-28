@@ -140,6 +140,8 @@ public:
   // A connection with no full-state snapshot this long after get_async
   // counts toward sessions_without_snapshot().
   static constexpr std::uint32_t kSnapshotWarnMs = 15 * 1000;
+  // Delay before the reconnect that follows an SMP 0x08 pairing failure.
+  static constexpr std::uint32_t kPairingRetryDelayMs = 500;
   // Status text callback — connected to ${prefix}_debug.publish_state.
   void set_status_callback(std::function<void(const std::string &)> cb) {
     status_cb_ = std::move(cb);
@@ -331,8 +333,8 @@ private:
   // CCCD writes went out before the link was encrypted (and were likely
   // refused); handle_auth_complete() sends them again.
   bool cccd_before_encryption_ = false;
-  // Pair with LTK-only key distribution. Starts false (full keys); flips on
-  // every SMP 0x08 pairing failure, so each module settles on what it takes.
+  // Pair with LTK-only key distribution. Starts false (full keys); set for
+  // good by an SMP 0x08 pairing failure (CONAPPWM fw 5.13).
   bool ltk_only_ = false;
 
   // Last value handed to status_cb_, used to drop duplicate publishes.
