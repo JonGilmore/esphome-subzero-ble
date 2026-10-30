@@ -281,6 +281,8 @@ private:
   void write_set_property_(const std::string &key,
                            const std::string &json_value);
   void update_handles_from_db_();
+  // True when the cached D5/D6 handles are characteristics in the GATT db.
+  bool d5_d6_in_db_();
 
   // ---- collaborators (non-owning pointers, lifetime owned by caller) ----
   BleTransport *transport_ = nullptr;
@@ -333,6 +335,8 @@ private:
   // CCCD writes went out before the link was encrypted (and were likely
   // refused); handle_auth_complete() sends them again.
   bool cccd_before_encryption_ = false;
+  // A discovery after encryption is running; its SEARCH_CMPL subscribes.
+  bool rediscovering_ = false;
   // Pair with LTK-only key distribution. Starts false (full keys); set for
   // good by an SMP 0x08 pairing failure (CONAPPWM fw 5.13).
   bool ltk_only_ = false;

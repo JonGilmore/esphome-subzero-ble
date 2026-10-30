@@ -66,6 +66,17 @@ constexpr const char *kTimeoutPairingRetry = "pairing_retry";
 void SubzeroHub::handle_connected() {
   if (transport_ == nullptr || scheduler_ == nullptr)
     return;
+  // End of the discovery started in handle_auth_complete().
+  if (rediscovering_) {
+    rediscovering_ = false;
+    fast_reconnect_running_ = false;
+    scheduler_->cancel_timeout(kTimeoutFastReconnect);
+    if (!d5_d6_in_db_()) {
+      HUB_LOGW("ble", "[%s] D5/D6 still not in the GATT cache", name_.c_str());
+    }
+    start_subscribe_();
+    return;
+  }
   if (!session_active_)
     start_session_();
   transport_->request_mtu();
@@ -109,6 +120,7 @@ void SubzeroHub::handle_disconnected(int reason) {
   scheduler_->cancel_timeout(kTimeoutPairingRetry);
   link_encrypted_ = false;
   cccd_before_encryption_ = false;
+  rediscovering_ = false;
   scheduler_->cancel_timeout(kTimeoutSnapshotWatch);
   json_buf_.clear();
   scheduler_->cancel_timeout(kTimeoutPostBondInitial);
@@ -233,6 +245,19 @@ void SubzeroHub::handle_auth_complete(bool success, int fail_reason,
     HUB_LOGI("ble", "[%s] Link encrypted (auth_mode=0x%02X: bond=%d mitm=%d)",
              name_.c_str(), auth_mode, (auth_mode & 0x01) ? 1 : 0,
              (auth_mode & 0x04) ? 1 : 0);
+    // fw 5.13 hides D5/D6 until the link is encrypted, so the discovery of
+    // a fast reconnect misses them. ESP-IDF then refuses the notify
+    // registration (0x87) and drops every indication. Discover again;
+    // handle_connected() subscribes when it completes.
+    if (transport_ != nullptr && d5_handle_ > 0 && !post_bond_running_ &&
+        !rediscovering_ && !d5_d6_in_db_()) {
+      rediscovering_ = true;
+      cccd_before_encryption_ = false;
+      HUB_LOGI("ble", "[%s] D5/D6 not in the GATT cache; discovering again",
+               name_.c_str());
+      transport_->cache_refresh();
+      return;
+    }
     if (cccd_before_encryption_ && transport_ != nullptr && d5_handle_ > 0) {
       cccd_before_encryption_ = false;
       HUB_LOGI("ble", "[%s] Resending CCCD writes after encryption",
@@ -624,6 +649,20 @@ void SubzeroHub::update_handles_from_db_() {
     d5_cccd_ = find_cccd(d5_handle_);
   if (d6_handle_ > 0 && d6_cccd_ == 0)
     d6_cccd_ = find_cccd(d6_handle_);
+}
+
+bool SubzeroHub::d5_d6_in_db_() {
+  bool d5 = false;
+  bool d6 = d6_handle_ == 0;
+  for (const auto &e : transport_->read_gatt_db()) {
+    if (e.type != GattDbEntry::kCharacteristic)
+      continue;
+    if (e.handle == d5_handle_)
+      d5 = true;
+    if (e.handle == d6_handle_)
+      d6 = true;
+  }
+  return d5 && d6;
 }
 
 // =============================================================================

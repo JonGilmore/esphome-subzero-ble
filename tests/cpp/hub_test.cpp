@@ -282,6 +282,52 @@ TEST_F(HubFixture, FastReconnect_SkipsPostBondWhenHandlesCached) {
   EXPECT_TRUE(hub_.subscribe_running());
 }
 
+TEST_F(HubFixture, FastReconnect_D5D6MissingFromCache_DiscoversAgain) {
+  // fw 5.13 wall oven: before encryption the db has no D5/D6, so the
+  // registration of a fast reconnect fails and every indication is lost.
+  hub_.set_stored_pin("12345");
+  run_to_ready_();
+  hub_.handle_disconnected();
+  transport_.set_connected(true);
+  transport_.set_gatt_db({make_char_entry(0xD7, 0x14)});
+  hub_.handle_connected();
+  scheduler_.advance_by(1500); // fast reconnect subscribes, encryption pending
+
+  const std::size_t refresh_before = transport_.cache_refresh_count();
+  hub_.handle_auth_complete(true, 0, 0x01);
+  EXPECT_EQ(transport_.cache_refresh_count(), refresh_before + 1);
+
+  // The new discovery sees D5/D6; its SEARCH_CMPL subscribes again.
+  transport_.set_gatt_db(full_gatt_db());
+  const std::size_t regs_before = transport_.notify_subscribed_handles().size();
+  hub_.handle_connected();
+  const auto &regs = transport_.notify_subscribed_handles();
+  ASSERT_EQ(regs.size(), regs_before + 2);
+  EXPECT_EQ(regs[regs_before], 0x10);
+  EXPECT_EQ(regs[regs_before + 1], 0x12);
+  EXPECT_TRUE(hub_.subscribe_running());
+  EXPECT_FALSE(hub_.fast_reconnect_running());
+
+  const std::size_t writes_before = transport_.write_count();
+  scheduler_.advance_by(1500); // unlock, then initial get_async
+  EXPECT_GT(transport_.write_count(), writes_before);
+  EXPECT_TRUE(transport_.wrote_command_to(0x12, "get_async"));
+  EXPECT_EQ(transport_.cache_refresh_count(), refresh_before + 1);
+}
+
+TEST_F(HubFixture, FastReconnect_D5D6InCache_NoSecondDiscovery) {
+  hub_.set_stored_pin("12345");
+  run_to_ready_();
+  hub_.handle_disconnected();
+  transport_.set_connected(true);
+  hub_.handle_connected();
+  scheduler_.advance_by(1500);
+
+  const std::size_t refresh_before = transport_.cache_refresh_count();
+  hub_.handle_auth_complete(true, 0, 0x01);
+  EXPECT_EQ(transport_.cache_refresh_count(), refresh_before);
+}
+
 // =============================================================================
 // Disconnect / stale bond detection
 // =============================================================================

@@ -140,6 +140,8 @@ Poll vs push:: `poll_ok_` only flips on a successful POLL RESPONSE (the substrin
 D5 + D6 Discovery Timing:: The encrypted D5 and D6 characteristics are not visible in the initial GATT database - they only appear after BLE bonding completes.
 The implementation requests encryption, refreshes the GATT cache (`esp_ble_gattc_cache_refresh`), and re-runs service discovery to make them visible. The code polls up to three times with delays to handle timing variations across different appliance models.
 +
+A fast reconnect uses the cached handles, but ESP-IDF's GATT cache again holds only the pre-encryption database. Newer ESP-IDF releases refuse a notify registration for a handle that is not in that cache (status `0x87`) and then drop every indication from it, so nothing reaches D5/D6. When D5/D6 are missing from the cache after encryption, the integration refreshes the cache and subscribes again when that discovery completes.
++
 NOTE: Cove dishwashers expose D5/D6 in the GATT database *before* bonding, but still require BLE-level encryption for writes (GATT status 5 = insufficient authentication without it). The code always requests encryption regardless of when D5 is discovered.
 
 MTU:: Negotiated to 517 bytes, though the appliance still fragments at ~40 bytes per indication (fridges) or ~244 bytes (dishwashers/ranges).
