@@ -115,12 +115,13 @@ NOTE: Sub-Zero's BLE module seems to only support Legacy Pairing, *not* BLE Secu
 After the first successful bond, the keys are stored and reconnection is automatic.
 If the bond becomes stale (e.g. appliance-side timeout overnight), the integration detects repeated auth failures (3 attempts) and automatically clears the stale bond, then re-pairs from scratch.
 
-Key distribution:: The Pairing Request asks for the *LTK only* (init and response keys = `ESP_BLE_ENC_KEY_MASK`). With Bluedroid's default (LTK + IRK + CSRK), `szwcatfw_5.13` answers our Pairing Random with *Pairing Failed 0x08* (`auth fail reason=85`; ESP-IDF reports SMP reasons as 0x4D + the reason), and then refuses every D5/D6 write with ATT 0x0F (insufficient encryption). Sub-Zero modules use public addresses, so IRK and CSRK are not needed.
+Key distribution:: The Pairing Request asks for LTK + IRK + CSRK first. With that, `szwcatfw_5.13` answers our Pairing Random with *Pairing Failed 0x08* (`auth fail reason=85`; ESP-IDF reports SMP reasons as 0x4D + the reason) and then refuses every D5/D6 write with ATT 0x0F (insufficient encryption); after that failure the integration reconnects at once and pairs that appliance with the *LTK only* (`ESP_BLE_ENC_KEY_MASK`) from then on. LTK-only cannot be the default: fw 2.27 modules (IW30R wine, a 2028 fridge) complete an LTK-only pairing and still send pushes, but ignore every command.
 +
-NOTE: These parameters are global to the ESP32's BLE stack, so other devices that pair through the same ESP32 also exchange only the LTK.
+NOTE: These parameters are global to the ESP32's BLE stack. The integration sets them again before each pairing it requests.
 
 Command Framing:: Every command (D5 control or D6 data) *must* end with a newline character (`\n`).
 The appliance's serial parser silently discards any command without it.
+The official app writes each command in chunks of at most 20 bytes (one Write Request each, even with a 247-byte MTU), and writes an empty value to D5 on every connect before any command. Some appliances (IW30R wine, a fw 2.27 fridge) acknowledge a longer single write but never act on it, while still sending pushes. The integration does the same as the app.
 
 Response Fragmentation:: The appliance sends responses as BLE indications, fragmented into chunks.
 fw 8.5 appliances fragment at ~40 bytes per indication (50+ fragments for a ~2 KB poll response). fw 2.27 appliances use ~244 byte fragments (most pushes fit in a single indication).
@@ -134,10 +135,12 @@ Push Notifications:: Appliances send real-time push notifications for state chan
 +
 The appliance also broadcasts a duplicate copy of every D6 push on D5. We deliberately ignore those copies in the D5 notification handler (it doesn't feed the JSON buffer) to prevent the same push from being parsed twice and corrupting the buffer with duplicated bytes.
 
-Zombie-poll detection (poll vs push):: `poll_ok_` only flips on a successful POLL RESPONSE (the substring `"status":0`), never on incoming push notifications. The fw 8.5 silent-poll case keeps emitting `msg_types:1` pushes while `get_async` writes go silent server-side; treating those pushes as "evidence of life" would block the zombie detector from firing and the appliance state would freeze on its initial poll values forever. With this gating, pushes still update incremental state via the dispatch bus, but `poll_miss_` keeps incrementing each silent 60s window and forces a reconnect after 3 misses (~3 min) - matching the Sub-Zero Android app's disconnect-between-polls cadence on fw 8.5.
+Poll vs push:: `poll_ok_` only flips on a successful POLL RESPONSE (the substring `"status":0`), never on incoming push notifications. `poll_miss_` counts the silent 60s windows for the log only; it no longer forces a reconnect, because fw 8.5 keeps pushing while `get_async` goes silent. The scheduled session refresh (see link:advanced.adoc#reconnect-logic[Reconnect Logic]) replaced it.
 
 D5 + D6 Discovery Timing:: The encrypted D5 and D6 characteristics are not visible in the initial GATT database - they only appear after BLE bonding completes.
 The implementation requests encryption, refreshes the GATT cache (`esp_ble_gattc_cache_refresh`), and re-runs service discovery to make them visible. The code polls up to three times with delays to handle timing variations across different appliance models.
++
+A fast reconnect uses the cached handles, but ESP-IDF's GATT cache again holds only the pre-encryption database. Newer ESP-IDF releases refuse a notify registration for a handle that is not in that cache (status `0x87`) and then drop every indication from it, so nothing reaches D5/D6. When D5/D6 are missing from the cache, the integration waits for encryption, refreshes the cache, and subscribes when `ESP_GATTC_DIS_SRVC_CMPL_EVT` reports the end of that discovery. ESPHome searches only when the link opens, so no `ESP_GATTC_SEARCH_CMPL_EVT` follows a refresh. Writes must not be queued when the refresh starts: ESP-IDF fails them with status `0x84`.
 +
 NOTE: Cove dishwashers expose D5/D6 in the GATT database *before* bonding, but still require BLE-level encryption for writes (GATT status 5 = insufficient authentication without it). The code always requests encryption regardless of when D5 is discovered.
 

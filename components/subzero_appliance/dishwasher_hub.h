@@ -27,6 +27,8 @@ protected:
     if (s.common.pin_confirmed) {
       on_pin_confirmed_(*s.common.pin_confirmed);
     }
+    if (s.door_ajar)
+      note_door_("door_ajar", *s.door_ajar);
     if (bus_ != nullptr) {
       esphome::subzero_protocol::dispatch_dishwasher(s, *bus_);
     }

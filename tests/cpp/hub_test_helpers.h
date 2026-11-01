@@ -101,7 +101,10 @@ public:
     connected_ = false;
   }
   void request_mtu() override { ++mtu_request_count_; }
-  void request_encryption() override { ++encryption_request_count_; }
+  void request_encryption(bool ltk_only) override {
+    ++encryption_request_count_;
+    last_ltk_only_ = ltk_only;
+  }
   void remove_bond() override { ++remove_bond_count_; }
   void cache_refresh() override { ++cache_refresh_count_; }
   void cache_clean() override { ++cache_clean_count_; }
@@ -146,6 +149,7 @@ public:
   std::size_t encryption_request_count() const {
     return encryption_request_count_;
   }
+  bool last_ltk_only() const { return last_ltk_only_; }
   std::size_t remove_bond_count() const { return remove_bond_count_; }
   std::size_t cache_refresh_count() const { return cache_refresh_count_; }
   std::size_t cache_clean_count() const { return cache_clean_count_; }
@@ -155,22 +159,40 @@ public:
     return notify_subscribed_handles_;
   }
 
-  // Was a write to `handle` made whose payload contains substring `needle`?
+  // Do the writes to `handle`, joined in order, contain `needle`? Commands
+  // go out in 20-byte chunks, so one command spans several writes.
   bool wrote_command_to(std::uint16_t handle, const std::string &needle) const {
+    std::string s;
     for (const auto &c : writes_) {
-      if (c.handle != handle)
-        continue;
-      std::string s(c.bytes.begin(), c.bytes.end());
-      if (s.find(needle) != std::string::npos)
-        return true;
+      if (c.handle == handle)
+        s.append(c.bytes.begin(), c.bytes.end());
     }
-    return false;
+    return s.find(needle) != std::string::npos;
+  }
+
+  // All writes to `handle`, joined in order.
+  std::string joined_writes(std::uint16_t handle) const {
+    std::string s;
+    for (const auto &c : writes_) {
+      if (c.handle == handle)
+        s.append(c.bytes.begin(), c.bytes.end());
+    }
+    return s;
+  }
+
+  // Largest single write so far.
+  std::size_t max_write_len() const {
+    std::size_t m = 0;
+    for (const auto &c : writes_)
+      m = std::max(m, c.bytes.size());
+    return m;
   }
 
   void clear_writes() { writes_.clear(); }
 
 private:
   bool connected_ = false;
+  bool last_ltk_only_ = false;
   std::vector<WriteCall> writes_;
   std::vector<GattDbEntry> gatt_db_;
   std::vector<std::uint16_t> notify_subscribed_handles_;
@@ -189,11 +211,22 @@ private:
 
 // Convenience: build a single CHARACTERISTIC entry for the GATT db.
 inline GattDbEntry make_char_entry(std::uint8_t uuid_first_byte,
-                                   std::uint16_t handle) {
+                                   std::uint16_t handle,
+                                   std::uint8_t properties = 0) {
   GattDbEntry e;
   e.type = GattDbEntry::kCharacteristic;
   e.uuid_is_128bit = true;
   e.uuid_first_byte = uuid_first_byte;
+  e.properties = properties;
+  e.handle = handle;
+  return e;
+}
+
+// Convenience: build a DESCRIPTOR entry with a 16-bit UUID.
+inline GattDbEntry make_desc_entry(std::uint16_t uuid16, std::uint16_t handle) {
+  GattDbEntry e;
+  e.type = GattDbEntry::kDescriptor;
+  e.uuid16 = uuid16;
   e.handle = handle;
   return e;
 }

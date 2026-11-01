@@ -26,8 +26,10 @@
 #include "ble_transport.h"
 #include "scheduler.h"
 
+#include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -56,13 +58,20 @@ public:
   // Connection lifecycle (called from ble_client's on_connect /
   // on_disconnect / on_passkey_request triggers).
   void handle_connected();
-  void handle_disconnected();
+  // `reason` is the IDF esp_gatt_conn_reason_t, or one of the kReason*
+  // values below when the link never came up.
+  void handle_disconnected(int reason = kReasonUnknown);
+  static constexpr int kReasonUnknown = -1;
+  static constexpr int kReasonOpenFailed = -2;
+  static constexpr int kReasonSearchFailed = -3;
   // Returns the passkey to reply with, or 0 if no PIN is stored
   // (caller should still call passkey_reply with 0 or skip).
   std::uint32_t handle_passkey_request();
   // ESP_GAP_BLE_AUTH_CMPL_EVT. On failure Status keeps the reason until
   // the link drops; the connection flow itself is unchanged.
   void handle_auth_complete(bool success, int fail_reason, int auth_mode);
+  // ESP_GATTC_DIS_SRVC_CMPL_EVT: a discovery rebuilt the GATT cache.
+  void handle_discovery_complete();
 
   // BLE indication arrivals (called from D5/D6 notify sensor lambdas).
   // D5 is the control channel — heartbeat only, resets zombie counter.
@@ -112,9 +121,14 @@ public:
   void set_stored_pin(const std::string &pin);
   void set_pin_confirmed(bool v) { pin_confirmed_ = v; }
   void set_debug_mode(bool enabled) { debug_mode_ = enabled; }
-  // Per-appliance stagger to avoid concurrent bonding races on shared
-  // ESP32. Translated from the `poll_offset` substitution.
-  void set_poll_offset_ms(std::uint32_t ms) { poll_offset_ms_ = ms; }
+  // 0 disables the scheduled session refresh.
+  void set_session_refresh_interval_ms(std::uint32_t ms) {
+    session_refresh_interval_ms_ = ms;
+  }
+  // Fires whenever a connection diagnostic below changes.
+  void set_metrics_callback(std::function<void()> cb) {
+    metrics_cb_ = std::move(cb);
+  }
 
   // Public so tests can advance the fake scheduler to exactly the refresh
   // deadline
@@ -125,6 +139,14 @@ public:
   // it rather than a Status frozen at "Connected and polling."
   // Public for the same reason as kSessionRefreshIntervalMs.
   static constexpr std::uint32_t kSessionRefreshQuietMaxMs = 90 * 1000;
+  // A connection with no full-state snapshot this long after get_async
+  // counts toward sessions_without_snapshot().
+  static constexpr std::uint32_t kSnapshotWarnMs = 15 * 1000;
+  // Delay before the reconnect that follows an SMP 0x08 pairing failure.
+  static constexpr std::uint32_t kPairingRetryDelayMs = 500;
+  // Limit for each wait of a fast reconnect that must discover again (for
+  // encryption, then for the discovery). It subscribes anyway after that.
+  static constexpr std::uint32_t kRediscoverTimeoutMs = 10 * 1000;
   // Status text callback — connected to ${prefix}_debug.publish_state.
   void set_status_callback(std::function<void(const std::string &)> cb) {
     status_cb_ = std::move(cb);
@@ -156,15 +178,34 @@ public:
   std::uint16_t d5_handle() const { return d5_handle_; }
   std::uint16_t d6_handle() const { return d6_handle_; }
   std::uint16_t d7_handle() const { return d7_handle_; }
+  // 0 until found in the GATT db.
+  std::uint16_t d5_cccd() const { return d5_cccd_; }
+  std::uint16_t d6_cccd() const { return d6_cccd_; }
   int phase() const { return phase_; }
   bool debug_mode() const { return debug_mode_; }
   bool post_bond_running() const { return post_bond_running_; }
   bool subscribe_running() const { return subscribe_running_; }
   bool fast_reconnect_running() const { return fast_reconnect_running_; }
   bool pairing_failed() const { return pairing_failed_; }
+  bool ltk_only() const { return ltk_only_; }
   const std::string &stored_pin() const { return stored_pin_; }
   esphome::subzero_protocol::PollVerb poll_verb() const { return poll_verb_; }
   void set_poll_verb(esphome::subzero_protocol::PollVerb v) { poll_verb_ = v; }
+
+  // ---- Connection diagnostics (counts are since boot) ----
+  int sessions() const { return sessions_; }
+  // Push seq numbers skipped, in a session or across a reconnect.
+  int missed_pushes() const { return missed_pushes_; }
+  // Doors whose first snapshot after a reconnect disagreed with the value
+  // held at the drop: an edge lost while the link was down.
+  int gap_door_changes() const { return gap_door_changes_; }
+  int sessions_without_snapshot() const { return sessions_without_snapshot_; }
+  const std::string &last_disconnect_reason() const {
+    return last_disconnect_reason_;
+  }
+  // Seconds since the last full-state snapshot; -1 before the first.
+  int snapshot_age_s() const;
+  static const char *disconnect_reason_str(int reason);
 
 protected:
   // Subclass hook — called when a complete JSON message has been
@@ -184,6 +225,9 @@ protected:
   void on_pin_confirmed_(const std::string &pin);
   // Virtual so host tests can spy on the subclass call contract
   virtual void log_data_keys_(const std::vector<std::string> &keys);
+  // Subclasses report every door field they parse, so the hub can compare
+  // door state across a disconnect.
+  void note_door_(const char *key, bool open);
 
 private:
   // ---- post_bond stages (translated from the 5-stage YAML script) ----
@@ -197,18 +241,28 @@ private:
   // ---- subscribe stages ----
   void start_subscribe_();
   void subscribe_register_and_cccd_();
+  void write_cccds_();
   void subscribe_unlock_();
   void subscribe_initial_get_();
 
   // ---- fast_reconnect stages ----
   void start_fast_reconnect_();
   void fast_reconnect_subscribe_();
+  void rediscovery_finished_();
 
   // Scheduled session refresh - fires once per session ~18 min after unlock
   void disconnect_for_session_refresh_();
   // Watchdog: un-mutes progress reporting if a session refresh never
   // completes, so the Status entity can't get stuck on a stale value.
   void session_refresh_quiet_expired_();
+
+  // ---- connection diagnostics ----
+  void start_session_();
+  void end_session_(int reason);
+  void on_full_snapshot_();
+  void track_seq_(int seq);
+  void snapshot_watch_expired_();
+  void notify_metrics_();
 
   // ---- helpers ----
   // Publishes a real, user-meaningful state. De-duplicated against the
@@ -227,10 +281,14 @@ private:
   void log_chunked_debug_(const std::string &msg);
   void write_unlock_channel_(std::uint16_t handle);
   void write_poll_command_(std::uint16_t handle);
+  // Writes a command in kCommandChunkBytes pieces; returns the first error.
+  BleResult write_command_(std::uint16_t handle, const std::string &cmd);
   bool handle_lacking_properties_(const std::string &msg);
   void write_set_property_(const std::string &key,
                            const std::string &json_value);
   void update_handles_from_db_();
+  // True when the cached D5/D6 handles are characteristics in the GATT db.
+  bool d5_d6_in_db_();
 
   // ---- collaborators (non-owning pointers, lifetime owned by caller) ----
   BleTransport *transport_ = nullptr;
@@ -245,13 +303,19 @@ private:
   std::uint16_t d5_handle_ = 0;
   std::uint16_t d6_handle_ = 0;
   std::uint16_t d7_handle_ = 0;
+  // CCCD descriptor handles. The offset from the value handle depends on
+  // firmware (+2 on fw 8.5, +1 on fw 2.27), so read them from the db.
+  std::uint16_t d5_cccd_ = 0;
+  std::uint16_t d6_cccd_ = 0;
+  // Characteristic properties from the db; picks notify vs indicate.
+  std::uint8_t d5_props_ = 0;
+  std::uint8_t d6_props_ = 0;
   std::string stored_pin_;
   bool pin_confirmed_ = true; // matches YAML's restore_value:true initial
   bool poll_ok_ = false;
   int fast_retries_ = 0;
   int poll_miss_ = 0;
   bool debug_mode_ = false;
-  std::uint32_t poll_offset_ms_ = 0;
   esphome::subzero_protocol::PollVerb poll_verb_ =
       esphome::subzero_protocol::PollVerb::kGetAsync;
 
@@ -272,6 +336,16 @@ private:
 
   // Set by a failed pairing; cleared on success or disconnect.
   bool pairing_failed_ = false;
+  // Set by a successful AUTH_CMPL; cleared on disconnect.
+  bool link_encrypted_ = false;
+  // CCCD writes went out before the link was encrypted (and were likely
+  // refused); handle_auth_complete() sends them again.
+  bool cccd_before_encryption_ = false;
+  // A discovery after encryption is running; its end subscribes.
+  bool rediscovering_ = false;
+  // Pair with LTK-only key distribution. Starts false (full keys); set for
+  // good by an SMP 0x08 pairing failure (CONAPPWM fw 5.13).
+  bool ltk_only_ = false;
 
   // Last value handed to status_cb_, used to drop duplicate publishes.
   std::string last_status_;
@@ -285,6 +359,36 @@ private:
 
   // D6 message buffer (D5 is heartbeat-only post-PR-#72).
   esphome::subzero_protocol::MessageBuffer json_buf_;
+
+  // ---- connection diagnostics ----
+  std::uint32_t session_refresh_interval_ms_ = kSessionRefreshIntervalMs;
+  std::function<void()> metrics_cb_;
+  // A session runs from the first handle_connected() after a drop to the
+  // next handle_disconnected().
+  bool session_active_ = false;
+  bool session_snapshot_ = false;
+  bool session_no_snapshot_counted_ = false;
+  bool session_d5_seen_ = false;
+  bool session_d6_seen_ = false;
+  std::uint32_t session_start_ms_ = 0;
+  int session_pushes_ = 0;
+  bool have_drop_ = false;
+  std::uint32_t last_drop_ms_ = 0;
+  bool have_snapshot_ = false;
+  std::uint32_t last_snapshot_ms_ = 0;
+  // True while the message being dispatched is a full-state dump.
+  bool parsing_snapshot_ = false;
+  int last_seq_ = -1;
+  bool seq_seen_in_session_ = false;
+  int sessions_ = 0;
+  int missed_pushes_ = 0;
+  int gap_door_changes_ = 0;
+  int sessions_without_snapshot_ = 0;
+  std::string last_disconnect_reason_;
+  // Latest value of every door field, and a copy taken at the last drop.
+  // Keys whose value a live push updates are dropped from the copy.
+  std::map<std::string, bool> doors_;
+  std::map<std::string, bool> doors_at_drop_;
 
   // ---- tunables ----
   // Brace-matched to the YAML's hard-coded values. If any of these
@@ -304,6 +408,7 @@ private:
   static constexpr std::uint32_t kResetPairingDisconnectDelayMs = 1000;
   static constexpr int kStaleBondsThreshold = 3;
   static constexpr std::uint32_t kVerbFallbackRetryDelayMs = 1000;
+  static constexpr std::size_t kCommandChunkBytes = 20;
 };
 
 } // namespace subzero_appliance
