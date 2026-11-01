@@ -18,6 +18,7 @@ using esphome::subzero_appliance::BleResult;
 using esphome::subzero_appliance::FakeScheduler;
 using esphome::subzero_appliance::GattDbEntry;
 using esphome::subzero_appliance::make_char_entry;
+using esphome::subzero_appliance::make_desc_entry;
 using esphome::subzero_appliance::MockBleTransport;
 using esphome::subzero_appliance::SubzeroHub;
 
@@ -33,6 +34,10 @@ public:
   bool parse_and_dispatch_(const std::string &msg) override {
     last_message_ = msg;
     parse_called_ = true;
+    if (msg.find("\"ref_door_ajar\":true") != std::string::npos)
+      note_door_("ref_door_ajar", true);
+    if (msg.find("\"ref_door_ajar\":false") != std::string::npos)
+      note_door_("ref_door_ajar", false);
     if (parse_should_confirm_pin_) {
       on_pin_confirmed_(pin_to_confirm_);
     }
@@ -270,11 +275,138 @@ TEST_F(HubFixture, FastReconnect_SkipsPostBondWhenHandlesCached) {
   EXPECT_TRUE(hub_.fast_reconnect_running());
   EXPECT_FALSE(hub_.post_bond_running());
 
-  // Advance through fast_reconnect: poll_offset (0) + 1500ms.
+  // Advance through fast_reconnect: encryption request + 1500ms.
   scheduler_.advance_by(1500);
   EXPECT_GT(transport_.encryption_request_count(), encryption_before);
   EXPECT_FALSE(hub_.fast_reconnect_running());
   EXPECT_TRUE(hub_.subscribe_running());
+}
+
+TEST_F(HubFixture, FastReconnect_D5D6MissingFromCache_DiscoversAgain) {
+  // fw 5.13 wall oven: before encryption the db has no D5/D6, so the
+  // registration of a fast reconnect fails and every indication is lost.
+  hub_.set_stored_pin("12345");
+  run_to_ready_();
+  hub_.handle_disconnected();
+  transport_.set_connected(true);
+  transport_.set_gatt_db({make_char_entry(0xD7, 0x14)});
+  hub_.handle_connected();
+  transport_.clear_writes();
+
+  // Encryption takes ~3 s. Nothing may be queued when it ends: the discovery
+  // that follows makes ESP-IDF fail every queued write (0x84).
+  const std::size_t regs_before = transport_.notify_subscribed_handles().size();
+  scheduler_.advance_by(3000);
+  EXPECT_EQ(transport_.notify_subscribed_handles().size(), regs_before);
+  EXPECT_EQ(transport_.write_count(), 0u);
+  EXPECT_TRUE(hub_.fast_reconnect_running());
+
+  const std::size_t refresh_before = transport_.cache_refresh_count();
+  hub_.handle_auth_complete(true, 0, 0x01);
+  EXPECT_EQ(transport_.cache_refresh_count(), refresh_before + 1);
+
+  // ESPHome searches only at open, so no SEARCH_CMPL follows the refresh.
+  // DIS_SRVC_CMPL ends the discovery, and D5/D6 are then in the db.
+  transport_.set_gatt_db(full_gatt_db());
+  hub_.handle_discovery_complete();
+  const auto &regs = transport_.notify_subscribed_handles();
+  ASSERT_EQ(regs.size(), regs_before + 2);
+  EXPECT_EQ(regs[regs_before], 0x10);
+  EXPECT_EQ(regs[regs_before + 1], 0x12);
+  EXPECT_TRUE(hub_.subscribe_running());
+  EXPECT_FALSE(hub_.fast_reconnect_running());
+
+  scheduler_.advance_by(1500); // unlock, then initial get_async
+  EXPECT_TRUE(transport_.wrote_command_to(0x10, "unlock_channel"));
+  EXPECT_TRUE(transport_.wrote_command_to(0x12, "unlock_channel"));
+  EXPECT_TRUE(transport_.wrote_command_to(0x12, "get_async"));
+  EXPECT_EQ(transport_.cache_refresh_count(), refresh_before + 1);
+}
+
+TEST_F(HubFixture, FastReconnect_EncryptedBeforeTimer_TimerDoesNotSubscribe) {
+  hub_.set_stored_pin("12345");
+  run_to_ready_();
+  hub_.handle_disconnected();
+  transport_.set_connected(true);
+  transport_.set_gatt_db({make_char_entry(0xD7, 0x14)});
+  hub_.handle_connected();
+  scheduler_.advance_by(100);
+  hub_.handle_auth_complete(true, 0, 0x01);
+
+  // The 1.5 s timer must not write while the discovery runs.
+  transport_.clear_writes();
+  scheduler_.advance_by(2000);
+  EXPECT_EQ(transport_.write_count(), 0u);
+  EXPECT_TRUE(hub_.fast_reconnect_running());
+}
+
+TEST_F(HubFixture, FastReconnect_EncryptionNeverCompletes_SubscribesAnyway) {
+  hub_.set_stored_pin("12345");
+  run_to_ready_();
+  hub_.handle_disconnected();
+  transport_.set_connected(true);
+  transport_.set_gatt_db({make_char_entry(0xD7, 0x14)});
+  hub_.handle_connected();
+
+  const std::size_t regs_before = transport_.notify_subscribed_handles().size();
+  scheduler_.advance_by(1500 + SubzeroHub::kRediscoverTimeoutMs);
+  EXPECT_EQ(transport_.notify_subscribed_handles().size(), regs_before + 2);
+  EXPECT_FALSE(hub_.fast_reconnect_running());
+}
+
+TEST_F(HubFixture, FastReconnect_DiscoveryNeverEnds_SubscribesAnyway) {
+  hub_.set_stored_pin("12345");
+  run_to_ready_();
+  hub_.handle_disconnected();
+  transport_.set_connected(true);
+  transport_.set_gatt_db({make_char_entry(0xD7, 0x14)});
+  hub_.handle_connected();
+  scheduler_.advance_by(3000);
+  hub_.handle_auth_complete(true, 0, 0x01);
+
+  const std::size_t regs_before = transport_.notify_subscribed_handles().size();
+  scheduler_.advance_by(SubzeroHub::kRediscoverTimeoutMs);
+  EXPECT_EQ(transport_.notify_subscribed_handles().size(), regs_before + 2);
+  EXPECT_FALSE(hub_.fast_reconnect_running());
+}
+
+TEST_F(HubFixture, FastReconnect_DisconnectDuringDiscovery_NoSubscribe) {
+  hub_.set_stored_pin("12345");
+  run_to_ready_();
+  hub_.handle_disconnected();
+  transport_.set_connected(true);
+  transport_.set_gatt_db({make_char_entry(0xD7, 0x14)});
+  hub_.handle_connected();
+  scheduler_.advance_by(3000);
+  hub_.handle_auth_complete(true, 0, 0x01);
+  hub_.handle_disconnected();
+
+  const std::size_t regs_before = transport_.notify_subscribed_handles().size();
+  hub_.handle_discovery_complete();
+  scheduler_.advance_by(SubzeroHub::kRediscoverTimeoutMs);
+  EXPECT_EQ(transport_.notify_subscribed_handles().size(), regs_before);
+}
+
+TEST_F(HubFixture, DiscoveryComplete_OutsideRediscovery_Ignored) {
+  // The discovery of every connect also ends with DIS_SRVC_CMPL.
+  hub_.set_stored_pin("12345");
+  run_to_ready_();
+  const std::size_t regs_before = transport_.notify_subscribed_handles().size();
+  hub_.handle_discovery_complete();
+  EXPECT_EQ(transport_.notify_subscribed_handles().size(), regs_before);
+}
+
+TEST_F(HubFixture, FastReconnect_D5D6InCache_NoSecondDiscovery) {
+  hub_.set_stored_pin("12345");
+  run_to_ready_();
+  hub_.handle_disconnected();
+  transport_.set_connected(true);
+  hub_.handle_connected();
+  scheduler_.advance_by(1500);
+
+  const std::size_t refresh_before = transport_.cache_refresh_count();
+  hub_.handle_auth_complete(true, 0, 0x01);
+  EXPECT_EQ(transport_.cache_refresh_count(), refresh_before);
 }
 
 // =============================================================================
@@ -671,11 +803,11 @@ TEST_F(HubFixture, WriteSetBool_GoesToD5WithCorrectJson) {
   run_to_ready_();
   transport_.clear_writes();
   hub_.write_set_bool("cav_light_on", true);
-  ASSERT_EQ(transport_.write_count(), 1u);
+  ASSERT_GE(transport_.write_count(), 1u);
   EXPECT_EQ(transport_.write_at(0).handle, 0x10u); // D5 in our test fixture
-  std::string body(transport_.write_at(0).bytes.begin(),
-                   transport_.write_at(0).bytes.end());
-  EXPECT_EQ(body, "{\"cmd\":\"set\",\"params\":{\"cav_light_on\":true}}\n");
+  EXPECT_LE(transport_.max_write_len(), 20u);
+  EXPECT_EQ(transport_.joined_writes(0x10),
+            "{\"cmd\":\"set\",\"params\":{\"cav_light_on\":true}}\n");
 }
 
 TEST_F(HubFixture, WriteSetInt_FormatsAsBareNumber) {
@@ -683,10 +815,9 @@ TEST_F(HubFixture, WriteSetInt_FormatsAsBareNumber) {
   run_to_ready_();
   transport_.clear_writes();
   hub_.write_set_int("set_temp", 38);
-  ASSERT_EQ(transport_.write_count(), 1u);
-  std::string body(transport_.write_at(0).bytes.begin(),
-                   transport_.write_at(0).bytes.end());
-  EXPECT_EQ(body, "{\"cmd\":\"set\",\"params\":{\"set_temp\":38}}\n");
+  EXPECT_LE(transport_.max_write_len(), 20u);
+  EXPECT_EQ(transport_.joined_writes(0x10),
+            "{\"cmd\":\"set\",\"params\":{\"set_temp\":38}}\n");
 }
 
 TEST_F(HubFixture, WriteSetString_QuotesAndEscapes) {
@@ -694,10 +825,9 @@ TEST_F(HubFixture, WriteSetString_QuotesAndEscapes) {
   run_to_ready_();
   transport_.clear_writes();
   hub_.write_set_string("ap_ssid", "my\"net");
-  ASSERT_EQ(transport_.write_count(), 1u);
-  std::string body(transport_.write_at(0).bytes.begin(),
-                   transport_.write_at(0).bytes.end());
-  EXPECT_EQ(body, "{\"cmd\":\"set\",\"params\":{\"ap_ssid\":\"my\\\"net\"}}\n");
+  EXPECT_LE(transport_.max_write_len(), 20u);
+  EXPECT_EQ(transport_.joined_writes(0x10),
+            "{\"cmd\":\"set\",\"params\":{\"ap_ssid\":\"my\\\"net\"}}\n");
 }
 
 TEST_F(HubFixture, WriteSet_NoOpWhenD5HandleMissing) {
@@ -1116,4 +1246,407 @@ TEST_F(HubFixture, SessionRefresh_DoesNotIncrementFastRetries) {
   hub_.handle_disconnected();
   EXPECT_EQ(hub_.fast_retries(), 1)
       << "Unexpected disconnects after a refresh must still count.";
+}
+
+// =============================================================================
+// Connection diagnostics
+// =============================================================================
+
+namespace {
+const char *kSnapshotClosed =
+    R"({"status":0,"resp":{"appliance_serial":"1","ref_door_ajar":false}})";
+const char *kSnapshotOpen =
+    R"({"status":0,"resp":{"appliance_serial":"1","ref_door_ajar":true}})";
+} // namespace
+
+TEST_F(HubFixture, Diag_CountsConnectionsAndRecordsReason) {
+  hub_.set_stored_pin("12345");
+  run_to_ready_();
+  EXPECT_EQ(hub_.sessions(), 1);
+  hub_.handle_disconnected(0x08);
+  EXPECT_NE(hub_.last_disconnect_reason().find("supervision timeout"),
+            std::string::npos);
+
+  transport_.set_connected(true);
+  hub_.handle_connected();
+  hub_.handle_connected(); // a second SEARCH_CMPL on the same link
+  EXPECT_EQ(hub_.sessions(), 2);
+}
+
+TEST_F(HubFixture, Diag_SessionRefreshLabelsReason) {
+  hub_.set_stored_pin("12345");
+  run_to_ready_();
+  scheduler_.advance_by(SubzeroHub::kSessionRefreshIntervalMs);
+  hub_.handle_disconnected(0x16);
+  EXPECT_EQ(hub_.last_disconnect_reason(), "session refresh");
+}
+
+TEST_F(HubFixture, Diag_LinkFailureBeforeConnectIsNotASession) {
+  hub_.handle_disconnected(SubzeroHub::kReasonOpenFailed);
+  EXPECT_EQ(hub_.sessions(), 0);
+  EXPECT_EQ(hub_.sessions_without_snapshot(), 0);
+  EXPECT_EQ(hub_.last_disconnect_reason(), "GATT open failed");
+}
+
+TEST_F(HubFixture, Diag_SnapshotSetsDataAge) {
+  hub_.set_stored_pin("12345");
+  run_to_ready_();
+  EXPECT_EQ(hub_.snapshot_age_s(), -1);
+  // An unlock reply is status:0 but not a snapshot.
+  feed_complete_d6_(hub_, R"({"status":0,"resp":{"pin":"12345"}})");
+  EXPECT_EQ(hub_.snapshot_age_s(), -1);
+  feed_complete_d6_(hub_, kSnapshotClosed);
+  EXPECT_EQ(hub_.snapshot_age_s(), 0);
+  scheduler_.advance_by(30000);
+  EXPECT_EQ(hub_.snapshot_age_s(), 30);
+}
+
+TEST_F(HubFixture, Diag_NoSnapshotAfterWatchCountsOnce) {
+  hub_.set_stored_pin("12345");
+  run_to_ready_();
+  scheduler_.advance_by(SubzeroHub::kSnapshotWarnMs);
+  EXPECT_EQ(hub_.sessions_without_snapshot(), 1);
+  hub_.handle_disconnected(0x08);
+  EXPECT_EQ(hub_.sessions_without_snapshot(), 1)
+      << "The drop must not count the same connection a second time.";
+}
+
+TEST_F(HubFixture, Diag_NoSnapshotRetriesUnlockAndPollOnce) {
+  hub_.set_stored_pin("12345");
+  run_to_ready_();
+  transport_.clear_writes();
+  scheduler_.advance_by(SubzeroHub::kSnapshotWarnMs);
+  EXPECT_TRUE(transport_.wrote_command_to(hub_.d5_handle(), "unlock_channel"));
+  EXPECT_TRUE(transport_.wrote_command_to(hub_.d6_handle(), "unlock_channel"));
+  EXPECT_TRUE(transport_.wrote_command_to(hub_.d6_handle(), "get_async"));
+  transport_.clear_writes();
+  scheduler_.advance_by(SubzeroHub::kSnapshotWarnMs);
+  EXPECT_EQ(transport_.write_count(), 0u) << "Only one early retry.";
+}
+
+TEST_F(HubFixture, Diag_DropBeforeSnapshotCounts) {
+  hub_.set_stored_pin("12345");
+  run_to_ready_();
+  hub_.handle_disconnected(0x08);
+  EXPECT_EQ(hub_.sessions_without_snapshot(), 1);
+}
+
+TEST_F(HubFixture, Diag_SnapshotInTimeCancelsWatch) {
+  hub_.set_stored_pin("12345");
+  run_to_ready_();
+  feed_complete_d6_(hub_, kSnapshotClosed);
+  scheduler_.advance_by(SubzeroHub::kSnapshotWarnMs);
+  hub_.handle_disconnected(0x08);
+  EXPECT_EQ(hub_.sessions_without_snapshot(), 0);
+}
+
+TEST_F(HubFixture, Diag_SeqGapInSessionCountsMissed) {
+  hub_.set_stored_pin("12345");
+  run_to_ready_();
+  feed_complete_d6_(hub_, R"({"msg_types":2,"seq":10,"props":{}})");
+  feed_complete_d6_(hub_,
+                    R"({"msg_types":1,"seq":11,"diagnostic_status":"0x1"})");
+  EXPECT_EQ(hub_.missed_pushes(), 0);
+  feed_complete_d6_(hub_, R"({"msg_types":2,"seq":14,"props":{}})");
+  EXPECT_EQ(hub_.missed_pushes(), 2);
+}
+
+TEST_F(HubFixture, Diag_SeqGapAcrossReconnectCountsMissed) {
+  hub_.set_stored_pin("12345");
+  run_to_ready_();
+  feed_complete_d6_(hub_, R"({"msg_types":2,"seq":10,"props":{}})");
+  hub_.handle_disconnected(0x08);
+  transport_.set_connected(true);
+  hub_.handle_connected();
+  scheduler_.advance_by(3000);
+  feed_complete_d6_(hub_, R"({"msg_types":2,"seq":15,"props":{}})");
+  EXPECT_EQ(hub_.missed_pushes(), 4);
+}
+
+TEST_F(HubFixture, Diag_SeqResetIsNotAGap) {
+  hub_.set_stored_pin("12345");
+  run_to_ready_();
+  feed_complete_d6_(hub_, R"({"msg_types":2,"seq":500,"props":{}})");
+  feed_complete_d6_(hub_, R"({"msg_types":2,"seq":1,"props":{}})");
+  EXPECT_EQ(hub_.missed_pushes(), 0);
+}
+
+// The stale-door bug: the close push is sent while the link is down, so
+// only the next snapshot can correct the open door.
+TEST_F(HubFixture, Diag_DoorClosedWhileDisconnectedIsCounted) {
+  hub_.set_stored_pin("12345");
+  run_to_ready_();
+  feed_complete_d6_(
+      hub_, R"({"msg_types":2,"seq":1,"props":{"ref_door_ajar":true}})");
+  hub_.handle_disconnected(0x08);
+  transport_.set_connected(true);
+  hub_.handle_connected();
+  scheduler_.advance_by(3000);
+  feed_complete_d6_(hub_, kSnapshotClosed);
+  EXPECT_EQ(hub_.gap_door_changes(), 1);
+}
+
+TEST_F(HubFixture, Diag_DoorPushAfterReconnectIsNotCounted) {
+  hub_.set_stored_pin("12345");
+  run_to_ready_();
+  feed_complete_d6_(
+      hub_, R"({"msg_types":2,"seq":1,"props":{"ref_door_ajar":true}})");
+  hub_.handle_disconnected(0x08);
+  transport_.set_connected(true);
+  hub_.handle_connected();
+  scheduler_.advance_by(3000);
+  // A live edge on the new link, then the snapshot agrees with it.
+  feed_complete_d6_(
+      hub_, R"({"msg_types":2,"seq":2,"props":{"ref_door_ajar":false}})");
+  feed_complete_d6_(hub_, kSnapshotClosed);
+  EXPECT_EQ(hub_.gap_door_changes(), 0);
+}
+
+TEST_F(HubFixture, Diag_UnchangedDoorIsNotCounted) {
+  hub_.set_stored_pin("12345");
+  run_to_ready_();
+  feed_complete_d6_(hub_, kSnapshotOpen);
+  hub_.handle_disconnected(0x08);
+  transport_.set_connected(true);
+  hub_.handle_connected();
+  scheduler_.advance_by(3000);
+  feed_complete_d6_(hub_, kSnapshotOpen);
+  // A later snapshot in the same connection doesn't re-check.
+  feed_complete_d6_(hub_, kSnapshotClosed);
+  EXPECT_EQ(hub_.gap_door_changes(), 0);
+}
+
+TEST_F(HubFixture, Diag_MetricsCallbackFires) {
+  int calls = 0;
+  hub_.set_metrics_callback([&calls]() { ++calls; });
+  hub_.set_stored_pin("12345");
+  run_to_ready_();
+  EXPECT_GE(calls, 1);
+  const int before = calls;
+  feed_complete_d6_(hub_, kSnapshotClosed);
+  EXPECT_GT(calls, before);
+}
+
+TEST_F(HubFixture, SessionRefresh_ZeroIntervalDisables) {
+  hub_.set_session_refresh_interval_ms(0);
+  hub_.set_stored_pin("12345");
+  run_to_ready_();
+  EXPECT_FALSE(scheduler_.has_pending("session_refresh"));
+}
+
+// =============================================================================
+// CCCD handles come from the GATT db (handle layout varies by firmware)
+// =============================================================================
+
+namespace {
+// Handles from HCI captures of the official app (2026-04-25).
+std::vector<GattDbEntry> fw227_gatt_db() {
+  // DF36450GSP: decl, value, CCCD per characteristic; props 0x3E.
+  return {
+      make_char_entry(0xD4, 13, 0x3E), make_desc_entry(0x2902, 14),
+      make_char_entry(0xD7, 16, 0x3E), make_desc_entry(0x2902, 17),
+      make_char_entry(0xD8, 19, 0x3E), make_desc_entry(0x2902, 20),
+      make_char_entry(0xD5, 22, 0x3E), make_desc_entry(0x2902, 23),
+      make_char_entry(0xD6, 25, 0x3E), make_desc_entry(0x2902, 26),
+  };
+}
+std::vector<GattDbEntry> fw85_gatt_db() {
+  // SO3050PESP: decl, value, one more descriptor, CCCD; props 0x2A.
+  return {
+      make_char_entry(0xD5, 3, 0x2A), make_desc_entry(0x2901, 4),
+      make_desc_entry(0x2902, 5),     make_char_entry(0xD6, 7, 0x2A),
+      make_desc_entry(0x2901, 8),     make_desc_entry(0x2902, 9),
+  };
+}
+} // namespace
+
+TEST_F(HubFixture, Cccd_Fw227LayoutWritesValuePlusOne) {
+  hub_.set_stored_pin("12345");
+  transport_.set_gatt_db(fw227_gatt_db());
+  hub_.handle_connected();
+  scheduler_.advance_by(1500);
+  EXPECT_EQ(hub_.d5_cccd(), 23);
+  EXPECT_EQ(hub_.d6_cccd(), 26);
+  ASSERT_GE(transport_.write_count(), 2u);
+  EXPECT_EQ(transport_.write_at(0).handle, 23);
+  EXPECT_EQ(transport_.write_at(1).handle, 26);
+  // Notify-capable characteristic: notifications, like the official app.
+  EXPECT_EQ(transport_.write_at(1).bytes,
+            std::vector<std::uint8_t>({0x01, 0x00}));
+}
+
+TEST_F(HubFixture, Cccd_Fw85LayoutWritesValuePlusTwo) {
+  hub_.set_stored_pin("12345");
+  transport_.set_gatt_db(fw85_gatt_db());
+  hub_.handle_connected();
+  scheduler_.advance_by(1500);
+  ASSERT_GE(transport_.write_count(), 2u);
+  EXPECT_EQ(transport_.write_at(0).handle, 5);
+  EXPECT_EQ(transport_.write_at(1).handle, 9);
+  // Indicate-only characteristic.
+  EXPECT_EQ(transport_.write_at(1).bytes,
+            std::vector<std::uint8_t>({0x02, 0x00}));
+}
+
+TEST_F(HubFixture, Cccd_FastReconnectReusesDiscoveredHandles) {
+  hub_.set_stored_pin("12345");
+  transport_.set_gatt_db(fw227_gatt_db());
+  hub_.handle_connected();
+  scheduler_.advance_by(3000);
+  ASSERT_EQ(hub_.d6_cccd(), 26);
+  hub_.handle_disconnected(0x08);
+  // fw 2.x shows D5/D6 before encryption. No CCCD to read on the fast path.
+  transport_.set_gatt_db(
+      {make_char_entry(0xD5, 22, 0x3E), make_char_entry(0xD6, 25, 0x3E)});
+  transport_.clear_writes();
+  transport_.set_connected(true);
+  hub_.handle_connected();
+  scheduler_.advance_by(1500);
+  EXPECT_TRUE(transport_.wrote_command_to(26, std::string("\x01", 1)));
+  EXPECT_FALSE(transport_.wrote_command_to(27, std::string("\x01", 1)));
+}
+
+TEST_F(HubFixture, Cccd_ResetPairingClearsHandles) {
+  hub_.set_stored_pin("12345");
+  transport_.set_gatt_db(fw227_gatt_db());
+  hub_.handle_connected();
+  scheduler_.advance_by(3000);
+  ASSERT_EQ(hub_.d6_cccd(), 26);
+  hub_.press_reset_pairing();
+  EXPECT_EQ(hub_.d5_cccd(), 0);
+  EXPECT_EQ(hub_.d6_cccd(), 0);
+}
+
+// =============================================================================
+// Command writes match the official app: 20-byte chunks, empty D5 write first
+// =============================================================================
+
+TEST_F(HubFixture, Commands_UnlockGoesOutInAppChunks) {
+  hub_.set_stored_pin("123456");
+  run_to_ready_();
+  transport_.clear_writes();
+  hub_.do_periodic_poll();
+  // Same split as the app's capture: 20 + 20 + 11, then get_async (20).
+  ASSERT_EQ(transport_.write_count(), 4u);
+  auto body = [this](std::size_t i) {
+    return std::string(transport_.write_at(i).bytes.begin(),
+                       transport_.write_at(i).bytes.end());
+  };
+  EXPECT_EQ(body(0), "{\"cmd\":\"unlock_chann");
+  EXPECT_EQ(body(1), "el\",\"params\":{\"pin\":");
+  EXPECT_EQ(body(2), "\"123456\"}}\n");
+  EXPECT_EQ(body(3), "{\"cmd\":\"get_async\"}\n");
+}
+
+TEST_F(HubFixture, Commands_EmptyD5WriteBeforeUnlock) {
+  hub_.set_stored_pin("12345");
+  transport_.set_gatt_db(full_gatt_db());
+  hub_.handle_connected();
+  scheduler_.advance_by(1500); // through CCCD writes, before unlock
+  ASSERT_GE(transport_.write_count(), 3u);
+  const auto &last = transport_.write_at(transport_.write_count() - 1);
+  EXPECT_EQ(last.handle, hub_.d5_handle());
+  EXPECT_TRUE(last.bytes.empty());
+  EXPECT_FALSE(transport_.wrote_command_to(hub_.d5_handle(), "unlock"));
+}
+
+// =============================================================================
+// Pairing key distribution: full keys by default, LTK-only after SMP 0x08
+// =============================================================================
+
+TEST_F(HubFixture, Pairing_DefaultsToFullKeys) {
+  hub_.set_stored_pin("12345");
+  run_to_ready_();
+  ASSERT_GE(transport_.encryption_request_count(), 1u);
+  EXPECT_FALSE(transport_.last_ltk_only());
+}
+
+TEST_F(HubFixture, Pairing_Smp08SwitchesToLtkOnlyAndReconnects) {
+  hub_.set_stored_pin("12345");
+  run_to_ready_();
+  const std::size_t disc_before = transport_.disconnect_count();
+  hub_.handle_auth_complete(false, 0x55, 0);
+  EXPECT_TRUE(hub_.ltk_only());
+  scheduler_.advance_by(SubzeroHub::kPairingRetryDelayMs);
+  EXPECT_EQ(transport_.disconnect_count(), disc_before + 1)
+      << "The failed link must not sit unencrypted until session refresh.";
+  hub_.handle_disconnected(0x16);
+  transport_.set_connected(true);
+  hub_.handle_connected();
+  scheduler_.advance_by(100);
+  EXPECT_TRUE(transport_.last_ltk_only());
+}
+
+TEST_F(HubFixture, Pairing_LtkOnlyIsStickyAndDoesNotLoop) {
+  hub_.set_stored_pin("12345");
+  run_to_ready_();
+  hub_.handle_auth_complete(false, 0x55, 0);
+  scheduler_.advance_by(SubzeroHub::kPairingRetryDelayMs);
+  hub_.handle_disconnected(0x16);
+  transport_.set_connected(true);
+  hub_.handle_connected();
+  scheduler_.advance_by(100);
+  const std::size_t disc_before = transport_.disconnect_count();
+  // LTK-only fails too: keep it, and don't force another reconnect.
+  hub_.handle_auth_complete(false, 0x55, 0);
+  scheduler_.advance_by(SubzeroHub::kPairingRetryDelayMs);
+  EXPECT_TRUE(hub_.ltk_only());
+  EXPECT_EQ(transport_.disconnect_count(), disc_before);
+}
+
+TEST_F(HubFixture, Pairing_OtherFailuresKeepKeySet) {
+  hub_.set_stored_pin("12345");
+  run_to_ready_();
+  hub_.handle_auth_complete(false, 0x61, 0); // encryption failed
+  EXPECT_FALSE(hub_.ltk_only());
+}
+
+// =============================================================================
+// CCCD writes that race encryption are sent again once the link is encrypted
+// =============================================================================
+
+TEST_F(HubFixture, Cccd_ResentWhenEncryptionCompletesAfterSubscribe) {
+  hub_.set_stored_pin("12345");
+  transport_.set_gatt_db(fw227_gatt_db());
+  hub_.handle_connected();
+  scheduler_.advance_by(1500); // CCCDs written, link not encrypted yet
+  ASSERT_TRUE(transport_.wrote_command_to(26, std::string("\x01", 1)));
+  transport_.clear_writes();
+  hub_.handle_auth_complete(true, 0, 0x01);
+  ASSERT_EQ(transport_.write_count(), 2u);
+  EXPECT_EQ(transport_.write_at(0).handle, 23);
+  EXPECT_EQ(transport_.write_at(1).handle, 26);
+  EXPECT_EQ(transport_.write_at(1).bytes,
+            std::vector<std::uint8_t>({0x01, 0x00}));
+  // Only once per connection.
+  transport_.clear_writes();
+  hub_.handle_auth_complete(true, 0, 0x01);
+  EXPECT_EQ(transport_.write_count(), 0u);
+}
+
+TEST_F(HubFixture, Cccd_NotResentWhenEncryptedBeforeSubscribe) {
+  hub_.set_stored_pin("12345");
+  transport_.set_gatt_db(fw227_gatt_db());
+  hub_.handle_auth_complete(true, 0, 0x01);
+  hub_.handle_connected();
+  scheduler_.advance_by(1500);
+  transport_.clear_writes();
+  hub_.handle_auth_complete(true, 0, 0x01); // e.g. a later re-encryption
+  EXPECT_EQ(transport_.write_count(), 0u);
+}
+
+TEST_F(HubFixture, Cccd_EncryptionStateResetsOnDisconnect) {
+  hub_.set_stored_pin("12345");
+  transport_.set_gatt_db(fw227_gatt_db());
+  hub_.handle_auth_complete(true, 0, 0x01);
+  hub_.handle_connected();
+  scheduler_.advance_by(3000);
+  hub_.handle_disconnected(0x08);
+  // Fast reconnect subscribes before this link's AUTH_CMPL arrives.
+  transport_.set_connected(true);
+  hub_.handle_connected();
+  scheduler_.advance_by(1500);
+  transport_.clear_writes();
+  hub_.handle_auth_complete(true, 0, 0x01);
+  EXPECT_TRUE(transport_.wrote_command_to(26, std::string("\x01", 1)));
 }

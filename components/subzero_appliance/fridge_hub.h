@@ -29,6 +29,14 @@ protected:
     if (s.common.pin_confirmed) {
       on_pin_confirmed_(*s.common.pin_confirmed);
     }
+    if (s.door_ajar)
+      note_door_("ref_door_ajar", *s.door_ajar);
+    if (s.frz_door_ajar)
+      note_door_("frz_door_ajar", *s.frz_door_ajar);
+    if (s.ref2_door_ajar)
+      note_door_("ref2_door_ajar", *s.ref2_door_ajar);
+    if (s.wine_door_ajar)
+      note_door_("wine_door_ajar", *s.wine_door_ajar);
     if (bus_ != nullptr) {
       esphome::subzero_protocol::dispatch_fridge(s, *bus_);
     }
