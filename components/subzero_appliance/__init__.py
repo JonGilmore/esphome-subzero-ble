@@ -1484,6 +1484,10 @@ def _final_validate(config):
             {
                 CONF_ID: device_id,
                 CONF_NAME: config[CONF_NAME],
+                # Required by ESPHome 2026.11+, which reads it unconditionally
+                # in codegen. This dict skips the devices schema, so set the
+                # default ("via") by hand. Older releases ignore the key.
+                "relation": "via",
             }
         )
         fv.full_config.set(full_conf)
